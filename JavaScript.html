@@ -5146,7 +5146,7 @@
     var filtered = applyListFilters_(rows, FILTER_STATE_USERS_, ['Name','Email'], fieldConfigs);
     var filterHtml = filterBarHtml_('onFilterChangeUsers_', 'Cari nama atau email...', fieldConfigs, FILTER_STATE_USERS_, filtered.length, rows.length);
     var cols = [
-      {label:'Nama', field:'Name'}, {label:'Email', field:'Email'}, {label:'Role', field:'Role'},
+      {label:'Nama', titleCol:true, field:'Name'}, {label:'Email', field:'Email', fullWidth:true}, {label:'Role', field:'Role'},
       {label:'Status', render:function(r){return statusBadge(r.Status);}}
     ];
     var actions = function(r){
@@ -5160,7 +5160,7 @@
     return '<div class="card"><div class="table-toolbar"><span class="card-title">Kelola User</span>' +
       '<button class="btn btn-primary btn-sm" onclick="editUser(null)">'+ICONS.plus+' Tambah User</button></div>' +
       filterHtml +
-      renderTable(cols, filtered, actions, rows.length ? 'Tidak ada user yang cocok' : 'Belum ada user', rows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'Tambahkan user pertama untuk mengelola akses sistem.', ICONS.users) + '</div>';
+      renderTableOrCards_(cols, filtered, actions, rows.length ? 'Tidak ada user yang cocok' : 'Belum ada user', rows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'Tambahkan user pertama untuk mengelola akses sistem.', ICONS.users) + '</div>';
   }
 
   function renderUsers(){
@@ -5317,7 +5317,7 @@
     var pageRows = rows.slice(startIdx, endIdx);
 
     var cols = [
-      {label:'Waktu', render:function(r){
+      {label:'Waktu', titleCol:true, render:function(r){
         var d = new Date(r.Timestamp);
         if(isNaN(d.getTime())) return String(r.Timestamp);
         function pad2(n){ return (n<10?'0':'') + n; }
@@ -5332,10 +5332,11 @@
         '</div>';
       }}, {label:'Role', field:'Role'},
       {label:'Action', render:function(r){return auditLogActionBadge_(r.Action);}},
-      {label:'Entity', render:function(r){return r.Entity+' ('+r.EntityID+')';}}, {label:'Detail', field:'Detail'}
+      {label:'Entity', render:function(r){return r.Entity+' ('+r.EntityID+')';}},
+      {label:'Detail', field:'Detail', fullWidth:true}
     ];
 
-    var tableHtml = renderTable(cols, pageRows, null, allRows.length ? 'Tidak ada aktivitas yang cocok' : 'Belum ada aktivitas', allRows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'Log aktivitas sistem akan tercatat di sini.', ICONS.audit);
+    var tableHtml = renderTableOrCards_(cols, pageRows, null, allRows.length ? 'Tidak ada aktivitas yang cocok' : 'Belum ada aktivitas', allRows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'Log aktivitas sistem akan tercatat di sini.', ICONS.audit);
 
     var pagerHtml = '';
     if(total){
@@ -6659,6 +6660,16 @@
         return '<tr><td>'+escapeHtml(r[nameKey])+'</td><td>'+r.count+' PO</td><td><strong>'+formatRupiah(r.total)+'</strong></td></tr>';
       }).join('');
     }
+    function cardRows_(arr, nameKey, emptyMsg){
+      if(!arr.length) return emptyState_(emptyMsg, '', ICONS.reports);
+      return '<div class="data-card-list">' + arr.map(function(r){
+        return '<div class="data-card"><div class="data-card-top"><div>'+escapeHtml(r[nameKey])+'</div></div>' +
+          '<div class="data-card-grid">' +
+            '<div class="data-card-field"><span>Jumlah PO</span><b>'+r.count+' PO</b></div>' +
+            '<div class="data-card-field"><span>Total Nilai</span><b>'+formatRupiah(r.total)+'</b></div>' +
+          '</div></div>';
+      }).join('') + '</div>';
+    }
 
     // Tren per bulan (dari data.byMonth) — inilah yang membedakan Laporan dari panel Dashboard:
     // Dashboard hanya menampilkan snapshot 7 hari terakhir & top-5 leaderboard sepanjang waktu,
@@ -6688,20 +6699,32 @@
       '<div class="dash-grid-2">' +
         '<div class="dash-panel">' +
           '<div class="dash-panel-head"><span class="dash-section-title" style="margin:0;">Performa per Agent (periode ini)</span></div>' +
-          '<div class="table-scroll"><table class="data-table"><thead><tr><th>Agent</th><th>Jumlah PO</th><th>Total Nilai</th></tr></thead><tbody>'+tableRows_(data.byAgent,'name')+'</tbody></table></div>' +
+          '<div class="table-scroll table-scroll-has-cards"><table class="data-table"><thead><tr><th>Agent</th><th>Jumlah PO</th><th>Total Nilai</th></tr></thead><tbody>'+tableRows_(data.byAgent,'name')+'</tbody></table></div>' +
+          cardRows_(data.byAgent, 'name', 'Tidak ada data agent') +
         '</div>' +
         '<div class="dash-panel">' +
           '<div class="dash-panel-head"><span class="dash-section-title" style="margin:0;">Performa per Store (periode ini)</span></div>' +
-          '<div class="table-scroll"><table class="data-table"><thead><tr><th>Store</th><th>Jumlah PO</th><th>Total Nilai</th></tr></thead><tbody>'+tableRows_(data.byStore,'name')+'</tbody></table></div>' +
+          '<div class="table-scroll table-scroll-has-cards"><table class="data-table"><thead><tr><th>Store</th><th>Jumlah PO</th><th>Total Nilai</th></tr></thead><tbody>'+tableRows_(data.byStore,'name')+'</tbody></table></div>' +
+          cardRows_(data.byStore, 'name', 'Tidak ada data store') +
         '</div>' +
       '</div>' +
       '<div class="dash-panel" style="margin-top:16px;">' +
         '<div class="dash-panel-head"><span class="dash-section-title" style="margin:0;">Rincian PO</span></div>' +
-        '<div class="table-scroll"><table class="data-table"><thead><tr><th>PO ID</th><th>Agent</th><th>Store</th><th>Status</th><th>Tanggal</th><th>Total</th></tr></thead><tbody>' +
+        '<div class="table-scroll table-scroll-has-cards"><table class="data-table"><thead><tr><th>PO ID</th><th>Agent</th><th>Store</th><th>Status</th><th>Tanggal</th><th>Total</th></tr></thead><tbody>' +
         (data.rows.length ? data.rows.map(function(r){
           return '<tr><td class="mono-id">'+escapeHtml(r.poId)+'</td><td>'+escapeHtml(r.agentName)+'</td><td>'+escapeHtml(r.storeName)+'</td><td>'+statusBadge(r.status)+'</td><td>'+(r.createdAt?formatDateDMY_(r.createdAt):'-')+'</td><td><strong>'+formatRupiah(r.total)+'</strong></td></tr>';
         }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--ag-gray-500);padding:16px;">Tidak ada data</td></tr>') +
         '</tbody></table></div>' +
+        (data.rows.length ? '<div class="data-card-list">' + data.rows.map(function(r){
+          return '<div class="data-card"><div class="data-card-top"><div class="mono-id">'+escapeHtml(r.poId)+'</div></div>' +
+            '<div class="data-card-grid">' +
+              '<div class="data-card-field"><span>Agent</span><b title="'+escapeHtml(r.agentName)+'">'+escapeHtml(r.agentName)+'</b></div>' +
+              '<div class="data-card-field"><span>Store</span><b title="'+escapeHtml(r.storeName)+'">'+escapeHtml(r.storeName)+'</b></div>' +
+              '<div class="data-card-field"><span>Tanggal</span><b>'+(r.createdAt?formatDateDMY_(r.createdAt):'-')+'</b></div>' +
+              '<div class="data-card-field"><span>Status</span><b>'+statusBadge(r.status)+'</b></div>' +
+              '<div class="data-card-field full-w"><span>Total</span><b>'+formatRupiah(r.total)+'</b></div>' +
+            '</div></div>';
+        }).join('') + '</div>' : emptyState_('Tidak ada data', '', ICONS.reports)) +
       '</div>';
   }
 
