@@ -452,7 +452,13 @@
   if(document.readyState === 'loading'){
     window.addEventListener('DOMContentLoaded', _agBootInit_);
   } else {
-    _agBootInit_();
+    // PENTING: jangan panggil langsung di sini. Titik kode ini berada di TENGAH file
+    // JavaScript.html — kalau _agBootInit_() dipanggil sekarang juga (synchronous),
+    // dia akan menjalankan bootApp() yang butuh variabel (mis. HARI_ID_, BULAN_ID_)
+    // yang baru didefinisikan di baris-baris SETELAH titik ini di file yang sama, dan
+    // itu masih 'undefined' karena belum sempat dieksekusi. setTimeout(...,0) menunda
+    // pemanggilannya sampai SELURUH file ini selesai dijalankan lebih dulu.
+    setTimeout(_agBootInit_, 0);
   }
 
   /** Catatan: logo di Sidebar & Login SENGAJA statis (brand mark Agrinesia) dan TIDAK
