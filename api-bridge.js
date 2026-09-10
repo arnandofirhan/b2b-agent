@@ -1,27 +1,36 @@
 /*************************************************************
- * api-bridge.js
+ * api-bridge.js  (B2B — diperkuat, meniru pola SO yang sudah lancar)
  * -------------------------------------------------------------
  * Menjadikan "google.script.run" bisa dipakai APA ADANYA di
- * JavaScript.html (tanpa mengubah ratusan pemanggilan yang sudah
- * ada), padahal halaman ini di-hosting sebagai situs statis (mis.
- * GitHub Pages) — bukan lagi dari domain script.google.com.
+ * JavaScript.html, padahal halaman ini di-hosting sebagai situs
+ * statis (GitHub Pages) — bukan dari domain script.google.com.
  *
- * Cara kerja: setiap .withSuccessHandler(fn).withFailureHandler(fn)
- * .namaFungsi(arg1, arg2, ...) di-encode menjadi POST JSON
- * { fn: "namaFungsi", args: [arg1, arg2, ...] } ke Web App GAS
- * (var GAS_EXEC_URL / SO_APP_URL, WAJIB didefinisikan SEBELUM
- * file ini dimuat — lihat index.html).
+ * PENTING — BACA DULU SEBELUM DEBUG LEBIH LANJUT:
+ * Error "CORS: No Access-Control-Allow-Origin" yang muncul di
+ * Console TAPI request-nya terlihat sebagai GET (bukan POST yang
+ * sebenarnya kita kirim) ini adalah TANDA KHAS bahwa GAS
+ * me-redirect (302) request kita ke halaman lain (biasanya
+ * halaman login Google) SEBELUM sempat sampai ke doPost().
+ * Browser mengubah method jadi GET & membuang body saat redirect
+ * 302 terjadi pada request non-GET — itulah kenapa terlihat "GET"
+ * di Network tab padahal kode ini selalu fetch(..., {method:'POST'}).
  *
- * Backend (Code.gs) merespons lewat doPost()/handleRpc_() dengan
- * { ok:true, result:... } atau { ok:false, error:"..." }.
- *
- * CATATAN: Google Apps Script Web App (/exec) yang di-deploy
- * dengan akses "Anyone" otomatis mengizinkan fetch() lintas-origin
- * untuk permintaan POST bertipe text/plain (tanpa header custom),
- * sehingga tidak perlu proxy CORS tambahan.
+ * Penyebabnya BUKAN di file ini, tapi di deployment Web App GAS:
+ *   1) Deployment /exec BELUM di-update ke versi kode terbaru
+ *      (harus: Deploy > Manage deployments > pencil icon > Version:
+ *      New version > Deploy — bukan cuma Ctrl+S di editor).
+ *   2) Who has access BUKAN "Anyone" (harus "Anyone", bukan
+ *      "Anyone with Google account" — yang terakhir ini memicu
+ *      redirect ke accounts.google.com untuk request non-login).
+ *   3) Execute as HARUS "Me" (pemilik script), bukan "User accessing
+ *      the web app".
+ * Cek ketiga hal ini dulu di GAS project B2B kalau error CORS masih
+ * muncul walau file ini sudah benar.
  *************************************************************/
 (function (global) {
   'use strict';
+
+  var REQUEST_TIMEOUT_MS = 60000;
 
   function resolveExecUrl() {
     var url = global.GAS_EXEC_URL || global.SO_APP_URL || global.SO_WEBAPP_URL;
@@ -38,29 +47,48 @@
       return;
     }
 
-    // RETRY OTOMATIS: Google Apps Script Web App kadang gagal di percobaan pertama
-    // dengan error CORS/"Failed to fetch" yang TIDAK disebabkan oleh kode kita, melainkan
-    // redirect internal script.google.com -> script.googleusercontent.com yang kadang
-    // tidak menyertakan header CORS pada percobaan pertama (terutama saat instance GAS
-    // baru "cold start"). Errornya acak & hilang sendiri kalau dicoba ulang, jadi solusi
-    // paling andal adalah retry singkat sebelum benar-benar melaporkan gagal ke pengguna.
+    // RETRY OTOMATIS hanya untuk error jaringan murni (bukan untuk error
+    // deployment/akses — itu tidak akan hilang dengan diulang, jadi
+    // langsung dilaporkan supaya tidak menunggu sia-sia).
     var MAX_ATTEMPTS = 3;
-    var RETRY_DELAY_MS = 700; // jeda singkat sebelum coba lagi
+    var RETRY_DELAY_MS = 700;
 
     function attempt(attemptNo) {
-      fetch(url, {
+      var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      var timer = controller ? setTimeout(function () { controller.abort(); }, REQUEST_TIMEOUT_MS) : null;
+
+      var fetchOpts = {
         method: 'POST',
-        // text/plain sengaja dipakai (bukan application/json) supaya request tetap
-        // dianggap "simple request" oleh browser dan TIDAK memicu CORS preflight
-        // (OPTIONS) yang tidak didukung oleh endpoint Apps Script.
+        // text/plain sengaja dipakai (bukan application/json) supaya request
+        // dianggap "simple request" oleh browser dan TIDAK memicu CORS
+        // preflight (OPTIONS) yang tidak didukung endpoint Apps Script.
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ fn: fnName, args: args })
-      })
+        body: JSON.stringify({ fn: fnName, args: args }),
+        redirect: 'follow'
+      };
+      if (controller) fetchOpts.signal = controller.signal;
+
+      fetch(url, fetchOpts)
         .then(function (res) {
+          if (timer) clearTimeout(timer);
           if (!res.ok) throw new Error('HTTP ' + res.status + ' dari server.');
-          return res.json();
+          return res.text();
         })
-        .then(function (data) {
+        .then(function (text) {
+          var data;
+          try {
+            data = JSON.parse(text);
+          } catch (parseErr) {
+            // Respons bukan JSON = hampir pasti bukan doPost() kita yang
+            // menjawab, melainkan halaman lain (login Google / error GAS).
+            // Ini pertanda deployment/akses Web App salah — lihat catatan
+            // di atas file ini.
+            throw new Error(
+              'Respons server bukan JSON (kemungkinan deployment/akses ' +
+              'Web App GAS belum benar — cek "Who has access: Anyone" & ' +
+              '"Execute as: Me", lalu deploy versi baru).'
+            );
+          }
           if (data && data.ok) {
             if (onSuccess) onSuccess(data.result);
           } else {
@@ -70,9 +98,13 @@
           }
         })
         .catch(function (err) {
-          // Hanya retry untuk error jaringan/CORS ("Failed to fetch" / TypeError), BUKAN
-          // untuk error HTTP yang jelas (mis. HTTP 403/500) — itu tidak akan berubah
-          // dengan diulang, jadi langsung lapor ke pengguna supaya tidak menunggu sia-sia.
+          if (timer) clearTimeout(timer);
+          if (err && err.name === 'AbortError') {
+            if (onFailure) onFailure(new Error('TIMEOUT: server tidak merespons dalam ' + (REQUEST_TIMEOUT_MS / 1000) + ' detik.'));
+            else console.error('[api-bridge] ' + fnName + ' timeout.');
+            return;
+          }
+
           var isNetworkLikeError = (err instanceof TypeError) || /Failed to fetch|NetworkError|CORS/i.test(err && err.message || '');
           if (isNetworkLikeError && attemptNo < MAX_ATTEMPTS) {
             console.warn('[api-bridge] ' + fnName + ' percobaan ' + attemptNo + ' gagal (network/CORS), mencoba lagi...', err);
@@ -100,11 +132,9 @@
           return function (fn) { return makeRunner(successHandler, fn); };
         }
         if (prop === 'withUserObject') {
-          // Tidak relevan di luar Apps Script HtmlService; diterima saja supaya chain tidak error.
           return function () { return makeRunner(successHandler, failureHandler); };
         }
         if (typeof prop !== 'string') return undefined;
-        // Setiap property lain dianggap nama fungsi server yang mau dipanggil.
         return function () {
           var args = Array.prototype.slice.call(arguments);
           callServer(prop, args, successHandler, failureHandler);
@@ -117,9 +147,6 @@
   global.google.script = global.google.script || {};
   global.google.script.run = makeRunner(null, null);
 
-  // google.script.host dipakai di beberapa tempat untuk hal-hal yang hanya berlaku
-  // di dalam iframe sandbox Apps Script (mis. menutup dialog) — di web biasa ini
-  // no-op supaya tidak error kalau ada pemanggilan sisa.
   global.google.script.host = {
     close: function () {},
     setHeight: function () {},
