@@ -1197,9 +1197,9 @@
       if(f.type === 'daterange'){
         var vFrom = state[f.key+'From'] || '', vTo = state[f.key+'To'] || '';
         return '<div class="filter-daterange">' +
-          '<div class="date-field-wrap date-field-wrap--sm">'+ICONS.calendar+'<input type="date" value="'+escapeHtml(vFrom)+'" title="'+escapeHtml(f.label)+' dari" onchange="'+onChangeFn+'(\''+f.key+'From\', this.value)"></div>' +
+          '<div class="date-field-wrap date-field-wrap--sm has-placeholder-ghost">'+ICONS.calendar+'<input type="date" value="'+escapeHtml(vFrom)+'" title="'+escapeHtml(f.label)+' dari" onchange="'+onChangeFn+'(\''+f.key+'From\', this.value);this.nextElementSibling.style.display=this.value?\'none\':\'\'"><span class="date-field-ghost"'+(vFrom?' style="display:none"':'')+'>Dari</span></div>' +
           '<span class="filter-daterange-sep">&ndash;</span>' +
-          '<div class="date-field-wrap date-field-wrap--sm">'+ICONS.calendar+'<input type="date" value="'+escapeHtml(vTo)+'" title="'+escapeHtml(f.label)+' sampai" onchange="'+onChangeFn+'(\''+f.key+'To\', this.value)"></div>' +
+          '<div class="date-field-wrap date-field-wrap--sm has-placeholder-ghost">'+ICONS.calendar+'<input type="date" value="'+escapeHtml(vTo)+'" title="'+escapeHtml(f.label)+' sampai" onchange="'+onChangeFn+'(\''+f.key+'To\', this.value);this.nextElementSibling.style.display=this.value?\'none\':\'\'"><span class="date-field-ghost"'+(vTo?' style="display:none"':'')+'>Sampai</span></div>' +
         '</div>';
       }
       var cur = state[f.key] || '__ALL__';
@@ -2767,8 +2767,8 @@
         '<option value="INACTIVE"'+(statusVal==='INACTIVE'?' selected':'')+'>INACTIVE</option>' +
       '</select></div>';
     var body =
-      formField_('promoCode','Promo Code',p.PromoCode,'text','',true) + formField_('promoName','Promo Name',p.PromoName,'text','',true) +
-      formField_('promoDesc','Description',p.Description) + formField_('promoStart','Start Date',p.StartDate,'date','',true) +
+      formField_('promoCode','Promo Code',p.PromoCode,'text','',true,ICONS.promo) + formField_('promoName','Promo Name',p.PromoName,'text','',true,ICONS.fileDoc) +
+      formField_('promoDesc','Description',p.Description,'text','',false,ICONS.edit) + formField_('promoStart','Start Date',p.StartDate,'date','',true) +
       formField_('promoEnd','End Date',p.EndDate,'date','',true) + statusField;
     openFormModal(promoId ? 'Edit Promo' : 'Tambah Promo', body, function(){ savePromoForm(promoId); });
   }
@@ -5785,17 +5785,25 @@
   // =============================================================
   // SMALL FORM HELPERS
   // =============================================================
-  function formField_(id, label, value, type, placeholder, required){
+  function formField_(id, label, value, type, placeholder, required, icon){
     value = value == null ? '' : value;
     type = type || 'text';
     var ph = placeholder ? ' placeholder="'+escapeHtml(placeholder)+'"' : '';
     var reqMark = required ? '<span class="required-mark">*</span>' : '';
     var reqAttrs = required ? ' class="req-field" oninput="updateModalSaveState_()"' : '';
     var input = '<input type="'+type+'" id="'+id+'" value="'+escapeHtml(String(value))+'"'+ph+reqAttrs+'>';
-    // Field tanggal dibungkus dgn ikon kalender dekoratif di kiri — native picker Android/iOS
-    // tidak bisa di-styling langsung (OS yang gambar), jadi ikon ini murni visual supaya
-    // field tetap terlihat modern & konsisten di semua device, bukan cuma browser desktop.
-    if(type === 'date') input = '<div class="date-field-wrap">'+ICONS.calendar+input+'</div>';
+    // Field tanggal & field ber-ikon dibungkus dgn ikon dekoratif di kiri — untuk tanggal,
+    // native picker Android/iOS tidak bisa di-styling langsung (OS yang gambar), jadi ikon
+    // ini murni visual supaya field tetap terlihat modern & konsisten di semua device.
+    if(type === 'date'){
+      var dateInputAttrs = ' onchange="this.nextElementSibling.style.display=this.value?\'none\':\'\'" oninput="this.nextElementSibling.style.display=this.value?\'none\':\'\'"';
+      var dateInputEl = '<input type="date" id="'+id+'" value="'+escapeHtml(String(value))+'"'+reqAttrs+dateInputAttrs+'>';
+      var ghostStyle = value ? ' style="display:none"' : '';
+      input = '<div class="date-field-wrap has-placeholder-ghost">'+ICONS.calendar+dateInputEl+
+        '<span class="date-field-ghost"'+ghostStyle+'>dd-mm-yyyy</span></div>';
+    } else if(icon){
+      input = '<div class="text-field-wrap">'+icon+input+'</div>';
+    }
     return '<div class="form-group"><label>'+label+reqMark+'</label>'+input+'</div>';
   }
 
