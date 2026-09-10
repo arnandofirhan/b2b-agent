@@ -234,6 +234,19 @@
     font-size:14px;background:var(--ag-surface);color:var(--ag-gray-900);
   }
   .form-group input::placeholder, .form-group textarea::placeholder{color:var(--ag-gray-400);opacity:1;}
+  /* Chrome/Safari mewarnai field yang di-autofill (mis. dari password manager) dengan
+     background abu-abu/biru bawaan browser yang tidak bisa diubah lewat background-color
+     biasa — harus pakai trik -webkit-box-shadow supaya "menimpa" warna itu dengan warna
+     field normal kita, dan -webkit-text-fill-color supaya teksnya tetap kebaca. */
+  .form-group input:-webkit-autofill,
+  .form-group input:-webkit-autofill:hover,
+  .form-group input:-webkit-autofill:focus{
+    -webkit-box-shadow:0 0 0 1000px var(--ag-surface) inset;
+    box-shadow:0 0 0 1000px var(--ag-surface) inset;
+    -webkit-text-fill-color:var(--ag-gray-900);
+    caret-color:var(--ag-gray-900);
+    transition:background-color 999999s ease-in-out 0s;
+  }
   .form-hint{font-size:11.5px;color:var(--ag-gray-400);margin-top:6px;line-height:1.4;}
   .form-group input:focus, .form-group select:focus, .form-group textarea:focus{
     outline:none;border-color:var(--ag-green);box-shadow:0 0 0 3px var(--ag-green-soft);
