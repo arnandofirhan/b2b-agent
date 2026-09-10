@@ -4036,10 +4036,45 @@
         return btns;
       };
       var html =
-        '<div class="card"><div class="card-header"><span class="card-title">Order</span></div>' +
+        '<div class="card"><div class="list-header"><span class="card-title">Order</span></div>' +
         filterHtml +
-        renderTable(cols, filtered, actions, rows.length ? 'Tidak ada order yang cocok' : 'Belum ada order', rows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'Order akan muncul setelah PO disetujui.', ICONS.orders) + '</div>';
+        (filtered.length
+          ? '<div class="order-list">' + filtered.map(function(r){ return orderCardHtml_(r, storeMap, agentMap, actions); }).join('') + '</div>'
+          : emptyState_(rows.length ? 'Tidak ada order yang cocok' : 'Belum ada order', rows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'Order akan muncul setelah PO disetujui.', ICONS.orders)) + '</div>';
       paintPage_('orders', html);
+  }
+
+  function orderCardHtml_(r, storeMap, agentMap, actionsFn){
+    var storeHtml = '-', agentHtml = '';
+    if(storeMap){
+      var s = storeMap[r.StoreID];
+      if(s){
+        var subFull = [s.Address, s.PIC, s.Phone].filter(Boolean).join(' \u00b7 ');
+        storeHtml = escapeHtml(s.StoreName) + (subFull ? '<div class="order-card-sub" title="'+escapeHtml(subFull)+'">'+escapeHtml(subFull.length>30?subFull.slice(0,30)+'…':subFull)+'</div>' : '');
+      } else { storeHtml = r.StoreID ? escapeHtml(r.StoreID) : '-'; }
+    }
+    if(agentMap){
+      var po = findPO_(r.POID);
+      var agentId = po ? po.AgentID : null;
+      var a = agentId ? agentMap[agentId] : null;
+      agentHtml = a ? escapeHtml(a.FullName||agentId)+' <span class="order-card-sub-inline">('+escapeHtml(agentId)+')</span>' : (agentId ? escapeHtml(agentId) : '-');
+    }
+    var poForPromo = findPO_(r.POID);
+    var promoHtml = (poForPromo && poForPromo.PromoName)
+      ? '<span title="'+escapeHtml(poForPromo.PromoName)+'">'+escapeHtml(poForPromo.PromoName.length>22?poForPromo.PromoName.slice(0,22)+'…':poForPromo.PromoName)+'</span>'
+      : '<span class="badge badge-neutral">Tanpa Promo</span>';
+    return '<div class="order-card">' +
+      '<div class="order-card-top">' +
+        '<div><div class="order-card-id">'+escapeHtml(r.OrderID)+'</div><div class="order-card-po">PO: '+escapeHtml(r.POID)+'</div></div>' +
+      '</div>' +
+      (storeMap ? '<div class="order-card-field"><span>Store</span><b>'+storeHtml+'</b></div>' : '') +
+      (agentMap ? '<div class="order-card-field"><span>Agent</span><b>'+agentHtml+'</b></div>' : '') +
+      '<div class="order-card-field"><span>Promo</span><b>'+promoHtml+'</b></div>' +
+      '<div class="order-card-badges">' +
+        statusBadge(r.DeliveryStatus) + statusBadge(r.CustomerPaymentStatus) + statusBadge(r.TransactionStatus) +
+      '</div>' +
+      '<div class="order-card-actions">'+actionsFn(r)+'</div>' +
+    '</div>';
   }
 
   /** Detail popup untuk 1 Order: header ringkas + info Store/Agent dalam grid rapi, daftar
