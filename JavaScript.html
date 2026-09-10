@@ -420,7 +420,13 @@
   // =============================================================
   // BOOT
   // =============================================================
-  window.addEventListener('DOMContentLoaded', function(){
+  // Catatan: file ini kadang dimuat SETELAH DOMContentLoaded sudah terjadi (mis. versi
+  // statis/GitHub Pages yang menyuntikkan script ini lewat fetch async — lihat
+  // loadWrappedInclude_ di index.html). Kalau begitu, event 'DOMContentLoaded' tidak akan
+  // pernah tertangkap lagi kalau kita cuma pasang addEventListener. Makanya di sini kita
+  // cek document.readyState dulu: kalau dokumen sudah selesai loading, langsung jalankan;
+  // kalau belum, baru pasang listener seperti biasa.
+  function _agBootInit_(){
     applyBrandLogo_();
     // "Ingat saya" HANYA mengingat alamat email (bukan password — menyimpan password mentah
     // di browser tidak aman) di localStorage supaya form login sudah terisi otomatis di
@@ -442,7 +448,12 @@
       STATE.user = JSON.parse(userRaw);
       bootApp();
     }
-  });
+  }
+  if(document.readyState === 'loading'){
+    window.addEventListener('DOMContentLoaded', _agBootInit_);
+  } else {
+    _agBootInit_();
+  }
 
   /** Catatan: logo di Sidebar & Login SENGAJA statis (brand mark Agrinesia) dan TIDAK
       mengikuti logo perusahaan yang diupload di halaman Pengaturan. Logo hasil upload
