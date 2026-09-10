@@ -1197,9 +1197,9 @@
       if(f.type === 'daterange'){
         var vFrom = state[f.key+'From'] || '', vTo = state[f.key+'To'] || '';
         return '<div class="filter-daterange">' +
-          '<input type="date" value="'+escapeHtml(vFrom)+'" title="'+escapeHtml(f.label)+' dari" onchange="'+onChangeFn+'(\''+f.key+'From\', this.value)">' +
+          '<div class="date-field-wrap date-field-wrap--sm">'+ICONS.calendar+'<input type="date" value="'+escapeHtml(vFrom)+'" title="'+escapeHtml(f.label)+' dari" onchange="'+onChangeFn+'(\''+f.key+'From\', this.value)"></div>' +
           '<span class="filter-daterange-sep">&ndash;</span>' +
-          '<input type="date" value="'+escapeHtml(vTo)+'" title="'+escapeHtml(f.label)+' sampai" onchange="'+onChangeFn+'(\''+f.key+'To\', this.value)">' +
+          '<div class="date-field-wrap date-field-wrap--sm">'+ICONS.calendar+'<input type="date" value="'+escapeHtml(vTo)+'" title="'+escapeHtml(f.label)+' sampai" onchange="'+onChangeFn+'(\''+f.key+'To\', this.value)"></div>' +
         '</div>';
       }
       var cur = state[f.key] || '__ALL__';
@@ -1214,7 +1214,7 @@
     var countHtml = (totalCount != null)
       ? '<span class="filter-count-pill">Menampilkan <b>'+resultCount+'</b> dari <b>'+totalCount+'</b></span>'
       : '';
-    return '<div class="filter-bar">' + searchHtml + fieldsHtml + resetHtml + countHtml + '</div>';
+    return '<div class="filter-bar">' + searchHtml + '<div class="filter-controls-row">' + fieldsHtml + resetHtml + countHtml + '</div></div>';
   }
 
   /** Filter `rows` against `state.q` (checked across searchFields, case-insensitive substring)
@@ -5791,7 +5791,12 @@
     var ph = placeholder ? ' placeholder="'+escapeHtml(placeholder)+'"' : '';
     var reqMark = required ? '<span class="required-mark">*</span>' : '';
     var reqAttrs = required ? ' class="req-field" oninput="updateModalSaveState_()"' : '';
-    return '<div class="form-group"><label>'+label+reqMark+'</label><input type="'+type+'" id="'+id+'" value="'+escapeHtml(String(value))+'"'+ph+reqAttrs+'></div>';
+    var input = '<input type="'+type+'" id="'+id+'" value="'+escapeHtml(String(value))+'"'+ph+reqAttrs+'>';
+    // Field tanggal dibungkus dgn ikon kalender dekoratif di kiri — native picker Android/iOS
+    // tidak bisa di-styling langsung (OS yang gambar), jadi ikon ini murni visual supaya
+    // field tetap terlihat modern & konsisten di semua device, bukan cuma browser desktop.
+    if(type === 'date') input = '<div class="date-field-wrap">'+ICONS.calendar+input+'</div>';
+    return '<div class="form-group"><label>'+label+reqMark+'</label>'+input+'</div>';
   }
 
   /** Cek semua field bertanda wajib (class "req-field", ditandai "*" merah di label lewat
