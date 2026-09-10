@@ -2717,7 +2717,7 @@
       '<div class="promo-card-top">' +
         '<div class="promo-card-icon">'+ICONS.promo+'</div>' +
         '<div class="promo-card-heading">' +
-          '<div class="promo-card-name">'+escapeHtml(r.PromoName||'-')+'</div>' +
+          '<div class="promo-card-name" title="'+escapeHtml(r.PromoName||'-')+'">'+escapeHtml(r.PromoName||'-')+'</div>' +
           '<div class="promo-card-code">Kode: '+escapeHtml(r.PromoCode||'-')+'</div>' +
         '</div>' +
         statusBadge(r.EffectiveStatus) +
@@ -2792,12 +2792,40 @@
       message: 'Promo "'+promoName+'" akan dihapus permanen.',
       confirmLabel: 'Ya, Hapus', danger: true, icon: ICONS.trash,
       onConfirm: function(){
+        // Tampilkan skeleton loading di list segera setelah user konfirmasi, supaya tidak
+        // terlihat "diam saja" selama menunggu round-trip ke server — baru user tahu proses
+        // sedang berjalan lewat toast setelah selesai.
+        showListSkeleton_('promo-list', promoCardSkeletonHtml_);
         google.script.run.withSuccessHandler(function(res){
           if(res.success){ showToast('Promo dihapus.','success'); renderPromos(); }
-          else showToast(res.message||'Gagal menghapus.','error');
-        }).withFailureHandler(function(e){ handleBackendError(e); }).deletePromo(STATE.token, promoId);
+          else { showToast(res.message||'Gagal menghapus.','error'); renderPromos(); }
+        }).withFailureHandler(function(e){ handleBackendError(e); renderPromos(); }).deletePromo(STATE.token, promoId);
       }
     });
+  }
+
+  /** Ganti isi container list (by class) dengan beberapa skeleton card sementara menunggu
+      RPC selesai — dipakai untuk aksi yang butuh round-trip server (mis. hapus) supaya UI
+      tidak terlihat diam/beku sebelum toast hasil muncul. skeletonFn menghasilkan 1 kartu. */
+  function showListSkeleton_(containerClass, skeletonFn){
+    var wrap = document.querySelector('.'+containerClass);
+    if(!wrap) return;
+    var n = Math.max(wrap.children.length, 2);
+    var html = '';
+    for(var i=0;i<n;i++) html += skeletonFn();
+    wrap.innerHTML = html;
+  }
+
+  function promoCardSkeletonHtml_(){
+    return '<div class="promo-card skeleton-card">' +
+      '<div class="promo-card-top">' +
+        '<div class="skeleton-box" style="width:38px;height:38px;border-radius:10px;"></div>' +
+        '<div style="flex:1"><div class="skeleton-line" style="width:70%;height:14px;"></div><div class="skeleton-line" style="width:40%;height:11px;margin-top:6px;"></div></div>' +
+        '<div class="skeleton-box" style="width:64px;height:20px;border-radius:999px;"></div>' +
+      '</div>' +
+      '<div class="skeleton-line" style="width:100%;height:12px;"></div>' +
+      '<div class="skeleton-box" style="width:100%;height:32px;border-radius:8px;"></div>' +
+    '</div>';
   }
 
   // =============================================================
