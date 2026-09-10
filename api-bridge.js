@@ -38,31 +38,53 @@
       return;
     }
 
-    fetch(url, {
-      method: 'POST',
-      // text/plain sengaja dipakai (bukan application/json) supaya request tetap
-      // dianggap "simple request" oleh browser dan TIDAK memicu CORS preflight
-      // (OPTIONS) yang tidak didukung oleh endpoint Apps Script.
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ fn: fnName, args: args })
-    })
-      .then(function (res) {
-        if (!res.ok) throw new Error('HTTP ' + res.status + ' dari server.');
-        return res.json();
+    // RETRY OTOMATIS: Google Apps Script Web App kadang gagal di percobaan pertama
+    // dengan error CORS/"Failed to fetch" yang TIDAK disebabkan oleh kode kita, melainkan
+    // redirect internal script.google.com -> script.googleusercontent.com yang kadang
+    // tidak menyertakan header CORS pada percobaan pertama (terutama saat instance GAS
+    // baru "cold start"). Errornya acak & hilang sendiri kalau dicoba ulang, jadi solusi
+    // paling andal adalah retry singkat sebelum benar-benar melaporkan gagal ke pengguna.
+    var MAX_ATTEMPTS = 3;
+    var RETRY_DELAY_MS = 700; // jeda singkat sebelum coba lagi
+
+    function attempt(attemptNo) {
+      fetch(url, {
+        method: 'POST',
+        // text/plain sengaja dipakai (bukan application/json) supaya request tetap
+        // dianggap "simple request" oleh browser dan TIDAK memicu CORS preflight
+        // (OPTIONS) yang tidak didukung oleh endpoint Apps Script.
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ fn: fnName, args: args })
       })
-      .then(function (data) {
-        if (data && data.ok) {
-          if (onSuccess) onSuccess(data.result);
-        } else {
-          var msg = (data && data.error) ? data.error : 'Terjadi kesalahan pada server.';
-          if (onFailure) onFailure(new Error(msg));
-          else console.error('[api-bridge] ' + fnName + ' gagal:', msg);
-        }
-      })
-      .catch(function (err) {
-        if (onFailure) onFailure(err);
-        else console.error('[api-bridge] ' + fnName + ' error jaringan:', err);
-      });
+        .then(function (res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status + ' dari server.');
+          return res.json();
+        })
+        .then(function (data) {
+          if (data && data.ok) {
+            if (onSuccess) onSuccess(data.result);
+          } else {
+            var msg = (data && data.error) ? data.error : 'Terjadi kesalahan pada server.';
+            if (onFailure) onFailure(new Error(msg));
+            else console.error('[api-bridge] ' + fnName + ' gagal:', msg);
+          }
+        })
+        .catch(function (err) {
+          // Hanya retry untuk error jaringan/CORS ("Failed to fetch" / TypeError), BUKAN
+          // untuk error HTTP yang jelas (mis. HTTP 403/500) — itu tidak akan berubah
+          // dengan diulang, jadi langsung lapor ke pengguna supaya tidak menunggu sia-sia.
+          var isNetworkLikeError = (err instanceof TypeError) || /Failed to fetch|NetworkError|CORS/i.test(err && err.message || '');
+          if (isNetworkLikeError && attemptNo < MAX_ATTEMPTS) {
+            console.warn('[api-bridge] ' + fnName + ' percobaan ' + attemptNo + ' gagal (network/CORS), mencoba lagi...', err);
+            setTimeout(function () { attempt(attemptNo + 1); }, RETRY_DELAY_MS * attemptNo);
+            return;
+          }
+          if (onFailure) onFailure(err);
+          else console.error('[api-bridge] ' + fnName + ' error jaringan:', err);
+        });
+    }
+
+    attempt(1);
   }
 
   // Proxy chainable yang meniru API asli google.script.run:
