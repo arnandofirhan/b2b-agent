@@ -636,7 +636,16 @@
 
   .login-row-between{display:flex;align-items:center;justify-content:space-between;margin:-6px 0 22px;}
   .remember-check{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ag-gray-600);cursor:pointer;user-select:none;}
-  .remember-check input{width:15px;height:15px;accent-color:var(--ag-green);cursor:pointer;margin:0;}
+  .remember-check input{
+    width:15px;height:15px;cursor:pointer;margin:0;-webkit-appearance:none;appearance:none;
+    background:#fff;border:1.5px solid var(--ag-gray-300);border-radius:4px;position:relative;flex-shrink:0;
+    transition:background .15s,border-color .15s;
+  }
+  .remember-check input:checked{background:var(--ag-green);border-color:var(--ag-green);}
+  .remember-check input:checked::after{
+    content:'';position:absolute;left:4px;top:1px;width:4px;height:8px;
+    border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg);
+  }
   .login-forgot-link{font-size:12.5px;color:var(--ag-green);font-weight:600;text-decoration:none;background:none;border:none;cursor:pointer;padding:0;}
   .login-forgot-link:hover{text-decoration:underline;}
 
@@ -649,6 +658,14 @@
   @media (max-width:860px){
     .login-visual{display:none;}
     .login-form-side{padding:20px;}
+  }
+  @media (max-width:420px){
+    .login-form-side{padding:16px;}
+    .login-card{padding:30px 22px;max-width:100%;}
+    .login-heading{font-size:20px;}
+    .login-subheading{font-size:12.5px;margin-bottom:22px;}
+    .login-logo-appname{font-size:10.5px;letter-spacing:.02em;}
+    .form-group label{font-size:11px;}
   }
 
 
@@ -1852,6 +1869,20 @@
     z-index:10;box-shadow:0 -6px 14px -10px rgba(6,30,22,.25);
   }
   .reg-footer .btn{flex:1;}
+
+  /* Rapikan modal registrasi & field-row-2 di layar sempit (mobile) supaya
+     kolom Email / No. Telepon tidak sempit & terpotong seperti di layar lebar. */
+  @media (max-width:560px){
+    .reg-overlay{padding:0;align-items:flex-end;}
+    .reg-card{max-width:100%;max-height:94vh;border-radius:20px 20px 0 0;}
+    .reg-hero{padding:22px 20px 18px;}
+    .reg-hero-title{font-size:19px;}
+    .reg-hero-sub{font-size:12.5px;}
+    .reg-body{padding:20px 20px 8px;}
+    .reg-footer{padding:14px 20px 20px;}
+    .field-row-2{grid-template-columns:1fr;gap:0;}
+    .doc-grid{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));}
+  }
 
   /* Success popup */
   .success-overlay{
