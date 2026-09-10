@@ -1302,6 +1302,10 @@
   .commission-amount-label{font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--ag-green);}
   .commission-amount-sub{font-size:11.5px;color:var(--ag-gray-600);margin-top:2px;}
   .commission-amount-value{font-size:22px;font-weight:800;color:var(--ag-green);letter-spacing:-.01em;white-space:nowrap;}
+  @media (max-width:420px){
+    .commission-amount-card{flex-wrap:wrap;}
+    .commission-amount-value{font-size:19px;}
+  }
 
   /* Ringkasan "Bayarkan Komisi Ini?" — kartu konteks di dalam modal konfirmasi bayar
      (payCommissionAction), supaya staff lihat jelas SIAPA penerima & BERAPA nominalnya
@@ -1363,10 +1367,14 @@
   .commission-flow-hint svg{width:15px;height:15px;flex-shrink:0;}
   .commission-flow-hint.is-done{background:var(--ag-green-soft);color:var(--ag-green);}
   @media (max-width:640px){
-    .commission-flow{padding:14px 12px;}
-    .commission-flow-node{width:88px;}
-    .commission-flow-label{font-size:10.5px;}
+    .commission-flow{padding:14px 10px;overflow-x:visible;}
+    .commission-flow-node{width:auto;flex:1;min-width:0;}
+    .commission-flow-dot{width:26px;height:26px;font-size:11px;}
+    .commission-flow-dot svg{width:13px;height:13px;}
+    .commission-flow-label{font-size:10px;margin-top:6px;line-height:1.2;}
     .commission-flow-who{display:none;}
+    .commission-flow-connector{min-width:6px;margin-top:13px;}
+    .commission-flow-step{min-width:0;}
   }
 
   /* Document preview grid */
@@ -1725,11 +1733,14 @@
      renderTableOrCards_ di JavaScript.html) supaya tidak perlu scroll horizontal. */
   .data-card-list{display:none;flex-direction:column;gap:12px;margin-top:4px;}
   .data-card{border:1px solid var(--ag-gray-200);border-radius:var(--radius-md);padding:14px;background:var(--ag-surface);display:flex;flex-direction:column;gap:12px;}
-  .data-card-top{font-size:13.5px;font-weight:700;color:var(--ag-gray-900);}
+  .data-card-top{font-size:13.5px;font-weight:700;color:var(--ag-gray-900);display:flex;align-items:center;gap:10px;}
+  .data-card-thumb{width:40px;height:40px;border-radius:8px;flex-shrink:0;overflow:hidden;}
+  .data-card-thumb img{width:100%;height:100%;object-fit:cover;border-radius:8px;}
   .data-card-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;background:var(--ag-gray-50);border-radius:10px;padding:10px 12px;}
   .data-card-field{display:flex;flex-direction:column;gap:3px;min-width:0;}
   .data-card-field span{font-size:10px;color:var(--ag-gray-500);font-weight:700;text-transform:uppercase;letter-spacing:.03em;}
-  .data-card-field b{font-size:12.5px;font-weight:600;color:var(--ag-gray-800);overflow:hidden;text-overflow:ellipsis;white-space:normal;word-break:break-word;}
+  .data-card-field b{font-size:12.5px;font-weight:600;color:var(--ag-gray-800);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;}
+  .data-card-field.full-w{grid-column:1 / -1;}
   .data-card-actions{display:flex;justify-content:flex-end;gap:6px;flex-wrap:wrap;border-top:1px dashed var(--ag-gray-200);padding-top:10px;}
   @media (max-width:760px){
     .data-card-list{display:flex;}
