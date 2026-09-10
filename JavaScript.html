@@ -2700,28 +2700,34 @@
     ];
     var filtered = applyListFilters_(rows, FILTER_STATE_PROMOS_, ['PromoCode','PromoName','Description'], fieldConfigs);
     var filterHtml = filterBarHtml_('onFilterChangePromos_', 'Cari kode, nama, atau deskripsi promo...', fieldConfigs, FILTER_STATE_PROMOS_, filtered.length, rows.length);
-    var cols = [
-      {label:'Kode', field:'PromoCode'}, {label:'Nama', field:'PromoName'},
-      {label:'Deskripsi', render:function(r){
-        var d = r.Description || '-';
-        var short = d.length > 40 ? escapeHtml(d.slice(0,40)) + '…' : escapeHtml(d);
-        return '<span title="'+escapeHtml(d)+'">'+short+'</span>';
-      }},
-      {label:'Start Date', render:function(r){return formatDateDMY_(r.StartDate);}},
-      {label:'End Date', render:function(r){return formatDateDMY_(r.EndDate);}},
-      {label:'Status', render:function(r){return statusBadge(r.EffectiveStatus);}}
-    ];
     var canEdit = STATE.user.role === 'ADMIN';
-    var actions = function(r){
-      var view = 'viewPromo(\''+r.PromoID+'\')';
-      var edit = canEdit ? 'editPromo(\''+r.PromoID+'\')' : null;
-      var del = canEdit ? 'deletePromoConfirm(\''+r.PromoID+'\',\''+escapeHtml(r.PromoName||'').replace(/'/g,"\\'")+'\')' : null;
-      return rowActionButtons(view, edit, del);
-    };
-    return '<div class="card"><div class="table-toolbar"><span class="card-title">Promo</span>' +
-      (canEdit?'<button class="btn btn-primary btn-sm" onclick="editPromo(null)">'+ICONS.plus+' Tambah Promo</button>':'') +
-      '</div>' + filterHtml +
-      renderTable(cols, filtered, actions, rows.length ? 'Tidak ada promo yang cocok' : 'Belum ada promo', rows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'Buat promo pertama untuk mulai menarik Agent.', ICONS.promo) + '</div>';
+    var listHtml = filtered.length
+      ? '<div class="promo-list">' + filtered.map(function(r){ return promoCardHtml_(r, canEdit); }).join('') + '</div>'
+      : emptyState_(rows.length ? 'Tidak ada promo yang cocok' : 'Belum ada promo', rows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'Buat promo pertama untuk mulai menarik Agent.', ICONS.promo);
+    return '<div class="card"><div class="list-header">' +
+      '<span class="card-title">Promo</span>' +
+      (canEdit?'<button type="button" class="btn btn-primary btn-sm list-header-btn" onclick="editPromo(null)"><span class="btn-icon">'+ICONS.plus+'</span><span>Tambah Promo</span></button>':'') +
+      '</div>' + filterHtml + listHtml + '</div>';
+  }
+
+  function promoCardHtml_(r, canEdit){
+    var desc = r.Description ? escapeHtml(r.Description) : 'Tidak ada deskripsi.';
+    var view = 'viewPromo(\''+r.PromoID+'\')';
+    var edit = canEdit ? 'editPromo(\''+r.PromoID+'\')' : null;
+    var del = canEdit ? 'deletePromoConfirm(\''+r.PromoID+'\',\''+escapeHtml(r.PromoName||'').replace(/'/g,"\\'")+'\')' : null;
+    return '<div class="promo-card">' +
+      '<div class="promo-card-top">' +
+        '<div class="promo-card-icon">'+ICONS.promo+'</div>' +
+        '<div class="promo-card-heading">' +
+          '<div class="promo-card-name">'+escapeHtml(r.PromoName||'-')+'</div>' +
+          '<div class="promo-card-code">Kode: '+escapeHtml(r.PromoCode||'-')+'</div>' +
+        '</div>' +
+        statusBadge(r.EffectiveStatus) +
+      '</div>' +
+      '<div class="promo-card-desc">'+desc+'</div>' +
+      '<div class="promo-card-dates">'+ICONS.calendar+'<span>'+formatDateDMY_(r.StartDate)+' &ndash; '+formatDateDMY_(r.EndDate)+'</span></div>' +
+      '<div class="promo-card-actions">'+rowActionButtons(view, edit, del)+'</div>' +
+    '</div>';
   }
 
   function findPromo_(promoId){
