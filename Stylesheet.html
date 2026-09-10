@@ -1561,13 +1561,8 @@
   .filter-select-wrap:has(.filter-select.active)::after{border-color:var(--ag-green);}
   .filter-daterange{display:flex;align-items:center;gap:6px;flex:0 0 auto;}
   .filter-daterange input[type=date]{
-    padding:7px 12px;border:1px solid var(--ag-gray-200);border-radius:999px;font-size:13px;
-    color:var(--ag-gray-700);background:var(--ag-surface);font-weight:600;transition:border-color .12s ease,box-shadow .12s ease;
+    padding:7px 12px;font-size:13px;color:var(--ag-gray-700);font-weight:600;
   }
-  .filter-daterange input[type=date]:hover{border-color:var(--ag-gray-400);}
-  .filter-daterange input[type=date]:focus{outline:none;border-color:var(--ag-green);box-shadow:0 0 0 3px var(--ag-green-soft);}
-  .filter-daterange input[type=date]::-webkit-calendar-picker-indicator{cursor:pointer;opacity:.55;filter:invert(30%) sepia(15%) saturate(600%) hue-rotate(90deg);}
-  .filter-daterange input[type=date]::-webkit-calendar-picker-indicator:hover{opacity:.9;}
   .filter-daterange-sep{color:var(--ag-gray-400);font-size:11px;}
   .filter-reset-btn{
     display:flex;align-items:center;gap:5px;padding:8px 13px;border-radius:999px;border:1px solid transparent;
@@ -1583,16 +1578,40 @@
   }
   .filter-count-pill b{color:var(--ag-green);}
   @media (max-width: 720px){
-    /* Dulu flex-direction:column membuat setiap filter (search, dropdown, count)
-       jadi baris sendiri-sendiri dan makan banyak ruang vertikal. Sekarang tetap
-       row + wrap: search selalu full-width di barisnya sendiri (flex-basis:100%),
-       sisanya (dropdown, reset, count) menyusul di baris kedua yang lebih ringkas. */
-    .filter-bar{padding:9px 10px;gap:7px;margin:10px 0 14px;}
-    .filter-search{flex:1 1 100%;max-width:none;order:1;}
-    .filter-select-wrap{flex:1 1 auto;order:2;}
+    /* Search selalu full-width sendiri; sisanya (dropdown, reset, counter) dikelompokkan
+       dalam .filter-controls-row supaya presisi satu baris yang sama & tidak makan baris
+       ekstra terpisah-pisah seperti sebelumnya. */
+    .filter-bar{padding:9px 10px;gap:7px;margin:10px 0 14px;flex-direction:column;align-items:stretch;}
+    .filter-search{max-width:none;}
+    .filter-controls-row{flex-wrap:wrap;}
+    .filter-select-wrap{flex:1 1 auto;}
     .filter-select{width:100%;max-width:none;}
-    .filter-reset-btn{order:3;}
-    .filter-count-pill{order:4;margin-left:auto;}
+    .filter-count-pill{margin-left:auto;}
+  }
+  .filter-controls-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;width:100%;}
+
+  /* ---------- Date field dgn ikon kalender dekoratif (form modal & filter daterange) ----------
+     Native <input type=date> tidak bisa di-styling isinya di Android/iOS (OS yang gambar
+     picker-nya), jadi ikon di kiri ini murni dekoratif tapi konsisten di semua device —
+     inilah yang bikin field tanggal terlihat "modern", bukan cuma kotak kosong polos. */
+  .date-field-wrap{
+    position:relative;display:flex;align-items:center;
+    border:1px solid var(--ag-gray-200);border-radius:var(--radius-sm);background:var(--ag-surface);
+    transition:border-color .12s ease,box-shadow .12s ease;
+  }
+  .date-field-wrap:focus-within{border-color:var(--ag-green);box-shadow:0 0 0 3px var(--ag-green-soft);}
+  .date-field-wrap svg{width:16px;height:16px;flex-shrink:0;margin-left:11px;color:var(--ag-green);pointer-events:none;}
+  .date-field-wrap input[type=date]{
+    border:none!important;background:transparent!important;box-shadow:none!important;flex:1;min-width:0;
+  }
+  .date-field-wrap input[type=date]:focus{background:transparent!important;}
+  .date-field-wrap--sm{border-radius:999px;}
+  .date-field-wrap--sm svg{width:14px;height:14px;margin-left:12px;}
+  .date-field-wrap--sm input[type=date]{padding:7px 10px 7px 8px;font-size:13px;}
+  .filter-daterange{display:flex;align-items:center;gap:6px;flex:1 1 auto;min-width:0;}
+  .filter-daterange .date-field-wrap--sm{flex:1;min-width:0;}
+  @media (max-width: 720px){
+    .filter-daterange{flex:1 1 100%;}
   }
 
   /* ---------- Promo — modern card list (menggantikan tabel supaya tidak ada
