@@ -1,36 +1,62 @@
 /*************************************************************
- * api-bridge.js  (B2B — diperkuat, meniru pola SO yang sudah lancar)
+ * api-bridge.js  (B2B — dengan antrian concurrency-limit)
  * -------------------------------------------------------------
  * Menjadikan "google.script.run" bisa dipakai APA ADANYA di
  * JavaScript.html, padahal halaman ini di-hosting sebagai situs
  * statis (GitHub Pages) — bukan dari domain script.google.com.
  *
- * PENTING — BACA DULU SEBELUM DEBUG LEBIH LANJUT:
- * Error "CORS: No Access-Control-Allow-Origin" yang muncul di
- * Console TAPI request-nya terlihat sebagai GET (bukan POST yang
- * sebenarnya kita kirim) ini adalah TANDA KHAS bahwa GAS
- * me-redirect (302) request kita ke halaman lain (biasanya
- * halaman login Google) SEBELUM sempat sampai ke doPost().
- * Browser mengubah method jadi GET & membuang body saat redirect
- * 302 terjadi pada request non-GET — itulah kenapa terlihat "GET"
- * di Network tab padahal kode ini selalu fetch(..., {method:'POST'}).
+ * -------------------------------------------------------------
+ * RIWAYAT DEBUG (baca kalau nanti error serupa muncul lagi):
+ * -------------------------------------------------------------
+ * GEJALA #1 (SUDAH FIX): CORS error yang request-nya kelihatan
+ * sebagai GET padahal kode selalu fetch(...,{method:'POST'}), dan
+ * hanya terjadi SEKALI/konsisten di awal — itu tanda deployment
+ * /exec belum di-update ke versi kode terbaru, atau setelan
+ * "Who has access"/"Execute as" salah. FIX: redeploy versi baru,
+ * pastikan Execute as: Me, Who has access: Anyone.
  *
- * Penyebabnya BUKAN di file ini, tapi di deployment Web App GAS:
- *   1) Deployment /exec BELUM di-update ke versi kode terbaru
- *      (harus: Deploy > Manage deployments > pencil icon > Version:
- *      New version > Deploy — bukan cuma Ctrl+S di editor).
- *   2) Who has access BUKAN "Anyone" (harus "Anyone", bukan
- *      "Anyone with Google account" — yang terakhir ini memicu
- *      redirect ke accounts.google.com untuk request non-login).
- *   3) Execute as HARUS "Me" (pemilik script), bukan "User accessing
- *      the web app".
- * Cek ketiga hal ini dulu di GAS project B2B kalau error CORS masih
- * muncul walau file ini sudah benar.
+ * GEJALA #2 (DIPERBAIKI DI FILE INI): CORS error / 302 yang
+ * muncul ACAK — hanya sebagian request gagal, sisanya sukses,
+ * dan di Network tab kelihatan PULUHAN request ke /exec menembak
+ * BERSAMAAN (mis. saat preloadAllPages_() di JavaScript.html
+ * merender >10 halaman sekaligus setelah login). Ini BUKAN
+ * masalah CORS/izin, melainkan Web App GAS overload karena
+ * dikirimi request simultan melebihi kuota eksekusi paralel-nya
+ * — sebagian request ditolak/di-throttle GAS di tengah jalan
+ * sehingga responsnya tidak sempat membawa header CORS, dan
+ * browser salah melaporkannya sebagai "CORS error".
+ * FIX: file ini membatasi jumlah request yang boleh berjalan
+ * BERSAMAAN lewat antrian (lihat MAX_CONCURRENT). Semua
+ * pemanggilan google.script.run.namaFungsi(...) yang sudah ada
+ * di JavaScript.html TIDAK PERLU diubah — antrian ini transparan.
  *************************************************************/
 (function (global) {
   'use strict';
 
   var REQUEST_TIMEOUT_MS = 60000;
+
+  // Maksimal request ke GAS yang boleh berjalan BERSAMAAN. Sisanya otomatis
+  // diantre dan baru dijalankan begitu ada slot kosong. 4 dipilih supaya
+  // aman di bawah kuota eksekusi simultan Web App GAS, tapi tetap terasa
+  // cepat walau ada belasan halaman di-preload sekaligus saat login.
+  var MAX_CONCURRENT = 4;
+  var activeCount_ = 0;
+  var queue_ = [];
+
+  function runNext_() {
+    if (activeCount_ >= MAX_CONCURRENT || queue_.length === 0) return;
+    var job = queue_.shift();
+    activeCount_++;
+    job(function done() {
+      activeCount_--;
+      runNext_();
+    });
+  }
+
+  function enqueue_(job) {
+    queue_.push(job);
+    runNext_();
+  }
 
   function resolveExecUrl() {
     var url = global.GAS_EXEC_URL || global.SO_APP_URL || global.SO_WEBAPP_URL;
@@ -47,76 +73,79 @@
       return;
     }
 
-    // RETRY OTOMATIS hanya untuk error jaringan murni (bukan untuk error
-    // deployment/akses — itu tidak akan hilang dengan diulang, jadi
-    // langsung dilaporkan supaya tidak menunggu sia-sia).
+    // RETRY OTOMATIS hanya untuk error jaringan murni (bukan error
+    // deployment/akses — itu tidak akan hilang dengan diulang).
     var MAX_ATTEMPTS = 3;
     var RETRY_DELAY_MS = 700;
 
-    function attempt(attemptNo) {
-      var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-      var timer = controller ? setTimeout(function () { controller.abort(); }, REQUEST_TIMEOUT_MS) : null;
+    enqueue_(function (jobDone) {
+      function attempt(attemptNo) {
+        var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        var timer = controller ? setTimeout(function () { controller.abort(); }, REQUEST_TIMEOUT_MS) : null;
 
-      var fetchOpts = {
-        method: 'POST',
-        // text/plain sengaja dipakai (bukan application/json) supaya request
-        // dianggap "simple request" oleh browser dan TIDAK memicu CORS
-        // preflight (OPTIONS) yang tidak didukung endpoint Apps Script.
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ fn: fnName, args: args }),
-        redirect: 'follow'
-      };
-      if (controller) fetchOpts.signal = controller.signal;
+        var fetchOpts = {
+          method: 'POST',
+          // text/plain sengaja dipakai (bukan application/json) supaya request
+          // dianggap "simple request" oleh browser dan TIDAK memicu CORS
+          // preflight (OPTIONS) yang tidak didukung endpoint Apps Script.
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ fn: fnName, args: args }),
+          redirect: 'follow'
+        };
+        if (controller) fetchOpts.signal = controller.signal;
 
-      fetch(url, fetchOpts)
-        .then(function (res) {
-          if (timer) clearTimeout(timer);
-          if (!res.ok) throw new Error('HTTP ' + res.status + ' dari server.');
-          return res.text();
-        })
-        .then(function (text) {
-          var data;
-          try {
-            data = JSON.parse(text);
-          } catch (parseErr) {
-            // Respons bukan JSON = hampir pasti bukan doPost() kita yang
-            // menjawab, melainkan halaman lain (login Google / error GAS).
-            // Ini pertanda deployment/akses Web App salah — lihat catatan
-            // di atas file ini.
-            throw new Error(
-              'Respons server bukan JSON (kemungkinan deployment/akses ' +
-              'Web App GAS belum benar — cek "Who has access: Anyone" & ' +
-              '"Execute as: Me", lalu deploy versi baru).'
-            );
-          }
-          if (data && data.ok) {
-            if (onSuccess) onSuccess(data.result);
-          } else {
-            var msg = (data && data.error) ? data.error : 'Terjadi kesalahan pada server.';
-            if (onFailure) onFailure(new Error(msg));
-            else console.error('[api-bridge] ' + fnName + ' gagal:', msg);
-          }
-        })
-        .catch(function (err) {
-          if (timer) clearTimeout(timer);
-          if (err && err.name === 'AbortError') {
-            if (onFailure) onFailure(new Error('TIMEOUT: server tidak merespons dalam ' + (REQUEST_TIMEOUT_MS / 1000) + ' detik.'));
-            else console.error('[api-bridge] ' + fnName + ' timeout.');
-            return;
-          }
+        fetch(url, fetchOpts)
+          .then(function (res) {
+            if (timer) clearTimeout(timer);
+            if (!res.ok) throw new Error('HTTP ' + res.status + ' dari server.');
+            return res.text();
+          })
+          .then(function (text) {
+            var data;
+            try {
+              data = JSON.parse(text);
+            } catch (parseErr) {
+              // Respons bukan JSON = hampir pasti bukan doPost() kita yang
+              // menjawab, melainkan halaman lain (login Google / error GAS).
+              // Pertanda deployment/akses Web App salah — lihat catatan file.
+              throw new Error(
+                'Respons server bukan JSON (kemungkinan deployment/akses ' +
+                'Web App GAS belum benar — cek "Who has access: Anyone" & ' +
+                '"Execute as: Me", lalu deploy versi baru).'
+              );
+            }
+            jobDone();
+            if (data && data.ok) {
+              if (onSuccess) onSuccess(data.result);
+            } else {
+              var msg = (data && data.error) ? data.error : 'Terjadi kesalahan pada server.';
+              if (onFailure) onFailure(new Error(msg));
+              else console.error('[api-bridge] ' + fnName + ' gagal:', msg);
+            }
+          })
+          .catch(function (err) {
+            if (timer) clearTimeout(timer);
+            if (err && err.name === 'AbortError') {
+              jobDone();
+              if (onFailure) onFailure(new Error('TIMEOUT: server tidak merespons dalam ' + (REQUEST_TIMEOUT_MS / 1000) + ' detik.'));
+              else console.error('[api-bridge] ' + fnName + ' timeout.');
+              return;
+            }
 
-          var isNetworkLikeError = (err instanceof TypeError) || /Failed to fetch|NetworkError|CORS/i.test(err && err.message || '');
-          if (isNetworkLikeError && attemptNo < MAX_ATTEMPTS) {
-            console.warn('[api-bridge] ' + fnName + ' percobaan ' + attemptNo + ' gagal (network/CORS), mencoba lagi...', err);
-            setTimeout(function () { attempt(attemptNo + 1); }, RETRY_DELAY_MS * attemptNo);
-            return;
-          }
-          if (onFailure) onFailure(err);
-          else console.error('[api-bridge] ' + fnName + ' error jaringan:', err);
-        });
-    }
+            var isNetworkLikeError = (err instanceof TypeError) || /Failed to fetch|NetworkError|CORS/i.test(err && err.message || '');
+            if (isNetworkLikeError && attemptNo < MAX_ATTEMPTS) {
+              console.warn('[api-bridge] ' + fnName + ' percobaan ' + attemptNo + ' gagal (network/CORS), mencoba lagi...', err);
+              setTimeout(function () { attempt(attemptNo + 1); }, RETRY_DELAY_MS * attemptNo);
+              return;
+            }
+            jobDone();
+            if (onFailure) onFailure(err);
+            else console.error('[api-bridge] ' + fnName + ' error jaringan:', err);
+          });
+      }
 
-    attempt(1);
+      attempt(1);
+    });
   }
 
   // Proxy chainable yang meniru API asli google.script.run:
