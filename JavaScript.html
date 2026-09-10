@@ -1273,6 +1273,40 @@
     return html;
   }
 
+  /** Render tabel sekaligus versi kartu (auto tampil di layar sempit lewat CSS, lihat
+   *  .table-scroll / .data-card-list di Stylesheet.html) — supaya menu dengan banyak kolom
+   *  (Agent, Store, Product, Commission, Skema Komisi) tidak perlu scroll horizontal di HP,
+   *  konsisten dengan pola kartu yang sudah dipakai di Transaksi/PO. `columns` dipakai utk
+   *  tabel; `cardFields` (subset kolom, tanpa No./Aksi) dipakai utk isi grid kartu. Kolom
+   *  pertama yang punya `titleCol:true` dipakai sbg judul/header kartu (mis. Nama/ID).
+   */
+  function renderTableOrCards_(columns, rows, rowActionsFn, emptyTitle, emptySub, emptyIcon, opts){
+    if(!rows.length) return emptyState_(emptyTitle, emptySub, emptyIcon);
+    opts = opts || {};
+    var tableHtml = renderTable(columns, rows, rowActionsFn, emptyTitle, emptySub, emptyIcon)
+      .replace('class="table-scroll"', 'class="table-scroll table-scroll-has-cards"');
+    var titleCol = null, fieldCols = [];
+    columns.forEach(function(c){
+      if(c.titleCol && !titleCol){ titleCol = c; return; }
+      if(c.skipCard || c.label === 'No.') return;
+      fieldCols.push(c);
+    });
+    var cardsHtml = '<div class="data-card-list">' + rows.map(function(row, idx){
+      var titleHtml = titleCol ? (titleCol.render ? titleCol.render(row, idx) : escapeHtml(row[titleCol.field]==null?'':row[titleCol.field])) : '';
+      var fieldsHtml = fieldCols.map(function(c){
+        var val = c.render ? c.render(row, idx) : escapeHtml(row[c.field] == null ? '' : row[c.field]);
+        return '<div class="data-card-field"><span>'+c.label+'</span><b>'+val+'</b></div>';
+      }).join('');
+      var actionsHtml = rowActionsFn ? '<div class="data-card-actions">'+rowActionsFn(row)+'</div>' : '';
+      return '<div class="data-card">' +
+        (titleHtml ? '<div class="data-card-top">'+titleHtml+'</div>' : '') +
+        '<div class="data-card-grid">'+fieldsHtml+'</div>' +
+        actionsHtml +
+      '</div>';
+    }).join('') + '</div>';
+    return tableHtml + cardsHtml;
+  }
+
   /** Terjemahan label status di seluruh app (Agent, PO, MOU, Komisi, dll) — satu sumber
    *  kebenaran dipakai bareng oleh statusBadge() (badge di tabel/kartu) dan uniqueOptions_()
    *  (opsi dropdown filter), supaya istilah yang sama tidak tampil beda-beda di tempat
@@ -1336,7 +1370,7 @@
     var cols = [
       {label:'No.', render:function(r,i){ return String(i+1); }},
       {label:'Agent ID', render:function(r){ return '<span class="id-chip">'+escapeHtml(r.AgentID||'-')+'</span>'; }},
-      {label:'Nama', render:function(r){
+      {label:'Nama', titleCol:true, render:function(r){
         var initials = (r.FullName||'?').trim().split(/\s+/).slice(0,2).map(function(w){return w.charAt(0).toUpperCase();}).join('') || '?';
         return '<div class="cell-person"><div class="cell-person-avatar">'+escapeHtml(initials)+'</div>' +
           '<span class="cell-person-name">'+escapeHtml(r.FullName||'-')+'</span></div>';
@@ -1377,7 +1411,7 @@
     };
     return '<div class="card"><div class="card-header"><span class="card-title">Daftar Agent</span></div>' +
       filterHtml +
-      renderTable(cols, filtered, actions, rows.length ? 'Tidak ada agent yang cocok' : 'Belum ada agent', rows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'Agent yang mendaftar akan muncul di sini untuk direview.', ICONS.agent) + '</div>';
+      renderTableOrCards_(cols, filtered, actions, rows.length ? 'Tidak ada agent yang cocok' : 'Belum ada agent', rows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'Agent yang mendaftar akan muncul di sini untuk direview.', ICONS.agent) + '</div>';
   }
 
   function renderAgents(){
@@ -2456,12 +2490,12 @@
     var filterHtml = filterBarHtml_('onFilterChangeProducts_', 'Cari nama produk, kategori, atau packaging...', fieldConfigs, FILTER_STATE_PRODUCTS_, filtered.length, rows.length);
     var cols = [
       {label:'No.', render:function(r,i){ return String(i+1); }},
-      {label:'Gambar', render:function(r){
+      {label:'Gambar', skipCard:true, render:function(r){
         return r.ImageURL
           ? '<img src="'+escapeHtml(r.ImageURL)+'" style="width:40px;height:40px;object-fit:cover;border-radius:8px;border:1px solid var(--ag-gray-200);">'
           : '<div style="width:40px;height:40px;border-radius:8px;background:var(--ag-gray-100);display:flex;align-items:center;justify-content:center;color:var(--ag-gray-400);">'+ICONS.products+'</div>';
       }},
-      {label:'Product Item', render:function(r){
+      {label:'Product Item', titleCol:true, render:function(r){
         return '<strong>'+escapeHtml(r.ProductName||'')+'</strong>';
       }},
       {label:'Category', render:function(r){ return r.Category ? escapeHtml(r.Category) : '-'; }},
@@ -2479,7 +2513,7 @@
     return '<div class="card"><div class="table-toolbar"><span class="card-title">Master Item Product</span>' +
       (canEdit ? '<button class="btn btn-primary btn-sm" onclick="editProduct(null)">'+ICONS.plus+' Tambah Produk</button>' : '') +
       '</div>' + filterHtml +
-      renderTable(cols, filtered, actions, rows.length ? 'Tidak ada produk yang cocok' : 'Belum ada produk', rows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'Klik "Tambah Produk" untuk menambahkan item pertama Anda.', ICONS.products) + '</div>';
+      renderTableOrCards_(cols, filtered, actions, rows.length ? 'Tidak ada produk yang cocok' : 'Belum ada produk', rows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'Klik "Tambah Produk" untuk menambahkan item pertama Anda.', ICONS.products) + '</div>';
   }
 
   /** Daftar Category yang sudah pernah dipakai di produk lain, dipakai sebagai saran
@@ -2856,7 +2890,7 @@
     var filterHtml = filterBarHtml_('onFilterChangeStores_', 'Cari nama store, PIC, atau telepon...', fieldConfigs, FILTER_STATE_STORES_, filtered.length, rows.length);
     var cols = [
       {label:'No.', render:function(r,i){ return String(i+1); }},
-      {label:'Store ID', field:'StoreID'}, {label:'Nama Store', field:'StoreName'},
+      {label:'Store ID', field:'StoreID'}, {label:'Nama Store', titleCol:true, field:'StoreName'},
       {label:'Alamat', render:function(r){
         var d = r.Address || '-';
         var short = d.length > 35 ? escapeHtml(d.slice(0,35)) + '…' : escapeHtml(d);
@@ -2876,7 +2910,7 @@
     return '<div class="card"><div class="table-toolbar"><span class="card-title">Store Management</span>' +
       (canEdit?'<button class="btn btn-primary btn-sm" onclick="editStore(null)">'+ICONS.plus+' Tambah Store</button>':'') +
       '</div>' + filterHtml +
-      renderTable(cols, filtered, actions, rows.length ? 'Tidak ada store yang cocok' : 'Belum ada store', rows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'Tambahkan store pertama Anda.', ICONS.stores) + '</div>';
+      renderTableOrCards_(cols, filtered, actions, rows.length ? 'Tidak ada store yang cocok' : 'Belum ada store', rows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'Tambahkan store pertama Anda.', ICONS.stores) + '</div>';
   }
 
   function findStore_(storeId){
@@ -4659,7 +4693,7 @@
     var filtered = applyListFilters_(rows, FILTER_STATE_COMMISSIONS_, ['CommissionID','OrderID'], fieldConfigs);
     var filterHtml = filterBarHtml_('onFilterChangeCommissions_', 'Cari Commission ID atau Order ID...', fieldConfigs, FILTER_STATE_COMMISSIONS_, filtered.length, rows.length);
     var cols = [
-      {label:'Commission ID', render:function(r){return '<span class="mono-id">'+escapeHtml(r.CommissionID)+'</span>';}},
+      {label:'Commission ID', titleCol:true, render:function(r){return '<span class="mono-id">'+escapeHtml(r.CommissionID)+'</span>';}},
       {label:'Order', render:function(r){return '<span class="mono-id">'+escapeHtml(r.OrderID)+'</span>';}}
     ];
     // Kolom Agent cuma relevan buat role yang mengelola banyak Agent — utk role AGENT sendiri
@@ -4712,7 +4746,7 @@
     return kpisHtml + '<div class="card"><div class="card-header"><span class="card-title">Commission</span></div>' +
       (STATE.user.role==='AGENT' ? '<p style="font-size:12px;color:var(--ag-gray-600);margin-top:-8px;">Klaim komisi cut-off setiap tanggal 15.</p>' : '') +
       filterHtml +
-      renderTable(cols, filtered, actions, rows.length ? 'Tidak ada komisi yang cocok' : 'Belum ada komisi', rows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'Komisi muncul otomatis setelah pembayaran pelanggan tercatat.', ICONS.commission) + '</div>';
+      renderTableOrCards_(cols, filtered, actions, rows.length ? 'Tidak ada komisi yang cocok' : 'Belum ada komisi', rows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'Komisi muncul otomatis setelah pembayaran pelanggan tercatat.', ICONS.commission) + '</div>';
   }
 
   function renderCommissions(){
@@ -5014,7 +5048,7 @@
       SCHEME_CACHE = rows;
       var canEdit = STATE.user.role === 'ADMIN';
       var cols = [
-        {label:'Label', field:'Label'},
+        {label:'Label', titleCol:true, field:'Label'},
         {label:'Min Diskon', render:function(r){return r.MinDiscountPct+'%';}},
         {label:'Maks Diskon', render:function(r){return r.MaxDiscountPct+'%';}},
         {label:'Komisi', render:function(r){return '<strong>'+r.CommissionPct+'%</strong>';}},
@@ -5028,7 +5062,7 @@
       var html =
         '<div class="card"><div class="table-toolbar"><span class="card-title">Skema Komisi (Commercial Scheme)</span>' +
         (canEdit ? '<button class="btn btn-primary btn-sm" onclick="editScheme(null)">'+ICONS.plus+' Tambah Skema</button>' : '') +
-        '</div>' + renderTable(cols, rows, actions, 'Belum ada skema komisi', 'Tambahkan skema sesuai rentang diskon pada MOU Pasal 4.', ICONS.scheme) +
+        '</div>' + renderTableOrCards_(cols, rows, actions, 'Belum ada skema komisi', 'Tambahkan skema sesuai rentang diskon pada MOU Pasal 4.', ICONS.scheme) +
         '<p style="font-size:11.5px;color:var(--ag-gray-400);margin:14px 2px 0;">Referensi MOU Pasal 4: Full Price 10%, Diskon &le;3% &rarr; 7%, &gt;3-5% &rarr; 5%, &gt;5-10% &rarr; 3%.</p>' +
         '</div>';
       paintPage_('commission-scheme', html);
