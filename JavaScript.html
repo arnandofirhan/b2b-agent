@@ -6859,6 +6859,9 @@
     }
   }
 
+  var NOTIF_DROPDOWN_LIMIT_ = 8; // maks notif yang tampil sebelum "Lihat Semua"
+  var notifSeeAllExpanded_ = false;
+
   function toggleNotifDropdown_(){
     var dd = document.getElementById('notifDropdown');
     if(!dd) return;
@@ -6866,6 +6869,7 @@
     document.querySelectorAll('.user-menu-dropdown.show, .notif-dropdown.show').forEach(function(el){ el.classList.remove('show'); });
     if(willOpen){
       dd.classList.add('show');
+      notifSeeAllExpanded_ = false;
       renderNotifDropdownList_();
     }
   }
@@ -6874,16 +6878,27 @@
     if(dd) dd.classList.remove('show');
   }
 
+  function toggleNotifSeeAll_(){
+    notifSeeAllExpanded_ = !notifSeeAllExpanded_;
+    renderNotifDropdownList_();
+  }
+
   var NOTIF_TYPE_COLOR_ = { success:'#1E7A4C', danger:'#E24C4C', warning:'#F2994A', orange:'#F2994A', info:'#2F80ED' };
 
   function renderNotifDropdownList_(){
     var box = document.getElementById('notifDropdownList');
+    var footer = document.getElementById('notifDropdownFooter');
+    var seeAllBtn = document.getElementById('notifSeeAllBtn');
     if(!box) return;
     if(!NOTIF_STATE_.items.length){
       box.innerHTML = '<div class="notif-empty">Tidak ada notifikasi baru.</div>';
+      if(footer) footer.style.display = 'none';
       return;
     }
-    box.innerHTML = NOTIF_STATE_.items.map(function(n){
+    var total = NOTIF_STATE_.items.length;
+    var showAll = notifSeeAllExpanded_ || total <= NOTIF_DROPDOWN_LIMIT_;
+    var visible = showAll ? NOTIF_STATE_.items : NOTIF_STATE_.items.slice(0, NOTIF_DROPDOWN_LIMIT_);
+    box.innerHTML = visible.map(function(n){
       var color = NOTIF_TYPE_COLOR_[n.type] || '#8A94A6';
       var isUnseen = !NOTIF_STATE_.seen[n.id];
       return '<div class="notif-row'+(isUnseen?' notif-row-unseen':'')+'" onclick="onNotifClick_(\''+n.id+'\',\''+n.poId+'\')">' +
@@ -6891,6 +6906,14 @@
         '<div class="notif-row-body"><div class="notif-row-title">'+escapeHtml(n.title)+'</div><div class="notif-row-msg">'+escapeHtml(n.message)+'</div></div>' +
       '</div>';
     }).join('');
+    if(footer && seeAllBtn){
+      if(total > NOTIF_DROPDOWN_LIMIT_){
+        footer.style.display = 'block';
+        seeAllBtn.textContent = showAll ? 'Sembunyikan' : 'Lihat Semua ('+total+')';
+      } else {
+        footer.style.display = 'none';
+      }
+    }
   }
 
   function onNotifClick_(id, poId){
