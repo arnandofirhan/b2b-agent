@@ -1210,9 +1210,7 @@
         }).join('');
       return '<div class="filter-select-wrap"><select class="filter-select'+(isActive?' active':'')+'" onchange="'+onChangeFn+'(\''+f.key+'\', this.value)">'+opts+'</select></div>';
     }).join('');
-    var resetHtml = hasAnyActive
-      ? '<button type="button" class="filter-reset-btn" onclick="'+onChangeFn+'(\'__RESET__\', null)">'+FILTER_ICON_RESET_+' Reset</button>'
-      : '';
+    var resetHtml = '<button type="button" class="filter-reset-btn'+(hasAnyActive?'':' filter-reset-btn--hidden')+'" onclick="'+onChangeFn+'(\'__RESET__\', null)">'+FILTER_ICON_RESET_+' Reset</button>';
     var countHtml = (totalCount != null)
       ? '<span class="filter-count-pill">Menampilkan <b>'+resultCount+'</b> dari <b>'+totalCount+'</b></span>'
       : '';
@@ -2999,6 +2997,39 @@
     if(PO_LAST_RENDER_ARGS_) renderPOTable_(PO_LAST_RENDER_ARGS_.rows, PO_LAST_RENDER_ARGS_.canCreatePO, PO_LAST_RENDER_ARGS_.agentMap);
   }
 
+  function poCardHtml_(r, agentMap, actionsFn){
+    var agentBlock;
+    if(agentMap){
+      var a = agentMap[r.AgentID];
+      agentBlock = a
+        ? '<div class="po-card-agent-name">'+escapeHtml(a.FullName||r.AgentID)+'</div><div class="po-card-agent-sub">'+escapeHtml(r.AgentID)+' &middot; '+escapeHtml(a.Phone||a.Email||'-')+'</div>'
+        : '<div class="po-card-agent-name">'+escapeHtml(r.AgentID)+'</div>';
+    } else {
+      agentBlock = '<div class="po-card-agent-name">'+escapeHtml(r.AgentID)+'</div>';
+    }
+    var promoHtml = r.PromoName
+      ? '<span title="'+escapeHtml(r.PromoName)+'">'+escapeHtml(r.PromoName.length>22?r.PromoName.slice(0,22)+'…':r.PromoName)+'</span>'
+      : '<span class="badge badge-neutral">Tanpa Promo</span>';
+    var approvedDiscHtml = (r.ApprovedDiscount!=='' && r.ApprovedDiscount!=null)
+      ? '<span class="badge badge-green">'+r.ApprovedDiscount+'%</span>' : '<span class="badge badge-neutral">-</span>';
+    return '<div class="po-card">' +
+      '<div class="po-card-top">' +
+        '<div><div class="po-card-id">'+escapeHtml(r.POID)+'</div>'+agentBlock+'</div>' +
+        statusBadge(poDisplayStatus_(r)) +
+      '</div>' +
+      '<div class="po-card-grid">' +
+        '<div class="po-card-field"><span>Tanggal</span><b>'+(r.CreatedAt?formatDateDMY_(r.CreatedAt):'-')+'</b></div>' +
+        '<div class="po-card-field"><span>Promo</span><b>'+promoHtml+'</b></div>' +
+        '<div class="po-card-field"><span>Diskon Diminta</span><b><span class="badge badge-neutral">'+r.RequestedDiscount+'%</span></b></div>' +
+        '<div class="po-card-field"><span>Diskon Disetujui</span><b>'+approvedDiscHtml+'</b></div>' +
+      '</div>' +
+      '<div class="po-card-bottom">' +
+        '<div class="po-card-total"><span>Total</span><b>'+formatRupiah(r.GrandTotal)+'</b></div>' +
+        actionsFn(r) +
+      '</div>' +
+    '</div>';
+  }
+
   function renderPOTable_(rows, canCreatePO, agentMap){
       PO_LAST_RENDER_ARGS_ = { rows:rows, canCreatePO:canCreatePO, agentMap:agentMap };
       var fieldConfigs = [
@@ -3104,8 +3135,8 @@
       var buatPOBtn = '';
       if(isAgent){
         buatPOBtn = canCreatePO
-          ? '<button class="btn btn-primary btn-sm" onclick="newPOForm()">'+ICONS.plus+' Buat PO</button>'
-          : '<button class="btn btn-primary btn-sm" disabled title="Lengkapi tanda tangan MOU terlebih dahulu" style="opacity:.5;cursor:not-allowed;">'+ICONS.plus+' Buat PO</button>';
+          ? '<button type="button" class="btn btn-primary btn-sm list-header-btn" onclick="newPOForm()"><span class="btn-icon">'+ICONS.plus+'</span><span>Buat PO</span></button>'
+          : '<button type="button" class="btn btn-primary btn-sm list-header-btn" disabled title="Lengkapi tanda tangan MOU terlebih dahulu" style="opacity:.5;cursor:not-allowed;"><span class="btn-icon">'+ICONS.plus+'</span><span>Buat PO</span></button>';
       }
       var lockedNotice = (isAgent && !canCreatePO)
         ? '<div class="po-lock-card">' +
@@ -3117,10 +3148,12 @@
             '<a href="#" class="btn btn-primary btn-sm" onclick="showPage(\'agents\');return false;">Buka Profil Saya</a>' +
           '</div>'
         : '';
+      var listHtml = filtered.length
+        ? '<div class="po-list">' + filtered.map(function(r){ return poCardHtml_(r, agentMap, actions); }).join('') + '</div>'
+        : emptyState_(rows.length ? 'Tidak ada PO yang cocok' : 'Belum ada transaksi', rows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'PO yang dibuat Agent akan muncul di sini.', ICONS.transactions);
       var html =
-        '<div class="card"><div class="table-toolbar"><span class="card-title">Transaksi / PO</span>' + buatPOBtn +
-        '</div>' + lockedNotice + filterHtml +
-        renderTable(cols, filtered, actions, rows.length ? 'Tidak ada PO yang cocok' : 'Belum ada transaksi', rows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'PO yang dibuat Agent akan muncul di sini.', ICONS.transactions) + '</div>';
+        '<div class="card"><div class="list-header"><span class="card-title">Transaksi / PO</span>' + buatPOBtn +
+        '</div>' + lockedNotice + filterHtml + listHtml + '</div>';
       paintPage_('transactions', html);
       PO_CACHE = rows;
   }
