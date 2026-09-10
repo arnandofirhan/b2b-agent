@@ -1582,7 +1582,7 @@
        dalam .filter-controls-row supaya presisi satu baris yang sama & tidak makan baris
        ekstra terpisah-pisah seperti sebelumnya. */
     .filter-bar{padding:9px 10px;gap:7px;margin:10px 0 14px;flex-direction:column;align-items:stretch;}
-    .filter-search{max-width:none;}
+    .filter-search{max-width:none;flex:0 0 auto;}
     .filter-controls-row{flex-wrap:wrap;}
     .filter-select-wrap{flex:1 1 auto;}
     .filter-select{width:100%;max-width:none;}
@@ -1608,11 +1608,27 @@
   .date-field-wrap--sm{border-radius:999px;}
   .date-field-wrap--sm svg{width:14px;height:14px;margin-left:12px;}
   .date-field-wrap--sm input[type=date]{padding:7px 10px 7px 8px;font-size:13px;}
+  .date-field-wrap.has-placeholder-ghost{position:relative;}
+  .date-field-ghost{
+    position:absolute;left:37px;top:50%;transform:translateY(-50%);
+    font-size:13px;color:var(--ag-gray-400);pointer-events:none;font-weight:500;
+  }
+  .date-field-wrap--sm .date-field-ghost{left:32px;font-size:12.5px;}
   .filter-daterange{display:flex;align-items:center;gap:6px;flex:1 1 auto;min-width:0;}
   .filter-daterange .date-field-wrap--sm{flex:1;min-width:0;}
   @media (max-width: 720px){
     .filter-daterange{flex:1 1 100%;}
   }
+
+  /* ---------- Text field dgn ikon dekoratif di kiri (Promo Code, Promo Name, dst) ---------- */
+  .text-field-wrap{
+    position:relative;display:flex;align-items:center;
+    border:1px solid var(--ag-gray-200);border-radius:var(--radius-sm);background:var(--ag-surface);
+    transition:border-color .12s ease,box-shadow .12s ease;
+  }
+  .text-field-wrap:focus-within{border-color:var(--ag-green);box-shadow:0 0 0 3px var(--ag-green-soft);}
+  .text-field-wrap svg{width:15px;height:15px;flex-shrink:0;margin-left:11px;color:var(--ag-green);pointer-events:none;}
+  .text-field-wrap input{border:none!important;background:transparent!important;box-shadow:none!important;flex:1;min-width:0;}
 
   /* ---------- Promo — modern card list (menggantikan tabel supaya tidak ada
      scrollbar horizontal & tidak ada teks terpotong di layar sempit) ---------- */
