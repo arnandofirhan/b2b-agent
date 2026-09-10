@@ -1584,7 +1584,7 @@
     .filter-bar{padding:9px 10px;gap:7px;margin:10px 0 14px;flex-direction:column;align-items:stretch;}
     .filter-search{max-width:none;flex:0 0 auto;}
     .filter-controls-row{flex-wrap:wrap;}
-    .filter-select-wrap{flex:1 1 auto;}
+    .filter-select-wrap{flex:1 1 140px;}
     .filter-select{width:100%;max-width:none;}
     .filter-count-pill{margin-left:auto;}
   }
@@ -1671,6 +1671,20 @@
   .skeleton-line{height:12px;border-radius:5px;}
   .skeleton-card{pointer-events:none;}
   @keyframes skeleton-shimmer{0%{background-position:100% 50%;}100%{background-position:0 50%;}}
+
+  /* ---------- Order — card list (senada Promo/PO) ---------- */
+  .order-list{display:flex;flex-direction:column;gap:12px;margin-top:4px;}
+  .order-card{border:1px solid var(--ag-gray-200);border-radius:var(--radius-md);padding:14px;background:var(--ag-surface);display:flex;flex-direction:column;gap:10px;transition:box-shadow .15s ease,border-color .15s ease;}
+  .order-card:hover{box-shadow:0 4px 14px rgba(20,60,40,.08);border-color:var(--ag-gray-300);}
+  .order-card-id{font-family:'SFMono-Regular',Consolas,monospace;font-size:13px;font-weight:700;color:var(--ag-gray-900);}
+  .order-card-po{font-size:11.5px;color:var(--ag-gray-500);font-weight:600;margin-top:2px;}
+  .order-card-field{display:flex;align-items:baseline;gap:8px;font-size:12.5px;}
+  .order-card-field span{flex-shrink:0;width:52px;color:var(--ag-gray-500);font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:.03em;}
+  .order-card-field b{font-weight:600;color:var(--ag-gray-800);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .order-card-sub{font-size:11px;color:var(--ag-gray-500);font-weight:500;white-space:normal;}
+  .order-card-sub-inline{color:var(--ag-gray-500);font-weight:500;}
+  .order-card-badges{display:flex;flex-wrap:wrap;gap:6px;}
+  .order-card-actions{display:flex;justify-content:flex-end;gap:6px;border-top:1px dashed var(--ag-gray-200);padding-top:10px;}
 
   /* ---------- Transaksi/PO — card list (senada dengan Promo) ---------- */
   .po-list{display:flex;flex-direction:column;gap:12px;margin-top:4px;}
