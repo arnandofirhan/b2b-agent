@@ -1285,21 +1285,25 @@
     opts = opts || {};
     var tableHtml = renderTable(columns, rows, rowActionsFn, emptyTitle, emptySub, emptyIcon)
       .replace('class="table-scroll"', 'class="table-scroll table-scroll-has-cards"');
-    var titleCol = null, fieldCols = [];
+    var titleCol = null, imageCol = null, fieldCols = [];
     columns.forEach(function(c){
+      if(c.imageCol && !imageCol){ imageCol = c; return; }
       if(c.titleCol && !titleCol){ titleCol = c; return; }
       if(c.skipCard || c.label === 'No.') return;
       fieldCols.push(c);
     });
     var cardsHtml = '<div class="data-card-list">' + rows.map(function(row, idx){
       var titleHtml = titleCol ? (titleCol.render ? titleCol.render(row, idx) : escapeHtml(row[titleCol.field]==null?'':row[titleCol.field])) : '';
+      var imageHtml = imageCol ? imageCol.render(row, idx) : '';
       var fieldsHtml = fieldCols.map(function(c){
         var val = c.render ? c.render(row, idx) : escapeHtml(row[c.field] == null ? '' : row[c.field]);
-        return '<div class="data-card-field"><span>'+c.label+'</span><b>'+val+'</b></div>';
+        var rawVal = c.field ? (row[c.field]==null?'':String(row[c.field])) : '';
+        var titleAttr = (!c.render && rawVal) ? ' title="'+escapeHtml(rawVal)+'"' : '';
+        return '<div class="data-card-field'+(c.fullWidth?' full-w':'')+'"><span>'+c.label+'</span><b'+titleAttr+'>'+val+'</b></div>';
       }).join('');
       var actionsHtml = rowActionsFn ? '<div class="data-card-actions">'+rowActionsFn(row)+'</div>' : '';
       return '<div class="data-card">' +
-        (titleHtml ? '<div class="data-card-top">'+titleHtml+'</div>' : '') +
+        (imageHtml || titleHtml ? '<div class="data-card-top">'+(imageHtml?'<div class="data-card-thumb">'+imageHtml+'</div>':'')+'<div>'+titleHtml+'</div></div>' : '') +
         '<div class="data-card-grid">'+fieldsHtml+'</div>' +
         actionsHtml +
       '</div>';
@@ -1375,7 +1379,7 @@
         return '<div class="cell-person"><div class="cell-person-avatar">'+escapeHtml(initials)+'</div>' +
           '<span class="cell-person-name">'+escapeHtml(r.FullName||'-')+'</span></div>';
       }},
-      {label:'Email', field:'Email'},
+      {label:'Email', field:'Email', fullWidth:true},
       {label:'Telepon', field:'Phone'},
       {label:'No. KTP', field:'KTPNumber'},
       {label:'Alamat', render:function(r){
@@ -2490,7 +2494,7 @@
     var filterHtml = filterBarHtml_('onFilterChangeProducts_', 'Cari nama produk, kategori, atau packaging...', fieldConfigs, FILTER_STATE_PRODUCTS_, filtered.length, rows.length);
     var cols = [
       {label:'No.', render:function(r,i){ return String(i+1); }},
-      {label:'Gambar', skipCard:true, render:function(r){
+      {label:'Gambar', skipCard:true, imageCol:true, render:function(r){
         return r.ImageURL
           ? '<img src="'+escapeHtml(r.ImageURL)+'" style="width:40px;height:40px;object-fit:cover;border-radius:8px;border:1px solid var(--ag-gray-200);">'
           : '<div style="width:40px;height:40px;border-radius:8px;background:var(--ag-gray-100);display:flex;align-items:center;justify-content:center;color:var(--ag-gray-400);">'+ICONS.products+'</div>';
@@ -5086,10 +5090,10 @@
         '<option value="INACTIVE"'+(statusVal==='INACTIVE'?' selected':'')+'>INACTIVE</option>' +
       '</select></div>';
     var body =
-      formField_('schLabel','Label (contoh: Diskon >3% - 5%)',s.Label,'text','',true) +
-      formField_('schMin','Min Diskon (%)',s.MinDiscountPct,'number','',true) +
-      formField_('schMax','Maks Diskon (%)',s.MaxDiscountPct,'number','',true) +
-      formField_('schPct','Komisi (%)',s.CommissionPct,'number','',true) +
+      formField_('schLabel','Label (contoh: Diskon >3% - 5%)',s.Label,'text','',true,ICONS.scheme) +
+      formField_('schMin','Min Diskon (%)',s.MinDiscountPct,'number','',true,ICONS.review) +
+      formField_('schMax','Maks Diskon (%)',s.MaxDiscountPct,'number','',true,ICONS.review) +
+      formField_('schPct','Komisi (%)',s.CommissionPct,'number','',true,ICONS.commission) +
       statusField;
     openFormModal(schemeId ? 'Edit Skema Komisi' : 'Tambah Skema Komisi', body, function(){ saveSchemeForm(schemeId); });
   }
