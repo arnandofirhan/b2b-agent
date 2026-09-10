@@ -1719,6 +1719,22 @@
   .po-card-total{display:flex;flex-direction:column;gap:2px;}
   .po-card-total span{font-size:10.5px;color:var(--ag-gray-500);font-weight:700;text-transform:uppercase;letter-spacing:.03em;}
   .po-card-total b{font-size:15px;font-weight:800;color:var(--ag-green);}
+
+  /* ---- Generic table->card fallback (Agent, Store, Product, Commission, Skema Komisi) ----
+     Tabel biasa dipakai di layar lebar; di layar sempit ditukar ke kartu (lihat
+     renderTableOrCards_ di JavaScript.html) supaya tidak perlu scroll horizontal. */
+  .data-card-list{display:none;flex-direction:column;gap:12px;margin-top:4px;}
+  .data-card{border:1px solid var(--ag-gray-200);border-radius:var(--radius-md);padding:14px;background:var(--ag-surface);display:flex;flex-direction:column;gap:12px;}
+  .data-card-top{font-size:13.5px;font-weight:700;color:var(--ag-gray-900);}
+  .data-card-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;background:var(--ag-gray-50);border-radius:10px;padding:10px 12px;}
+  .data-card-field{display:flex;flex-direction:column;gap:3px;min-width:0;}
+  .data-card-field span{font-size:10px;color:var(--ag-gray-500);font-weight:700;text-transform:uppercase;letter-spacing:.03em;}
+  .data-card-field b{font-size:12.5px;font-weight:600;color:var(--ag-gray-800);overflow:hidden;text-overflow:ellipsis;white-space:normal;word-break:break-word;}
+  .data-card-actions{display:flex;justify-content:flex-end;gap:6px;flex-wrap:wrap;border-top:1px dashed var(--ag-gray-200);padding-top:10px;}
+  @media (max-width:760px){
+    .data-card-list{display:flex;}
+    .table-scroll-has-cards{display:none;}
+  }
   @media (max-width: 480px){
     .po-card-grid{grid-template-columns:1fr 1fr;}
   }
