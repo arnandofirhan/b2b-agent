@@ -242,12 +242,9 @@
     if(!menu || !menu.classList.contains('open')) return;
     if(!menu.contains(e.target)) closeUserMenu();
   });
-  document.addEventListener('click', function(e){
-    var wrap = document.getElementById('notifWrap');
-    var dd = document.getElementById('notifDropdown');
-    if(!wrap || !dd || !dd.classList.contains('show')) return;
-    if(!wrap.contains(e.target)) closeNotifDropdown_();
-  });
+  // Ditangani sepenuhnya oleh toggleNotifDropdown_/closeNotifDropdown_ + backdrop klik;
+  // listener klik-global terpisah dihapus karena rawan race/double-trigger di mobile
+  // (lihat catatan di toggleNotifDropdown_ di bawah).
 
   // =============================================================
   // MY SIGNATURE (Admin/Supervisor/Manager) — auto-stamped on Approve PO
@@ -6862,26 +6859,45 @@
   var NOTIF_DROPDOWN_LIMIT_ = 8; // maks notif yang tampil sebelum "Lihat Semua"
   var notifSeeAllExpanded_ = false;
 
-  function toggleNotifDropdown_(){
+  function toggleNotifDropdown_(e){
+    // stopPropagation WAJIB: tanpa ini, klik pada tombol lonceng akan "naik" (bubble)
+    // ke document dan bisa memicu handler klik-luar lain (mis. penutup user-menu) pada
+    // event yang sama, menyebabkan dropdown terbuka-lalu-tertutup seketika di beberapa
+    // browser mobile — inilah sebab "diklik tapi tidak bisa balik/tertutup" sebelumnya.
+    if(e) e.stopPropagation();
     var dd = document.getElementById('notifDropdown');
     if(!dd) return;
     var willOpen = !dd.classList.contains('show');
-    document.querySelectorAll('.user-menu-dropdown.show, .notif-dropdown.show').forEach(function(el){ el.classList.remove('show'); });
+    closeUserMenu();
     if(willOpen){
       dd.classList.add('show');
+      var bd = document.getElementById('notifBackdrop');
+      if(bd) bd.classList.add('show');
       notifSeeAllExpanded_ = false;
       renderNotifDropdownList_();
+    } else {
+      closeNotifDropdown_();
     }
   }
   function closeNotifDropdown_(){
     var dd = document.getElementById('notifDropdown');
+    var bd = document.getElementById('notifBackdrop');
     if(dd) dd.classList.remove('show');
+    if(bd) bd.classList.remove('show');
   }
 
   function toggleNotifSeeAll_(){
     notifSeeAllExpanded_ = !notifSeeAllExpanded_;
     renderNotifDropdownList_();
   }
+
+  // Tombol Esc menutup dropdown notifikasi — pola UX standar untuk overlay/panel.
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape'){
+      var dd = document.getElementById('notifDropdown');
+      if(dd && dd.classList.contains('show')) closeNotifDropdown_();
+    }
+  });
 
   var NOTIF_TYPE_COLOR_ = { success:'#1E7A4C', danger:'#E24C4C', warning:'#F2994A', orange:'#F2994A', info:'#2F80ED' };
 
