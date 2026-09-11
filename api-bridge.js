@@ -89,7 +89,7 @@
 
     // RETRY OTOMATIS hanya untuk error jaringan murni (bukan error
     // deployment/akses — itu tidak akan hilang dengan diulang).
-    var MAX_ATTEMPTS = 3;
+    var MAX_ATTEMPTS = 4; // dinaikkan dari 3 — glitch redirect/echo GAS kadang butuh >2x percobaan utk pulih
     var RETRY_DELAY_MS = 700;
 
     enqueue_(function (jobDone) {
@@ -111,7 +111,21 @@
         fetch(url, fetchOpts)
           .then(function (res) {
             if (timer) clearTimeout(timer);
-            if (!res.ok) throw new Error('HTTP ' + res.status + ' dari server.');
+            if (!res.ok) {
+              // PENTING: status non-2xx dari endpoint GAS ini (baik langsung dari /exec
+              // maupun dari redirect internalnya ke script.googleusercontent.com/macros/echo)
+              // di RPC bridge ini HAMPIR SELALU transient — bukan "resource tidak ada"
+              // sungguhan (tidak ada konsep URL/resource di sini, cuma 1 endpoint /exec).
+              // Biasanya muncul kalau GAS lagi under load & sempat men-redirect ke echo
+              // URL yang belum siap/telat, sehingga responsnya sempat 404. Ditandai
+              // isTransientHttp=true supaya blok retry di bawah ikut mencoba ulang —
+              // sebelumnya error jenis ini (bukan TypeError/CORS) LANGSUNG gagal permanen
+              // tanpa retry sama sekali walau sebenarnya besar kemungkinan sukses kalau
+              // dicoba lagi sesaat kemudian.
+              var httpErr = new Error('HTTP ' + res.status + ' dari server.');
+              httpErr.isTransientHttp = true;
+              throw httpErr;
+            }
             return res.text();
           })
           .then(function (text) {
@@ -146,7 +160,7 @@
               return;
             }
 
-            var isNetworkLikeError = (err instanceof TypeError) || /Failed to fetch|NetworkError|CORS/i.test(err && err.message || '');
+            var isNetworkLikeError = (err instanceof TypeError) || /Failed to fetch|NetworkError|CORS/i.test(err && err.message || '') || (err && err.isTransientHttp);
             if (isNetworkLikeError && attemptNo < MAX_ATTEMPTS) {
               console.warn('[api-bridge] ' + fnName + ' percobaan ' + attemptNo + ' gagal (network/CORS), mencoba lagi...', err);
               setTimeout(function () { attempt(attemptNo + 1); }, RETRY_DELAY_MS * attemptNo);
