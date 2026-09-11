@@ -3425,7 +3425,7 @@
         '<div class="order-summary-head has-multi-badges">' +
           '<div class="order-summary-head-top">' +
             '<div class="order-summary-icon">'+ICONS.transactions+'</div>' +
-            '<div>' +
+            '<div class="order-summary-text">' +
               '<div class="order-summary-title">'+escapeHtml(po.POID)+'</div>' +
               '<div class="order-summary-sub">Agent '+escapeHtml(agentDisplayName)+' &middot; '+(po.CreatedAt ? formatDateDMY_(po.CreatedAt) : '-')+'</div>' +
             '</div>' +
@@ -4296,7 +4296,7 @@
         '<div class="order-summary-head has-multi-badges">' +
           '<div class="order-summary-head-top">' +
             '<div class="order-summary-icon">'+ICONS.orders+'</div>' +
-            '<div>' +
+            '<div class="order-summary-text">' +
               '<div class="order-summary-title">'+escapeHtml(order.OrderID)+'</div>' +
               '<div class="order-summary-sub">PO '+escapeHtml(order.POID)+' &middot; '+escapeHtml(storeName)+'</div>' +
             '</div>' +
@@ -4956,10 +4956,10 @@
       // cuma sbg fallback kalau nama belum ke-load.
       var agentDisplayName = (data.agentName && data.agentName.trim()) ? data.agentName : c.AgentID;
       var head =
-        '<div class="order-summary-head">' +
+        '<div class="order-summary-head has-multi-badges">' +
           '<div class="order-summary-head-top">' +
             '<div class="order-summary-icon">'+ICONS.commission+'</div>' +
-            '<div>' +
+            '<div class="order-summary-text">' +
               '<div class="order-summary-title">'+escapeHtml(c.CommissionID)+'</div>' +
               '<div class="order-summary-sub">No. Order '+escapeHtml(c.OrderID)+' &middot; Agent '+escapeHtml(agentDisplayName)+'</div>' +
             '</div>' +
