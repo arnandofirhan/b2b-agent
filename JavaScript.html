@@ -774,6 +774,13 @@
     // (mis. tombol/baris Transaksi) karena innerHTML belum sempat diganti — makanya kadang
     // "Tambah Promo" malah membuka/pindah ke Transaksi. Re-enable begitu paintPage_ selesai.
     content.classList.add('content-loading-lock');
+    // Safety net: kalau karena sebab apapun (request gagal tanpa unlock eksplisit, promise
+    // yang tidak ke-handle, dsb) lock ini gak sempat dilepas oleh alur normal di bawah,
+    // paksa lepas otomatis setelah 4 detik supaya tombol TIDAK PERNAH macet permanen.
+    clearTimeout(CONTENT_LOCK_SAFETY_TIMER_);
+    CONTENT_LOCK_SAFETY_TIMER_ = setTimeout(function(){
+      content.classList.remove('content-loading-lock');
+    }, 4000);
     // If we already have the PO rows in memory, re-render the table synchronously with the
     // (now-reset) filter instead of instant-painting the stale cached HTML, which had the
     // previous filter baked in. This keeps the zero-spinner instant paint while still showing
@@ -822,6 +829,7 @@
 
   /** Call after building a page's innerHTML to (a) paint it and (b) cache it for instant revisit. */
   var LAST_PAINTED_PAGE_ = null; // pageKey whose HTML is actually sitting in #content right now
+  var CONTENT_LOCK_SAFETY_TIMER_ = null;
   function paintPage_(pageKey, html){
     PAGE_HTML_CACHE[pageKey] = html;
     // Only overwrite the DOM if the user is still on this page (they may have navigated away
@@ -3589,7 +3597,7 @@
         (isApprovedEdit ? '' :
           '<div class="form-group">' +
             '<label>Tanggal Rencana Pengambilan</label>' +
-            '<input type="date" id="poPickupDate" min="'+todayISO_()+'">' +
+            '<div class="date-field-wrap has-placeholder-ghost">'+ICONS.calendar+'<input type="date" id="poPickupDate" min="'+todayISO_()+'" onchange="this.nextElementSibling.style.display=this.value?\'none\':\'\'"><span class="date-field-ghost">Pilih tanggal</span></div>' +
           '</div>'
         ) +
         '<div class="po-estimate-box" id="poEstimateBox">Estimasi Total: <strong id="poEstimateValue">Rp0</strong></div>' +
@@ -3688,21 +3696,25 @@
         ? '<img src="'+escapeHtml(p.ImageURL)+'" alt="">'
         : '<div class="po-product-thumb-empty">'+ICONS.products+'</div>';
       return '<div class="po-cart-row">' +
-        '<div class="po-cart-thumb">'+thumb+'</div>' +
-        '<div style="flex:1;min-width:0;">' +
-          '<div class="po-cart-name">'+escapeHtml(p.ProductName)+'</div>' +
-          '<div class="po-cart-unitprice">'+formatRupiah(p.RegularPrice)+' / unit</div>' +
+        '<div class="po-cart-info">' +
+          '<div class="po-cart-thumb">'+thumb+'</div>' +
+          '<div style="flex:1;min-width:0;">' +
+            '<div class="po-cart-name">'+escapeHtml(p.ProductName)+'</div>' +
+            '<div class="po-cart-unitprice">'+formatRupiah(p.RegularPrice)+' / unit</div>' +
+          '</div>' +
         '</div>' +
-        '<div class="po-qty-stepper">' +
-          '<button type="button" onclick="changeNewPOCartQty_(\''+pid+'\',-1)">-</button>' +
-          '<input type="text" inputmode="numeric" pattern="[0-9]*" class="po-qty-input" value="'+qty+'" ' +
-            'oninput="this.value=this.value.replace(/[^0-9]/g,\'\');" ' +
-            'onchange="setNewPOCartQty_(\''+pid+'\',this.value)" ' +
-            'onclick="this.select()">' +
-          '<button type="button" onclick="changeNewPOCartQty_(\''+pid+'\',1)">+</button>' +
+        '<div class="po-cart-actions-row">' +
+          '<div class="po-qty-stepper">' +
+            '<button type="button" onclick="changeNewPOCartQty_(\''+pid+'\',-1)">-</button>' +
+            '<input type="text" inputmode="numeric" pattern="[0-9]*" class="po-qty-input" value="'+qty+'" ' +
+              'oninput="this.value=this.value.replace(/[^0-9]/g,\'\');" ' +
+              'onchange="setNewPOCartQty_(\''+pid+'\',this.value)" ' +
+              'onclick="this.select()">' +
+            '<button type="button" onclick="changeNewPOCartQty_(\''+pid+'\',1)">+</button>' +
+          '</div>' +
+          '<div class="po-cart-linetotal">'+formatRupiah(lineTotal)+'</div>' +
+          '<button type="button" class="po-cart-remove" onclick="removeNewPOCartItem_(\''+pid+'\')">'+ICONS.trash+'</button>' +
         '</div>' +
-        '<div class="po-cart-linetotal">'+formatRupiah(lineTotal)+'</div>' +
-        '<button type="button" class="po-cart-remove" onclick="removeNewPOCartItem_(\''+pid+'\')">'+ICONS.trash+'</button>' +
       '</div>';
     }).join('');
     updateNewPOEstimate_();
