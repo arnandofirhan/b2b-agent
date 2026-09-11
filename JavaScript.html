@@ -767,16 +767,25 @@
     renderBottomNav();
 
     var content = document.getElementById('content');
+    // Cegah race klik: sebelum konten halaman baru siap (masih render async lewat
+    // google.script.run), nonaktifkan sementara semua klik di #content. Tanpa ini, kalau
+    // user tap cepat pindah halaman (mis. dari Transaksi ke Promo) dan langsung tap area
+    // yang sama sebelum konten Promo selesai render, tap itu masih kena elemen halaman LAMA
+    // (mis. tombol/baris Transaksi) karena innerHTML belum sempat diganti — makanya kadang
+    // "Tambah Promo" malah membuka/pindah ke Transaksi. Re-enable begitu paintPage_ selesai.
+    content.classList.add('content-loading-lock');
     // If we already have the PO rows in memory, re-render the table synchronously with the
     // (now-reset) filter instead of instant-painting the stale cached HTML, which had the
     // previous filter baked in. This keeps the zero-spinner instant paint while still showing
     // the correct, unfiltered data immediately.
     if(pageKey === 'transactions' && PO_LAST_RENDER_ARGS_){
       renderPOTable_(PO_LAST_RENDER_ARGS_.rows, PO_LAST_RENDER_ARGS_.canCreatePO, PO_LAST_RENDER_ARGS_.agentMap);
+      content.classList.remove('content-loading-lock');
     } else if(PAGE_HTML_CACHE[pageKey]){
       // Instant paint from cache if we've visited this page before — no spinner/flash.
       content.innerHTML = PAGE_HTML_CACHE[pageKey];
       LAST_PAINTED_PAGE_ = pageKey;
+      content.classList.remove('content-loading-lock');
     } else {
       content.innerHTML = '<div class="spinner"></div>';
       LAST_PAINTED_PAGE_ = pageKey; // spinner is page-agnostic markup, but this IS now what pageKey's slot shows
@@ -806,6 +815,7 @@
           content.innerHTML = '<div class="empty-state">Modul "'+ (PAGE_TITLES[pageKey]||pageKey) +'" belum tersedia.</div>';
       }
     }catch(err){
+      content.classList.remove('content-loading-lock');
       handleBackendError(err, document.getElementById('content'));
     }
   }
@@ -850,6 +860,7 @@
       var scrollLeft = oldScroller ? oldScroller.scrollLeft : 0;
       document.getElementById('content').innerHTML = html;
       LAST_PAINTED_PAGE_ = pageKey;
+      document.getElementById('content').classList.remove('content-loading-lock');
       if(wasFilterSearchFocused){
         var newInput = document.getElementById('filterSearchInput');
         if(newInput){
@@ -6602,9 +6613,9 @@
         '<div class="card-header"><span class="card-title">Laporan PO</span></div>' +
         '<div class="filter-bar" style="margin-bottom:16px;">' +
           '<div class="filter-daterange">' +
-            '<input type="date" id="reportsFrom" value="'+escapeHtml(REPORTS_STATE_.dateFrom)+'" title="Dari" onchange="onReportsDateChange_()">' +
+            '<div class="date-field-wrap date-field-wrap--sm has-placeholder-ghost">'+ICONS.calendar+'<input type="date" id="reportsFrom" value="'+escapeHtml(REPORTS_STATE_.dateFrom)+'" title="Dari" onchange="onReportsDateChange_();this.nextElementSibling.style.display=this.value?\'none\':\'\'"><span class="date-field-ghost"'+(REPORTS_STATE_.dateFrom?' style="display:none"':'')+'>Dari</span></div>' +
             '<span class="filter-daterange-sep">&ndash;</span>' +
-            '<input type="date" id="reportsTo" value="'+escapeHtml(REPORTS_STATE_.dateTo)+'" title="Sampai" onchange="onReportsDateChange_()">' +
+            '<div class="date-field-wrap date-field-wrap--sm has-placeholder-ghost">'+ICONS.calendar+'<input type="date" id="reportsTo" value="'+escapeHtml(REPORTS_STATE_.dateTo)+'" title="Sampai" onchange="onReportsDateChange_();this.nextElementSibling.style.display=this.value?\'none\':\'\'"><span class="date-field-ghost"'+(REPORTS_STATE_.dateTo?' style="display:none"':'')+'>Sampai</span></div>' +
           '</div>' +
           '<button type="button" class="filter-reset-btn" onclick="resetReportsFilter_()">'+FILTER_ICON_RESET_+' Reset</button>' +
           '<button type="button" class="btn btn-primary" style="margin-left:auto;padding:8px 14px;font-size:13px;" onclick="exportReportsCsv_()">'+ICONS.download+' Export CSV</button>' +
