@@ -44,11 +44,22 @@
   // kombinasi keduanya membuat beban ke backend jauh lebih halus.
   var MAX_CONCURRENT = 2;
   var activeCount_ = 0;
-  var queue_ = [];
+
+  // ANTRIAN 2 TINGKAT: request yang dipicu LANGSUNG oleh user (klik menu, submit form,
+  // dsb) harus SELALU didahulukan dari request preload diam-diam di background
+  // (preloadAllPages_ / polling notifikasi). Tanpa ini, begitu user klik menu lain
+  // sesaat setelah login, request klik itu ikut antre di BELAKANG belasan request
+  // preload yang sudah lebih dulu masuk antrian — makanya menu yang diklik terasa lama
+  // padahal cuma nunggu giliran, bukan benar-benar lambat. JavaScript.html menandai
+  // panggilan sebagai "background" dengan set window.__BG_LOW_PRIORITY__ = true tepat
+  // sebelum memanggil google.script.run, lalu balikin ke false lagi setelahnya.
+  var queueHi_ = [];
+  var queueLo_ = [];
 
   function runNext_() {
-    if (activeCount_ >= MAX_CONCURRENT || queue_.length === 0) return;
-    var job = queue_.shift();
+    if (activeCount_ >= MAX_CONCURRENT) return;
+    var job = queueHi_.length ? queueHi_.shift() : queueLo_.shift();
+    if (!job) return;
     activeCount_++;
     job(function done() {
       activeCount_--;
@@ -57,7 +68,7 @@
   }
 
   function enqueue_(job) {
-    queue_.push(job);
+    if (global.__BG_LOW_PRIORITY__) queueLo_.push(job); else queueHi_.push(job);
     runNext_();
   }
 
