@@ -540,7 +540,11 @@
     renderSidebar();
     renderBottomNav();
     showPage('dashboard');
-    preloadAllPages_();
+    // Tunda mulainya preload background ~1.2 detik supaya tidak langsung tabrakan dengan
+    // panggilan Dashboard sendiri yang baru saja ditembak oleh showPage('dashboard') di
+    // atas — beri jeda dulu supaya beban ke GAS di detik-detik awal boot lebih landai
+    // (mengurangi peluang redirect/echo 404 transient yang selama ini muncul di console).
+    setTimeout(preloadAllPages_, 1200);
     loadNotifications_();
     if(NOTIF_POLL_INTERVAL_) clearInterval(NOTIF_POLL_INTERVAL_);
     NOTIF_POLL_INTERVAL_ = setInterval(loadNotifications_, 120000); // refresh tiap 2 menit
