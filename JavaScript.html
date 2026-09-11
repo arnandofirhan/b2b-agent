@@ -281,6 +281,15 @@
       di belakangnya. */
   function handleUserMenuAction_(e, actionFn){
     if(e){ e.preventDefault(); e.stopPropagation(); }
+    // FIX: guard yang sama dgn onNotifClick_ — kalau notif dropdown BARU SAJA ditutup
+    // (tap tombol X-nya, atau tap area kosong/backdrop-nya) tepat sepersekian detik
+    // sebelum tap ini, "sentuhan susulan" itu masih bisa dianggap browser mendarat di
+    // tombol "Ganti Password"/"Keluar" pada user-menu jika keduanya bertumpuk secara
+    // koordinat (mis. dropdown notif versi mobile ditempel penuh-lebar di bawah topbar,
+    // tepat menutupi area avatar/user-menu). Tanpa guard ini, menutup notif dgn tap di
+    // area kosong bisa "menembus" dan otomatis memicu Keluar/Ganti Password padahal user
+    // tidak bermaksud menyentuh tombol itu sama sekali.
+    if(Date.now() - NOTIF_CLOSED_AT_ < 350) return;
     closeUserMenu();
     // requestAnimationFrame (bukan setTimeout(0)) memastikan browser benar2 sudah selesai
     // melepas dropdown/backdrop dari layout & hit-testing sebelum modal mulai dibangun,
@@ -7452,9 +7461,25 @@
   function closeNotifDropdown_(){
     var dd = document.getElementById('notifDropdown');
     var bd = document.getElementById('notifBackdrop');
-    if(dd) dd.classList.remove('show');
-    if(bd) bd.classList.remove('show');
+    // FIX: set pointer-events:none SEGERA (bukan cuma classList.remove('show')) supaya
+    // dropdown & backdrop langsung berhenti menerima sentuhan apapun sedetik itu juga,
+    // walau .notif-dropdown masih punya CSS transition opacity/transform berjalan
+    // (display baru benar2 none setelah transition kelar krn class .show dicabut,
+    // tapi elemen tsb secara visual/hit-test bisa "nyangkut" sepersekian detik). Tanpa
+    // ini, sentuhan yang SAMA yang menutup dropdown (tap tombol X / tap di luar) kadang
+    // masih dianggap browser mendarat di salah satu notif-row di baliknya begitu
+    // dropdown menghilang di tengah gesture yang sama, memicu navigasi yang tidak
+    // diinginkan (klik "X" malah dianggap klik notif teratas).
+    if(dd){ dd.classList.remove('show'); dd.style.pointerEvents = 'none'; }
+    if(bd){ bd.classList.remove('show'); bd.style.pointerEvents = 'none'; }
     NOTIF_CLOSED_AT_ = Date.now();
+    // Lepas kunci pointer-events sedikit setelah dropdown benar2 tidak terlihat (durasi
+    // transition CSS-nya .16s), supaya saat user membuka dropdown lagi nanti dia bisa
+    // ditap normal seperti biasa.
+    setTimeout(function(){
+      if(dd) dd.style.pointerEvents = '';
+      if(bd) bd.style.pointerEvents = '';
+    }, 200);
   }
 
   function toggleNotifSeeAll_(){
@@ -7503,7 +7528,24 @@
     }
   }
 
+  /** FIX BUG: klik tombol close (X) notifikasi kadang "tembus" jadi terhitung klik pada
+      salah satu notif row di baliknya (biasanya notif teratas), yang otomatis menavigasi
+      ke halaman Transaksi/PO/Order — padahal user cuma bermaksud menutup dropdown-nya.
+      Penyebabnya: tombol X (onclick="closeNotifDropdown_()") dan backdrop
+      (onpointerdown="closeNotifDropdown_()") sama2 duduk tepat DI ATAS elemen lain pada
+      koordinat yang sama selagi dropdown masih dalam proses close (CSS transition opacity/
+      transform .16s pada .notif-dropdown). Browser memproses pointerdown->pointerup->click
+      sbg urutan terpisah: pointerdown pertama sudah men-trigger closeNotifDropdown_() lewat
+      backdrop SEBELUM event click pada tombol X sempat selesai, sehingga saat click akhirnya
+      terjadi, dropdown sudah smemakin invisible/di-remove dari hit-testing, dan sentuhan yg
+      SAMA itu "jatuh tembus" ke elemen apapun yg secara koordinat ada di baliknya (di mobile,
+      itu seringnya notif-row teratas krn dropdown sheet mobile ditempel pas di bawah topbar).
+      Guard ini menolak SEMUA aksi notifikasi (klik row ATAUPUN tandai-semua-dibaca) yang
+      terjadi dalam 350ms setelah closeNotifDropdown_() terakhir dipanggil — window singkat
+      yg cukup meredam ghost-click tsb tanpa terasa oleh user yg sengaja membuka lagi
+      dropdown & mengklik notifnya secara normal. */
   function onNotifClick_(id, poId){
+    if(Date.now() - NOTIF_CLOSED_AT_ < 350) return;
     NOTIF_STATE_.seen[id] = true;
     saveNotifSeen_();
     renderNotifBadge_();
