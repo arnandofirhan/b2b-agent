@@ -833,7 +833,17 @@
   .content{padding:24px;flex:1;}
 
   /* ---------- Topbar user menu ---------- */
-  .user-menu{position:relative;}
+  /* FIX: .user-menu HARUS punya z-index eksplisit sendiri (bukan cuma position:relative)
+     supaya ia membentuk stacking context yang jelas di atas SEMUA elemen fixed lain di
+     halaman (termasuk #bottomNav z-index:60 dan .bottom-more-sheet-overlay z-index:69 di
+     mobile). Tanpa ini, karena .topbar sendiri position:sticky + z-index:10, backdrop &
+     dropdown-nya (walau z-index 29/30 relatif ke .user-menu) secara EFEKTIF tetap
+     "terjebak" di layer z-index:10 milik .topbar saat dibandingkan dgn elemen root lain
+     spt #bottomNav — itulah kenapa tombol "Ganti Password" kadang tidak bisa di-tap di
+     HP: backdrop transparan dari elemen lain (atau area di luar dropdown) memenangkan
+     hit-test di atasnya. z-index:100 di sini memastikan seluruh .user-menu (avatar,
+     backdrop, dropdown) selalu menang dari #bottomNav (60) dan sheet-nya (69-70). */
+  .user-menu{position:relative;z-index:100;}
   .user-menu-trigger{
     display:flex;align-items:center;gap:9px;background:none;border:1px solid transparent;cursor:pointer;
     padding:5px 8px 5px 5px;border-radius:999px;transition:background .12s ease, border-color .12s ease;
@@ -856,6 +866,11 @@
     display:none;position:absolute;top:calc(100% + 8px);right:0;min-width:190px;background:var(--ag-surface);
     border:1px solid var(--ag-gray-200);border-radius:var(--radius-md);box-shadow:0 12px 28px rgba(16,24,32,.14);
     padding:6px;z-index:30;
+    /* FIX: isolation:isolate memaksa dropdown ini jadi stacking context baru yang independen
+       dari elemen manapun di luar .user-menu, sehingga tombol2 di dalamnya (Ganti Password,
+       Keluar) selalu bisa menerima tap/click walau ada elemen fixed lain (bottom nav, sheet,
+       dsb) dengan z-index tinggi di tempat lain pada halaman. */
+    isolation:isolate;
   }
   .user-menu.open .user-menu-dropdown{display:block;}
   .user-menu-item{
