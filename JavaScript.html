@@ -255,12 +255,37 @@
       klik/tap yang sama membuat sebagian Android WebView kehilangan jejak target
       sentuhnya, sehingga aksi (buka modal) tidak jalan DAN sentuhan berikutnya di
       tombol2 lain sempat "nyangkut"/tidak terdaftar. Solusinya: hentikan event supaya
-      tidak bubble ke listener klik-luar, jalankan aksinya dulu, baru tutup menunya
-      lewat setTimeout(0) — di luar siklus event/tap yang sedang berjalan. */
+      tidak bubble ke listener klik-luar, TUTUP DULU menunya secara sinkron (supaya
+      backdrop/dropdown tidak lagi ada di DOM sebelum aksi jalan), baru jalankan aksinya.
+      -----------------------------------------------------------------------------
+      FIX TAMBAHAN (bug: klik "Ganti Password" malah pindah ke halaman Transaksi/Promo,
+      dan search box halaman di baliknya kemasukan teks "Administrator"):
+      Urutan LAMA (actionFn() dulu, closeUserMenu() via setTimeout belakangan) membuka
+      modal SEMENTARA .user-menu-backdrop (position:fixed;inset:0) masih ada di DOM dan
+      masih menerima pointerdown. Di banyak Android WebView, "click" pada tombol menu itu
+      SENDIRI memicu urutan pointerdown->pointerup->click; pointerdown pertama pada tombol
+      "Ganti Password" bisa "tembus"/ke-capture oleh .user-menu-backdrop yang secara
+      stacking context (lihat catatan z-index .user-menu di Stylesheet.html) kadang
+      berakhir di ATAS tombol menu itu sendiri pada saat itu. Karena backdrop's onpointerdown
+      cuma closeUserMenu(), event itu sendiri tidak berbahaya — TAPI karena actionFn()
+      (openChangePasswordModal) dipanggil SEBELUM closeUserMenu(), dropdown+backdrop masih
+      terbuka tepat saat modal mulai render; frame render modal yang menimpa .topbar/dropdown
+      itulah yang membuat sentuhan BERIKUTNYA (mis. jari masih menyentuh layar sepersekian
+      detik) "nyasar" ke elemen #content di baliknya (kartu/menu sidebar Transaksi/Promo yang
+      kebetulan sejajar), dan value avatar/username yang sedang di-render sempat "kecemplung"
+      ke <input id="filterSearchInput"> yang sedang fokus dari sentuhan sebelumnya karena
+      dropdown & content sempat bertumpuk pada repaint yang sama.
+      Menutup menu LEBIH DULU (sebelum actionFn) menghilangkan tumpang-tindih itu sepenuhnya:
+      begitu tombol di-tap, dropdown+backdrop langsung lenyap dari DOM sebelum modal mulai
+      dibangun, sehingga tidak ada lagi elemen yang bisa "menyalurkan" sentuhan ke halaman
+      di belakangnya. */
   function handleUserMenuAction_(e, actionFn){
     if(e){ e.preventDefault(); e.stopPropagation(); }
-    actionFn();
-    setTimeout(closeUserMenu, 0);
+    closeUserMenu();
+    // requestAnimationFrame (bukan setTimeout(0)) memastikan browser benar2 sudah selesai
+    // melepas dropdown/backdrop dari layout & hit-testing sebelum modal mulai dibangun,
+    // tanpa menambah delay yang terasa oleh user.
+    requestAnimationFrame(function(){ actionFn(); });
   }
   // CATATAN: dulu ada listener document.addEventListener('click', ...) generik di sini utk
   // menutup dropdown saat tap di luar. Listener klik-di-document itu SUDAH DIHAPUS — pola yg
@@ -984,8 +1009,19 @@
       // very first keystroke the box looks "stuck" (can't type a 2nd character) because focus
       // is gone. Remember where the cursor was, repaint, then restore focus + cursor position
       // on the freshly-created input with the same id.
+      // FIX: id="filterSearchInput" dipakai ulang di SEMUA halaman list (Promo, Transaksi,
+      // Order, dst — lihat filterBarHtml_). Guard lama hanya cek `active.id === 'filterSearchInput'`
+      // TANPA memastikan elemen itu memang anak dari #content milik halaman yang SAMA yang
+      // sedang di-repaint. Kalau berpindah halaman sementara elemen lama masih tercatat sebagai
+      // activeElement sesaat (mis. avatar/dropdown menu topbar yang barusan ditutup, atau modal
+      // yang barusan tertutup mengembalikan fokus ke body/elemen sebelumnya di #content lama),
+      // guard ini bisa salah kaprah menganggap "user sedang mengetik di search box" padahal
+      // tidak, lalu memaksa fokus+value pindah ke search-box HALAMAN BARU — inilah yang membuat
+      // search box halaman berikutnya (mis. Promo) seolah "kemasukan" teks dari elemen lain.
+      // Tambahan syarat: `active` harus benar2 masih berada di dalam #content saat ini.
+      var contentEl = document.getElementById('content');
       var active = document.activeElement;
-      var wasFilterSearchFocused = active && active.id === 'filterSearchInput';
+      var wasFilterSearchFocused = active && active.id === 'filterSearchInput' && contentEl && contentEl.contains(active);
       var caretPos = wasFilterSearchFocused ? active.selectionStart : null;
       // Same problem hits the table's horizontal scrollbar: any re-render (filter change,
       // background refresh, polling, etc.) rebuilds .table-scroll from scratch, snapping it
