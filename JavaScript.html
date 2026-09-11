@@ -445,9 +445,25 @@
       halaman Login maupun langsung ke appShell kalau sesi masih ada) supaya splash tidak
       pernah "nyangkut" menutupi UI. Aman dipanggil berkali-kali / kalau elemennya sudah
       tidak ada. */
+  /** Fade-out + hapus #bootSplash dari DOM. Dipanggil begitu app selesai boot (baik ke
+      halaman Login maupun langsung ke appShell kalau sesi masih ada) supaya splash tidak
+      pernah "nyangkut" menutupi UI. Aman dipanggil berkali-kali / kalau elemennya sudah
+      tidak ada.
+      MINIMAL_DISPLAY_MS: splash dipaksa tampil setidaknya sekian ms sejak halaman mulai
+      dimuat (lihat window.__bootSplashStartTs di index.html) sebelum boleh mulai fade-out
+      — supaya di koneksi cepat/desktop dia tidak "kedip sekejap" lalu tumpang-tindih
+      dengan halaman Login yang baru separuh siap, dan splash-nya kelihatan sengaja/rapi
+      alih-alih seperti gangguan render.*/
   function hideBootSplash_(){
     var el = document.getElementById('bootSplash');
     if(!el) return;
+    var MINIMAL_DISPLAY_MS = 1200;
+    var elapsed = Date.now() - (window.__bootSplashStartTs || Date.now());
+    var remaining = MINIMAL_DISPLAY_MS - elapsed;
+    if(remaining > 0){
+      setTimeout(function(){ hideBootSplash_(); }, remaining);
+      return;
+    }
     el.classList.add('boot-splash-hide');
     setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 400);
   }
@@ -567,7 +583,12 @@
     var STAGGER_MS = 400;
     keys.forEach(function(key, i){
       setTimeout(function(){
+        // Tandai request ini sebagai background/low-priority (lihat catatan di api-bridge.js)
+        // supaya kalau user keburu klik menu lain, request klik itu SELALU didahulukan
+        // antrian, bukan ikut ngantre di belakang sisa preload.
+        window.__BG_LOW_PRIORITY__ = true;
         try{ renderers[key](); }catch(e){ /* silent — a failed background preload shouldn't disrupt the user */ }
+        window.__BG_LOW_PRIORITY__ = false;
       }, i * STAGGER_MS);
     });
   }
@@ -7127,6 +7148,9 @@
 
   function loadNotifications_(){
     loadNotifSeen_();
+    // Notifikasi (ikon lonceng) bukan sesuatu yang user tunggu secara aktif — selalu
+    // tandai low-priority supaya tidak menyalip request yang dipicu langsung oleh klik user.
+    window.__BG_LOW_PRIORITY__ = true;
     google.script.run.withSuccessHandler(function(list){
       NOTIF_STATE_.items = list || [];
       renderNotifBadge_();
@@ -7134,6 +7158,7 @@
       renderSidebar();
       renderBottomNav();
     }).withFailureHandler(function(){ /* silent */ }).getNotifications(STATE.token);
+    window.__BG_LOW_PRIORITY__ = false;
   }
 
   function renderNotifBadge_(){
