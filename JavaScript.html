@@ -5986,6 +5986,12 @@
     tile.innerHTML =
       '<div class="doc-tile-check">'+ICON_CHECK_SM+'</div>' +
       previewHtml +
+      // FIX: label jenis dokumen (mis. "Foto KTP") HILANG di sini sebelumnya — begitu file
+      // terupload, tile diganti total isinya dan cuma nyisain nama file mentah (mis.
+      // "IMG-20260911-WA0021.jpeg"), jadi user tidak bisa lagi bedakan tile mana KTP/NPWP/
+      // Buku Rekening begitu ketiganya sudah keisi semua. Label dikembalikan di sini,
+      // ditaruh DI ATAS nama file (bukan gantikan) supaya keduanya kelihatan sekaligus.
+      '<div class="doc-tile-label doc-tile-label-filled">'+d.label+'</div>' +
       '<div class="doc-tile-filename">'+escapeHtml(file.name)+'</div>' +
       '<input type="file" id="'+d.fileId+'" accept="image/*,.pdf" onchange="handleRegDocChange_(\''+d.key+'\')">';
     tile.onclick = function(){ document.getElementById(d.fileId).click(); };
