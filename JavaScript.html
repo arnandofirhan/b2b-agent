@@ -4726,7 +4726,7 @@
       {label:'Komisi %', render:function(r){return r.CommissionPct+'%';}},
       {label:'Nominal', render:function(r){return '<strong>'+formatRupiah(r.CommissionAmount)+'</strong>';}},
       {label:'Tanggal', render:function(r){return r.CreatedAt ? formatDateDMY_(r.CreatedAt) : '-';}},
-      {label:'Status', render:function(r){return statusBadge(r.Status);}}
+      {label:'Status', fullWidth:true, render:function(r){return statusBadge(r.Status);}}
     );
     var actions = function(r){
       var btns = '<div class="row-actions">';
