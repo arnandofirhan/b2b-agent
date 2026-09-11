@@ -39,12 +39,40 @@
          berlatar krem terang — jadi transisinya kelihatan "lompat warna" dari
          hijau gelap ke terang. Sekarang keduanya sama-sama krem terang, jadi
          splash native → splash custom kelihatan menyatu/mulus, bukan 2 layar
-         yang beda. */
-      background:#F7FAF3 url('splash-screen.png') center/cover no-repeat;
-      transition:opacity .35s ease;
+         yang beda.
+
+         UKURAN: splash-screen.png itu SATU DESAIN LAYAR PENUH (icon + badge nama
+         app + hiasan gelombang pojok), dibuat portrait khusus untuk HP — jadi
+         "cover" itu SUDAH BENAR untuk HP (device target aplikasi ini, sesuai
+         orientation:"portrait-primary" di manifest.json), hasilnya full-bleed rapi
+         seperti desain aslinya. Masalahnya cuma muncul di DESKTOP: jendela browser
+         desktop jauh lebih lebar (landscape) daripada gambar portrait ini, jadi
+         "cover" jadi nge-zoom & crop habis-habisan sampai cuma ikonnya doang yang
+         kelihatan raksasa. Makanya di bawah ini "cover" hanya dipakai untuk layar
+         portrait/sempit (HP), sedangkan layar landscape lebar (desktop) dipaksa
+         pakai "contain" supaya desain lengkapnya kelihatan utuh, tidak di-crop. */
+      background-color:#F7FAF3;
+      background-image:url('splash-screen.png');
+      background-position:center;
+      background-repeat:no-repeat;
+      background-size:cover;
+      transition:opacity .4s ease;
+    }
+    /* Landscape / layar lebar (desktop, atau HP diputar horizontal) — gambar splash
+       portrait tidak akan pas kalau di-cover, jadi tampilkan utuh (contain) saja. */
+    @media (min-aspect-ratio: 1/1){
+      #bootSplash{ background-size:contain; }
     }
     #bootSplash.boot-splash-hide{opacity:0;pointer-events:none;}
   </style>
+  <script>
+    // Dicatat SEPALING AWAL mungkin (baris pertama yang jalan) supaya
+    // hideBootSplash_() di JavaScript.html tahu persis sudah berapa lama splash
+    // ini tampil, lalu bisa memastikan dia tampil MINIMAL sekian detik sebelum
+    // mulai fade — supaya di koneksi cepat splash tidak "kedip sekejap lalu
+    // langsung tumpang-tindih" dengan halaman Login yang baru separuh dirender.
+    window.__bootSplashStartTs = Date.now();
+  </script>
   <script>
     // Terapkan preferensi Dark Mode SEBELUM CSS/HTML lain dirender, supaya halaman
     // tidak "kedip" terang lalu berubah gelap saat baru dibuka/refresh.
