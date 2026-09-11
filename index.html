@@ -31,47 +31,26 @@
        yang sama dengan index.html) — nama file harus persis "splash-screen.png". -->
   <style>
     html,body{margin:0;}
-    #bootSplash{
-      position:fixed;inset:0;z-index:99999;
-      /* Warna dasar ini SENGAJA disamakan persis dengan "background_color" di
-         manifest.json (splash native Android/Chrome). Sebelumnya splash native
-         pakai hijau tua (#0B3D2E) sementara gambar splash-screen.png sendiri
-         berlatar krem terang — jadi transisinya kelihatan "lompat warna" dari
-         hijau gelap ke terang. Sekarang keduanya sama-sama krem terang, jadi
-         splash native → splash custom kelihatan menyatu/mulus, bukan 2 layar
-         yang beda.
-
-         UKURAN: splash-screen.png itu SATU DESAIN LAYAR PENUH (icon + badge nama
-         app + hiasan gelombang pojok), dibuat portrait khusus untuk HP — jadi
-         "cover" itu SUDAH BENAR untuk HP (device target aplikasi ini, sesuai
-         orientation:"portrait-primary" di manifest.json), hasilnya full-bleed rapi
-         seperti desain aslinya. Masalahnya cuma muncul di DESKTOP: jendela browser
-         desktop jauh lebih lebar (landscape) daripada gambar portrait ini, jadi
-         "cover" jadi nge-zoom & crop habis-habisan sampai cuma ikonnya doang yang
-         kelihatan raksasa. Makanya di bawah ini "cover" hanya dipakai untuk layar
-         portrait/sempit (HP), sedangkan layar landscape lebar (desktop) dipaksa
-         pakai "contain" supaya desain lengkapnya kelihatan utuh, tidak di-crop. */
-      background-color:#F7FAF3;
-      background-image:url('splash-screen.png');
-      background-position:center;
-      background-repeat:no-repeat;
-      background-size:cover;
-      transition:opacity .4s ease;
-    }
-    /* Landscape / layar lebar (desktop, atau HP diputar horizontal) — gambar splash
-       portrait tidak akan pas kalau di-cover, jadi tampilkan utuh (contain) saja. */
-    @media (min-aspect-ratio: 1/1){
-      #bootSplash{ background-size:contain; }
-    }
-    #bootSplash.boot-splash-hide{opacity:0;pointer-events:none;}
+    /* ===== SPLASH CUSTOM (splash-screen.png) — SENGAJA DIMATIKAN =====
+       Atas permintaan: splash custom HTML ini sekarang tidak pernah ditampilkan sama
+       sekali (display:none permanen, di semua ukuran layar). Yang tampil ke user sekarang
+       CUMA splash NATIVE bawaan Android/Chrome (dibangun otomatis dari "icon-512.png" +
+       "background_color" di manifest.json) — lihat komentar di manifest.json untuk
+       instruksi bikin splash native itu semirip mungkin dengan desain modern kita.
+       Div #bootSplash & script pendukungnya di JavaScript.html SENGAJA tidak dihapus
+       (biar gampang diaktifkan lagi nanti kalau berubah pikiran) — cukup di-hide di sini. */
+    #bootSplash{ display:none !important; }
   </style>
+  <!-- Sebelumnya ada mekanisme document.write untuk menulis #bootSplash sedini mungkin
+       (supaya nyambung mulus dengan splash native) — sudah tidak relevan lagi sekarang
+       karena splash custom-nya di-hide total lewat CSS di atas, jadi bagian itu dilepas. -->
   <script>
-    // Dicatat SEPALING AWAL mungkin (baris pertama yang jalan) supaya
-    // hideBootSplash_() di JavaScript.html tahu persis sudah berapa lama splash
-    // ini tampil, lalu bisa memastikan dia tampil MINIMAL sekian detik sebelum
-    // mulai fade — supaya di koneksi cepat splash tidak "kedip sekejap lalu
-    // langsung tumpang-tindih" dengan halaman Login yang baru separuh dirender.
+    // window.__bootSplashStartTs & document.write div di bawah ini DIBIARKAN ada
+    // (walau #bootSplash sekarang di-hide via CSS) supaya kode di JavaScript.html yang
+    // mereferensikannya tidak perlu diubah — cukup aman dipanggil meski elemennya
+    // tersembunyi. Gampang diaktifkan lagi nanti kalau berubah pikiran.
     window.__bootSplashStartTs = Date.now();
+    document.write('<div id="bootSplash"></div>');
   </script>
   <script>
     // Terapkan preferensi Dark Mode SEBELUM CSS/HTML lain dirender, supaya halaman
@@ -133,7 +112,9 @@
 </head>
 <body>
 
-  <div id="bootSplash"></div>
+  <!-- #bootSplash sudah ditulis lebih awal lewat document.write() di <head> (lihat
+       komentar di sana) — supaya tidak ada jeda kosong sebelum splash custom muncul.
+       Sengaja TIDAK ditulis ulang di sini supaya tidak dobel. -->
 
   <!-- ===================== LOGIN SCREEN ===================== -->
   <div id="loginScreen" class="login-screen">
