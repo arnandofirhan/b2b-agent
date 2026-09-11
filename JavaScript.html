@@ -6734,7 +6734,7 @@
               '<div class="data-card-field"><span>Agent</span><b title="'+escapeHtml(r.agentName)+'">'+escapeHtml(r.agentName)+'</b></div>' +
               '<div class="data-card-field"><span>Store</span><b title="'+escapeHtml(r.storeName)+'">'+escapeHtml(r.storeName)+'</b></div>' +
               '<div class="data-card-field"><span>Tanggal</span><b>'+(r.createdAt?formatDateDMY_(r.createdAt):'-')+'</b></div>' +
-              '<div class="data-card-field"><span>Status</span><b>'+statusBadge(r.status)+'</b></div>' +
+              '<div class="data-card-field full-w"><span>Status</span><b>'+statusBadge(r.status)+'</b></div>' +
               '<div class="data-card-field full-w"><span>Total</span><b>'+formatRupiah(r.total)+'</b></div>' +
             '</div></div>';
         }).join('') + '</div>' : emptyState_('Tidak ada data', '', ICONS.reports)) +
