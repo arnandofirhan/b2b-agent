@@ -1224,9 +1224,15 @@
   @keyframes overlay-in{from{opacity:0;}to{opacity:1;}}
   .modal-box{
     background:var(--ag-surface);border-radius:18px;box-shadow:0 30px 70px rgba(6,30,22,.32), 0 6px 18px rgba(6,30,22,.1);
-    width:100%;max-width:480px;max-height:90vh;overflow-y:auto;
+    width:100%;max-width:480px;max-height:90vh;overflow-y:auto;overflow-x:hidden;
     animation:modal-in .22s cubic-bezier(.2,.9,.3,1.1);border:1px solid rgba(11,61,46,.06);
   }
+  /* Scrollbar vertikal TETAP TAMPIL seperti biasa (dipakai kalau konten popup memang panjang
+     — itu wajar & normal, sudah ditipiskan lewat aturan ::-webkit-scrollbar global di atas).
+     overflow-x:hidden di atas cuma jaring pengaman; perbaikan sebenarnya ada di layout (grid
+     kolom & teks panjang sekarang boleh menyusut/patah, lihat .agent-detail-grid &
+     .order-summary-text di bawah) supaya popup memang TIDAK PERNAH melebar ke samping —
+     jadi normalnya overflow-x:hidden ini tidak pernah sampai kepakai / motong apa pun. */
   .modal-box.modal-lg{max-width:680px;}
   .modal-box.modal-md{max-width:560px;}
   .modal-box.modal-sm{max-width:380px;}
@@ -1290,7 +1296,10 @@
   .detail-row{display:flex;padding:10px 0;border-bottom:1px solid var(--ag-gray-100);font-size:13.5px;animation:detail-row-in .22s ease backwards;}
   .detail-row:last-child{border-bottom:none;}
   .detail-label{width:140px;flex-shrink:0;color:var(--ag-gray-900);font-weight:600;}
-  .detail-value{color:var(--ag-gray-900);}
+  /* flex:1;min-width:0 + word-break: teks panjang tanpa spasi (mis. deskripsi/alamat panjang)
+     patah ke baris berikutnya di dalam kolom kanan yang fix ini, bukan mendorong popup
+     melebar ke samping (penyebab scrollbar horizontal). */
+  .detail-value{color:var(--ag-gray-900);flex:1;min-width:0;overflow-wrap:break-word;word-break:break-word;}
   /* Detail rows nested inside a po-cart-section card (e.g. Review PO "Detail Pengajuan")
      use a lighter divider so they read as part of the card, not a separate dense list. */
   .po-cart-section .detail-row{padding:8px 0;border-bottom-color:var(--ag-gray-200);font-size:13px;}
@@ -1318,11 +1327,16 @@
   }
   .agent-detail-section-title:first-of-type{margin-top:0;}
 
-  .agent-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px 20px;}
-  .agent-detail-field{padding:9px 0;border-bottom:1px solid var(--ag-gray-100);}
+  .agent-detail-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px 20px;}
+  .agent-detail-field{padding:9px 0;border-bottom:1px solid var(--ag-gray-100);min-width:0;}
   .agent-detail-field.full{grid-column:1 / -1;}
   .agent-detail-field-label{font-size:11px;color:var(--ag-gray-600);font-weight:700;text-transform:uppercase;letter-spacing:.03em;margin-bottom:3px;}
-  .agent-detail-field-value{font-size:13.5px;color:var(--ag-gray-900);font-weight:600;line-height:1.4;}
+  /* overflow-wrap+word-break WAJIB: sebelumnya kolom grid 1fr TIDAK bisa menyusut di bawah
+     lebar teks aslinya (perilaku default grid item, min-width:auto) begitu isinya teks
+     panjang tanpa spasi (mis. nama promo/deskripsi yg panjang) — itu yang memaksa .modal-box
+     jadi lebih lebar dari layar dan memunculkan scrollbar horizontal. Sekarang teks panjang
+     PATAH ke baris berikutnya di dalam kolomnya sendiri, kolom popup tetap fix selebar modal. */
+  .agent-detail-field-value{font-size:13.5px;color:var(--ag-gray-900);font-weight:600;line-height:1.4;overflow-wrap:break-word;word-break:break-word;}
 
   /* Commission amount highlight — the single most important figure in Detail Komisi,
      pulled out of the grid into its own quiet green card so it reads instantly instead
@@ -1470,15 +1484,21 @@
   .doc-group-label .po-cart-count{font-size:10px;}
 
   /* Order detail modal — compact summary header + status pill row */
-  .order-summary-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:4px;}
-  .order-summary-head-top{display:flex;align-items:flex-start;gap:14px;}
+  .order-summary-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:4px;min-width:0;}
+  .order-summary-head-top{display:flex;align-items:flex-start;gap:14px;min-width:0;flex:1;}
   .order-summary-icon{
     width:42px;height:42px;border-radius:var(--radius-md);background:var(--ag-green-soft);color:var(--ag-green);
     display:flex;align-items:center;justify-content:center;flex-shrink:0;
   }
   .order-summary-icon svg{width:22px;height:22px;}
-  .order-summary-title{font-size:15px;font-weight:800;color:var(--ag-gray-900);}
-  .order-summary-sub{font-size:12px;color:var(--ag-gray-500);margin-top:1px;}
+  /* flex:1;min-width:0 WAJIB di sini: tanpa ini, flex item defaultnya tidak bisa menyusut
+     di bawah lebar teks aslinya — begitu PO ID/nama Agent panjang & tanpa spasi, baris ini
+     memaksa .modal-box jadi lebih lebar dari layar & memunculkan scrollbar horizontal.
+     overflow-wrap+word-break di title/sub membuat teks panjang PATAH ke baris berikutnya di
+     dalam lebar yang sudah fix, bukan mendorong modal jadi lebih lebar. */
+  .order-summary-text{flex:1;min-width:0;}
+  .order-summary-title{font-size:15px;font-weight:800;color:var(--ag-gray-900);overflow-wrap:break-word;word-break:break-word;}
+  .order-summary-sub{font-size:12px;color:var(--ag-gray-500);margin-top:1px;overflow-wrap:break-word;word-break:break-word;}
   .order-summary-badges{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto;flex-shrink:0;padding-top:2px;}
   /* Detail Order bisa punya 3 badge status sekaligus (Pengiriman/Pembayaran/Transaksi) yang
      tidak muat sejajar dengan judul tanpa overflow — badge-badge ini turun ke baris sendiri
