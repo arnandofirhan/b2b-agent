@@ -1758,6 +1758,17 @@
     font-size:13px;color:var(--ag-gray-400);pointer-events:none;font-weight:500;
   }
   .date-field-wrap--sm .date-field-ghost{left:32px;font-size:12.5px;}
+  /* ---------- FIX (desktop only, >720px): teks ghost ("Dari"/"Pilih tanggal"/dst) numpuk
+     dgn placeholder bawaan browser (dd/mm/yyyy) krn <input type=date> versi desktop selalu
+     merender teks placeholder-nya sendiri meski value kosong (beda dgn mobile/OS picker yg
+     tidak begitu). Solusinya: sembunyikan teks placeholder bawaan input (color:transparent)
+     selama field kosong & tidak fokus, supaya cuma ghost custom yg kelihatan — begitu user
+     klik/fokus atau field sudah terisi, teks asli dimunculkan lagi. Mobile TIDAK disentuh. */
+  @media (min-width:721px){
+    .date-field-wrap.has-placeholder-ghost input[type=date]:placeholder-shown{color:transparent;}
+    .date-field-wrap.has-placeholder-ghost input[type=date]:focus{color:var(--ag-gray-800);}
+    .date-field-wrap.has-placeholder-ghost input[type=date]:focus ~ .date-field-ghost{display:none;}
+  }
   .filter-daterange{display:flex;align-items:center;gap:6px;flex:1 1 auto;min-width:0;}
   .filter-daterange .date-field-wrap--sm{flex:1;min-width:0;}
   @media (max-width: 720px){
