@@ -1250,6 +1250,21 @@
     closeRowMenus_();
   });
 
+  // ---------- Date field: klik di mana saja pada wrapper langsung buka kalender ----------
+  // KHUSUS DESKTOP (window.innerWidth > 720, senada breakpoint mobile lain di CSS) — di
+  // mobile picker native OS sudah otomatis muncul saat field disentuh, jadi tidak perlu
+  // dan tidak disentuh di sini. Native <input type=date> hanya buka picker kalau user
+  // klik tepat di ikon kalender bawaan browser; showPicker() bikin klik di mana saja
+  // pada wrapper (termasuk ikon hijau dekoratif & teks ghost) juga membuka kalender.
+  document.addEventListener('click', function(e){
+    if(window.innerWidth <= 720) return;
+    var wrap = e.target.closest && e.target.closest('.date-field-wrap');
+    if(!wrap) return;
+    var inp = wrap.querySelector('input[type=date]');
+    if(!inp || inp.disabled) return;
+    try{ inp.focus(); if(typeof inp.showPicker === 'function') inp.showPicker(); }catch(err){}
+  });
+
   // =============================================================
   // GENERIC TABLE RENDER HELPER
   // =============================================================
