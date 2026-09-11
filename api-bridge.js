@@ -42,8 +42,20 @@
   // gagal/timeout dan direspons 404 lewat redirect echo?user_content_key=... . Sekarang
   // preloadAllPages_() JUGA sudah di-stagger (tidak lagi menembak semua sekaligus), jadi
   // kombinasi keduanya membuat beban ke backend jauh lebih halus.
-  var MAX_CONCURRENT = 2;
-  var activeCount_ = 0;
+  // PENTING (fix bug nyata): sebelumnya activeCount_ ini SATU angka global dipakai
+  // bersama oleh hi & lo — job hi-priority cuma didahulukan DI URUTAN ANTRIAN, tapi
+  // kalau ke-2 slot activeCount_ kebetulan sedang dipakai job LO-priority yang lagi
+  // gagal-retry (bisa berjalan lama krn RETRY_DELAY_MS*attemptNo + MAX_ATTEMPTS 4x),
+  // job hi-priority (klik user, mis. buka modal Detail PO) tetap harus NUNGGU slot
+  // itu kosong dulu — gejalanya: modal keburu keliatan freeze/lama padahal request-nya
+  // sendiri belum tentu lambat, cuma masih antre nunggu proses background yang lagi
+  // sibuk retry. FIX: pisahkan jatah slot hi & lo jadi 2 counter independen supaya job
+  // hi-priority PASTI selalu dapat slot sendiri, tidak pernah terblokir oleh proses
+  // background yang sedang retry.
+  var MAX_CONCURRENT_HI = 2; // klik user / submit form — jatah sendiri, tidak pernah nunggu background
+  var MAX_CONCURRENT_LO = 1; // preload/polling background — sengaja dibatasi 1 spy beban ke GAS makin halus
+  var activeHi_ = 0;
+  var activeLo_ = 0;
 
   // ANTRIAN 2 TINGKAT: request yang dipicu LANGSUNG oleh user (klik menu, submit form,
   // dsb) harus SELALU didahulukan dari request preload diam-diam di background
@@ -57,14 +69,16 @@
   var queueLo_ = [];
 
   function runNext_() {
-    if (activeCount_ >= MAX_CONCURRENT) return;
-    var job = queueHi_.length ? queueHi_.shift() : queueLo_.shift();
-    if (!job) return;
-    activeCount_++;
-    job(function done() {
-      activeCount_--;
-      runNext_();
-    });
+    if (activeHi_ < MAX_CONCURRENT_HI && queueHi_.length) {
+      var jobHi = queueHi_.shift();
+      activeHi_++;
+      jobHi(function done() { activeHi_--; runNext_(); });
+    }
+    if (activeLo_ < MAX_CONCURRENT_LO && queueLo_.length) {
+      var jobLo = queueLo_.shift();
+      activeLo_++;
+      jobLo(function done() { activeLo_--; runNext_(); });
+    }
   }
 
   function enqueue_(job) {
