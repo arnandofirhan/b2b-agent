@@ -66,6 +66,7 @@
     cancel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/></svg>',
     reports: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6" rx="0.5"/><rect x="12.5" y="8" width="3" height="10" rx="0.5"/><rect x="18" y="5" width="3" height="13" rx="0.5"/></svg>',
     calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>',
+    phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.362 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.338 1.85.573 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>',
     bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
     chevronDown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
     moreHoriz: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>'
@@ -229,12 +230,14 @@
   // =============================================================
   // TOPBAR USER MENU (avatar dropdown: Ganti Password / Keluar)
   // =============================================================
+  var USER_MENU_CLOSED_AT_ = 0; // guard: cegah re-open seketika krn race pointerdown(backdrop)->click(avatar)
   function toggleUserMenu(e){
     // stopPropagation WAJIB (pola sama seperti toggleNotifDropdown_): tanpa ini klik
     // pada trigger avatar "naik" (bubble) ke listener klik-luar document di bawah PADA
     // EVENT YANG SAMA, sehingga di beberapa browser mobile menu langsung ketutup lagi
     // seketika saat dibuka, atau membuat state open/close jadi tidak sinkron.
     if(e) e.stopPropagation();
+    if(Date.now() - USER_MENU_CLOSED_AT_ < 300) return; // baru saja ditutup via tap-di-luar, abaikan
     var menu = document.getElementById('userMenu');
     if(!menu) return;
     var willOpen = !menu.classList.contains('open');
@@ -244,6 +247,7 @@
   function closeUserMenu(){
     var menu = document.getElementById('userMenu');
     if(menu) menu.classList.remove('open');
+    USER_MENU_CLOSED_AT_ = Date.now();
   }
   /** Dipakai oleh item2 dropdown user-menu (Ganti Password / Keluar) alih2 langsung
       "closeUserMenu();aksiNya()" di onclick. FIX bug: menutup dropdown (mengubah
@@ -2791,7 +2795,7 @@
 
     var body =
       imageUploadWidgetHtml_(p.ImageURL) +
-      formField_('pName','Product Item (Nama Produk)',p.ProductName,'text','',true) +
+      formField_('pName','Product Item (Nama Produk)',p.ProductName,'text','',true,ICONS.products) +
       '<div class="form-group"><label>Category<span class="required-mark">*</span></label>' +
         comboSelectHtml_('pCategory', p.Category||'', productCategoryOptions_(), 'Pilih atau ketik kategori baru', true) +
         '<div class="form-hint">Pilih dari daftar yang sudah ada, atau ketik kategori baru — otomatis tersimpan untuk dipakai lagi.</div>' +
@@ -2802,8 +2806,8 @@
       '</div>' +
       '<div class="form-hint">Pilih satuan yang sudah ada, atau ketik satuan baru (mis. "Botol/Dus") — tanpa perlu ubah kode.</div></div>' +
       '<div class="field-row-2">' +
-        formField_('pShelfLife','Shelf Life (hari)',p.ShelfLife,'number','',true) +
-        formField_('pPrice','Regular Price (Rp)',p.RegularPrice,'number','',true) +
+        formField_('pShelfLife','Shelf Life (hari)',p.ShelfLife,'number','',true,ICONS.calendar) +
+        formField_('pPrice','Regular Price (Rp)',p.RegularPrice,'number','',true,ICONS.commission) +
       '</div>' +
       '<div class="form-group"><label>Status</label><select id="pStatus">' +
         '<option value="ACTIVE"'+((p.Status||'ACTIVE')==='ACTIVE'?' selected':'')+'>ACTIVE</option>' +
@@ -3184,11 +3188,11 @@
       '</select></div>';
     var body =
       (storeId
-        ? formField_('storeId','Store ID', s.StoreID,'text','',true) // will be readonly below
-        : formField_('storeId','Store ID (isi manual)', '','text','',true)
+        ? formField_('storeId','Store ID', s.StoreID,'text','',true,ICONS.stores) // will be readonly below
+        : formField_('storeId','Store ID (isi manual)', '','text','',true,ICONS.stores)
       ) +
-      formField_('storeName','Nama Store',s.StoreName,'text','',true) + formField_('storeAddress','Alamat',s.Address,'text','',true) +
-      formField_('storePhone','Telepon',s.Phone,'text','',true) + formField_('storePIC','PIC',s.PIC,'text','',true) +
+      formField_('storeName','Nama Store',s.StoreName,'text','',true,ICONS.fileDoc) + formField_('storeAddress','Alamat',s.Address,'text','',true,ICONS.truck) +
+      formField_('storePhone','Telepon',s.Phone,'text','',true,ICONS.phone) + formField_('storePIC','PIC',s.PIC,'text','',true,ICONS.agent) +
       statusField;
     openFormModal(storeId ? 'Edit Store' : 'Tambah Store', body, function(){ saveStoreForm(storeId); });
     if(storeId){
@@ -7387,12 +7391,14 @@
   var NOTIF_DROPDOWN_LIMIT_ = 8; // maks notif yang tampil sebelum "Lihat Semua"
   var notifSeeAllExpanded_ = false;
 
+  var NOTIF_CLOSED_AT_ = 0; // guard: cegah re-open seketika krn race pointerdown(backdrop)->click(bell)
   function toggleNotifDropdown_(e){
     // stopPropagation WAJIB: tanpa ini, klik pada tombol lonceng akan "naik" (bubble)
     // ke document dan bisa memicu handler klik-luar lain (mis. penutup user-menu) pada
     // event yang sama, menyebabkan dropdown terbuka-lalu-tertutup seketika di beberapa
     // browser mobile — inilah sebab "diklik tapi tidak bisa balik/tertutup" sebelumnya.
     if(e) e.stopPropagation();
+    if(Date.now() - NOTIF_CLOSED_AT_ < 300) return; // baru saja ditutup via tap-di-luar, abaikan
     var dd = document.getElementById('notifDropdown');
     if(!dd) return;
     var willOpen = !dd.classList.contains('show');
@@ -7412,6 +7418,7 @@
     var bd = document.getElementById('notifBackdrop');
     if(dd) dd.classList.remove('show');
     if(bd) bd.classList.remove('show');
+    NOTIF_CLOSED_AT_ = Date.now();
   }
 
   function toggleNotifSeeAll_(){
