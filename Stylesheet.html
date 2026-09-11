@@ -1376,6 +1376,7 @@
     .commission-flow-who{display:none;}
     .commission-flow-connector{min-width:6px;margin-top:13px;}
     .commission-flow-step{min-width:0;}
+    .order-summary-head.has-multi-badges .order-summary-badges{margin-left:0;flex-basis:100%;}
   }
 
   /* Document preview grid */
@@ -1448,6 +1449,13 @@
   .order-summary-title{font-size:15px;font-weight:800;color:var(--ag-gray-900);}
   .order-summary-sub{font-size:12px;color:var(--ag-gray-500);margin-top:1px;}
   .order-summary-badges{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto;flex-shrink:0;padding-top:2px;}
+  /* Detail Order bisa punya 3 badge status sekaligus (Pengiriman/Pembayaran/Transaksi) yang
+     tidak muat sejajar dengan judul tanpa overflow — badge-badge ini turun ke baris sendiri
+     di bawah judul, full-width, supaya tidak terpotong ke kanan. */
+  .order-summary-head.has-multi-badges{flex-wrap:wrap;}
+  .order-summary-head.has-multi-badges .order-summary-badges{
+    flex-basis:100%;justify-content:flex-start;margin-left:56px;margin-top:2px;
+  }
 
   /* Detail Produk modal — photo + name/category/status header, same family as order-summary */
   .product-summary-head{display:flex;align-items:center;gap:14px;margin-bottom:4px;}
@@ -1616,8 +1624,8 @@
     .filter-search{max-width:none;flex:0 0 auto;}
     .filter-search input{padding:7px 12px 7px 32px;font-size:12.5px;}
     .filter-controls-row{flex-wrap:wrap;gap:6px;}
-    .filter-select-wrap{flex:1 1 130px;}
-    .filter-select{width:100%;max-width:none;padding:6px 26px 6px 11px;font-size:12.5px;}
+    .filter-select-wrap{flex:0 1 auto;}
+    .filter-select{width:auto;max-width:none;padding:6px 26px 6px 11px;font-size:12.5px;}
     .filter-count-pill{margin-left:auto;padding:5px 10px;font-size:11px;}
     .filter-reset-btn{padding:6px 11px;font-size:12px;}
   }
@@ -1651,6 +1659,11 @@
   .filter-daterange .date-field-wrap--sm{flex:1;min-width:0;}
   @media (max-width: 720px){
     .filter-daterange{flex:1 1 100%;}
+  }
+  @media (max-width: 480px){
+    .filter-daterange{flex-wrap:wrap;gap:8px;}
+    .filter-daterange .date-field-wrap--sm{flex:1 1 100%;}
+    .filter-daterange-sep{display:none;}
   }
 
   /* ---------- Text field dgn ikon dekoratif di kiri (Promo Code, Promo Name, dst) ---------- */
