@@ -33,7 +33,14 @@
     html,body{margin:0;}
     #bootSplash{
       position:fixed;inset:0;z-index:99999;
-      background:#0B3D2E url('splash-screen.png') center/cover no-repeat;
+      /* Warna dasar ini SENGAJA disamakan persis dengan "background_color" di
+         manifest.json (splash native Android/Chrome). Sebelumnya splash native
+         pakai hijau tua (#0B3D2E) sementara gambar splash-screen.png sendiri
+         berlatar krem terang — jadi transisinya kelihatan "lompat warna" dari
+         hijau gelap ke terang. Sekarang keduanya sama-sama krem terang, jadi
+         splash native → splash custom kelihatan menyatu/mulus, bukan 2 layar
+         yang beda. */
+      background:#F7FAF3 url('splash-screen.png') center/cover no-repeat;
       transition:opacity .35s ease;
     }
     #bootSplash.boot-splash-hide{opacity:0;pointer-events:none;}
