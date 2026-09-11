@@ -228,7 +228,12 @@
   // =============================================================
   // TOPBAR USER MENU (avatar dropdown: Ganti Password / Keluar)
   // =============================================================
-  function toggleUserMenu(){
+  function toggleUserMenu(e){
+    // stopPropagation WAJIB (pola sama seperti toggleNotifDropdown_): tanpa ini klik
+    // pada trigger avatar "naik" (bubble) ke listener klik-luar document di bawah PADA
+    // EVENT YANG SAMA, sehingga di beberapa browser mobile menu langsung ketutup lagi
+    // seketika saat dibuka, atau membuat state open/close jadi tidak sinkron.
+    if(e) e.stopPropagation();
     var menu = document.getElementById('userMenu');
     if(!menu) return;
     menu.classList.toggle('open');
@@ -236,6 +241,19 @@
   function closeUserMenu(){
     var menu = document.getElementById('userMenu');
     if(menu) menu.classList.remove('open');
+  }
+  /** Dipakai oleh item2 dropdown user-menu (Ganti Password / Keluar) alih2 langsung
+      "closeUserMenu();aksiNya()" di onclick. FIX bug: menutup dropdown (mengubah
+      display tombol yang sedang di-tap jadi none) SECARA SINKRON di tengah event
+      klik/tap yang sama membuat sebagian Android WebView kehilangan jejak target
+      sentuhnya, sehingga aksi (buka modal) tidak jalan DAN sentuhan berikutnya di
+      tombol2 lain sempat "nyangkut"/tidak terdaftar. Solusinya: hentikan event supaya
+      tidak bubble ke listener klik-luar, jalankan aksinya dulu, baru tutup menunya
+      lewat setTimeout(0) — di luar siklus event/tap yang sedang berjalan. */
+  function handleUserMenuAction_(e, actionFn){
+    if(e){ e.preventDefault(); e.stopPropagation(); }
+    actionFn();
+    setTimeout(closeUserMenu, 0);
   }
   document.addEventListener('click', function(e){
     var menu = document.getElementById('userMenu');
@@ -423,8 +441,24 @@
   // pernah tertangkap lagi kalau kita cuma pasang addEventListener. Makanya di sini kita
   // cek document.readyState dulu: kalau dokumen sudah selesai loading, langsung jalankan;
   // kalau belum, baru pasang listener seperti biasa.
+  /** Fade-out + hapus #bootSplash dari DOM. Dipanggil begitu app selesai boot (baik ke
+      halaman Login maupun langsung ke appShell kalau sesi masih ada) supaya splash tidak
+      pernah "nyangkut" menutupi UI. Aman dipanggil berkali-kali / kalau elemennya sudah
+      tidak ada. */
+  function hideBootSplash_(){
+    var el = document.getElementById('bootSplash');
+    if(!el) return;
+    el.classList.add('boot-splash-hide');
+    setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 400);
+  }
+  // Jaring pengaman: kalau karena sesuatu hal _agBootInit_ tidak pernah terpanggil (mis.
+  // JavaScript.html gagal di-fetch di versi statis/GitHub Pages), splash tetap dipaksa
+  // hilang setelah beberapa detik supaya user tidak terjebak layar splash selamanya.
+  setTimeout(hideBootSplash_, 8000);
+
   function _agBootInit_(){
     applyBrandLogo_();
+    hideBootSplash_();
     // "Ingat saya" HANYA mengingat alamat email (bukan password — menyimpan password mentah
     // di browser tidak aman) di localStorage supaya form login sudah terisi otomatis di
     // kunjungan berikutnya, termasuk setelah logout. Kalau checkbox tidak dicentang saat
