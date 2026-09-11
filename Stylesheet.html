@@ -688,6 +688,14 @@
   @media (max-width:860px){
     .login-visual{display:none;}
     .login-form-side{padding:20px;}
+    /* Panel hijau .login-visual di atas disembunyikan di lebar ini, tapi sebelumnya
+       .login-screen di baliknya cuma polos krem (#F6F4EC) — jadi di HP kartu login
+       "mengambang" di atas background kosong, gak ada nuansa hijau brand sama sekali
+       (lihat screenshot: mobile beda jauh dari versi desktop yang ada panel hijaunya).
+       Fix: pakai gradasi hijau yang SAMA persis dengan .login-visual di atas sebagai
+       background .login-screen KHUSUS di breakpoint mobile ini saja — desktop tidak
+       kesentuh sama sekali karena override ini di dalam media query max-width:860px. */
+    .login-screen{background:linear-gradient(175deg,#0B3D2E 0%,#155940 55%,#1E7A4C 100%);}
   }
   @media (max-width:420px){
     .login-form-side{padding:16px;}
