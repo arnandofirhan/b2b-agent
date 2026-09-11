@@ -1649,6 +1649,11 @@
   .date-field-wrap--sm{border-radius:999px;}
   .date-field-wrap--sm svg{width:14px;height:14px;margin-left:12px;}
   .date-field-wrap--sm input[type=date]{padding:7px 10px 7px 8px;font-size:13px;}
+  @media (max-width:400px){
+    .date-field-wrap--sm input[type=date]{padding:7px 6px 7px 4px;font-size:12px;}
+    .date-field-wrap--sm svg{margin-left:8px;}
+    .date-field-wrap--sm .date-field-ghost{left:26px;font-size:11.5px;}
+  }
   .date-field-wrap.has-placeholder-ghost{position:relative;}
   .date-field-ghost{
     position:absolute;left:37px;top:50%;transform:translateY(-50%);
@@ -1659,11 +1664,6 @@
   .filter-daterange .date-field-wrap--sm{flex:1;min-width:0;}
   @media (max-width: 720px){
     .filter-daterange{flex:1 1 100%;}
-  }
-  @media (max-width: 480px){
-    .filter-daterange{flex-wrap:wrap;gap:8px;}
-    .filter-daterange .date-field-wrap--sm{flex:1 1 100%;}
-    .filter-daterange-sep{display:none;}
   }
 
   /* ---------- Text field dgn ikon dekoratif di kiri (Promo Code, Promo Name, dst) ---------- */
