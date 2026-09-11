@@ -358,11 +358,19 @@
     display:flex;align-items:center;gap:16px;flex-wrap:wrap;
     background:linear-gradient(135deg,var(--ag-green) 0%,#0B3D2E 100%);
     color:#fff;border-radius:var(--radius-lg);padding:22px 24px;margin-bottom:20px;
-    box-shadow:0 10px 24px rgba(11,61,46,.22);position:relative;
+    box-shadow:0 10px 24px rgba(11,61,46,.22);position:relative;overflow:hidden;
   }
-  /* overflow:hidden dihapus dari sini karena memotong teks nama yang panjang;
-     lingkaran dekoratif di ::before di-clip sendiri lewat clip-path supaya tidak
-     perlu overflow:hidden pada container. */
+  /* CATATAN (diperbaiki): overflow:hidden sebelumnya sengaja dihapus dari sini karena
+     dikira akan memotong teks nama yang panjang — padahal clip-path di ::before di bawah
+     TIDAK membatasi elemen itu supaya tetap di dalam kartu (clip-path cuma membentuk ULANG
+     bentuknya jadi lingkaran, bukan mengurungnya di dalam parent). Akibatnya lingkaran
+     dekoratif ini (right:-40px, top:-60px — sengaja nongol keluar kartu utk efek visual)
+     membuat SELURUH halaman "Profil Saya" jadi lebih lebar dari layar & bisa digeser ke
+     kanan (area kosong di kanan). Nama panjang sebenarnya SUDAH aman dari overflow:hidden
+     ini karena .profile-hero-name di bawah sudah pakai word-break/overflow-wrap/white-space:
+     normal (teks akan turun baris, bukan meluber ke luar kartu) — jadi overflow:hidden di
+     sini sekarang aman dipasang lagi, dan itulah yang benar2 mengurung lingkaran dekoratif
+     ini rapi di dalam kartu tanpa bikin halaman bisa digeser horizontal. */
   .profile-hero::before{
     content:'';position:absolute;right:-40px;top:-60px;width:200px;height:200px;
     border-radius:50%;background:rgba(255,255,255,.07);z-index:0;
