@@ -135,6 +135,7 @@
   html[data-theme="dark"] .row-menu-item-danger .row-menu-item-icon{color:#F08883;}
   html[data-theme="dark"] .row-menu-item-danger:hover{background:rgba(224,71,63,.15);}
 
+  .content-loading-lock{pointer-events:none;}
   *{box-sizing:border-box;}
   html,body{height:100%;margin:0;}
   body{
@@ -1031,14 +1032,14 @@
   .card-title{font-size:15px;font-weight:700;}
 
   /* ---------- Badges ---------- */
-  .badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px 4px 8px;border-radius:999px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;line-height:1.4;white-space:nowrap;}
+  .badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px 4px 8px;border-radius:999px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.02em;line-height:1.4;white-space:nowrap;}
   .badge::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0;}
-  .badge-green{background:var(--ag-green-soft);color:var(--ag-green);}
-  .badge-orange{background:var(--ag-orange-soft);color:var(--ag-orange);}
-  .badge-blue{background:var(--ag-blue-soft);color:var(--ag-blue);}
-  .badge-red{background:var(--ag-red-soft);color:var(--ag-red);}
+  .badge-green{background:#DCF5E4;color:#0F7A3D;}
+  .badge-orange{background:#FEE8D2;color:#B85C00;}
+  .badge-blue{background:#DCE9FE;color:#1D5FD1;}
+  .badge-red{background:#FBDBDA;color:#C22A22;}
   .badge-neutral{background:var(--ag-gray-100);color:var(--ag-gray-600);}
-  .badge-purple{background:var(--ag-purple-soft);color:var(--ag-purple);}
+  .badge-purple{background:#EBE0FB;color:#7B3FE0;}
 
   /* ---------- Table ---------- */
   .table-scroll{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;}
@@ -1362,7 +1363,7 @@
   .commission-flow-connector.step-orange{background:var(--ag-orange);}
   .commission-flow-connector.step-purple{background:var(--ag-purple);}
   .commission-flow-connector.step-green{background:var(--ag-green);}
-  .commission-flow-hint{margin-top:10px;padding:9px 12px;background:var(--ag-blue-soft);color:var(--ag-blue);
+  .commission-flow-hint{margin-top:10px;margin-bottom:16px;padding:9px 12px;background:var(--ag-blue-soft);color:var(--ag-blue);
     border-radius:var(--radius-sm);font-size:12px;font-weight:600;display:flex;align-items:center;gap:7px;}
   .commission-flow-hint svg{width:15px;height:15px;flex-shrink:0;}
   .commission-flow-hint.is-done{background:var(--ag-green-soft);color:var(--ag-green);}
@@ -1437,7 +1438,7 @@
   .doc-group-label .po-cart-count{font-size:10px;}
 
   /* Order detail modal — compact summary header + status pill row */
-  .order-summary-head{display:flex;flex-direction:column;gap:12px;margin-bottom:4px;}
+  .order-summary-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:4px;}
   .order-summary-head-top{display:flex;align-items:flex-start;gap:14px;}
   .order-summary-icon{
     width:42px;height:42px;border-radius:var(--radius-md);background:var(--ag-green-soft);color:var(--ag-green);
@@ -1446,7 +1447,7 @@
   .order-summary-icon svg{width:22px;height:22px;}
   .order-summary-title{font-size:15px;font-weight:800;color:var(--ag-gray-900);}
   .order-summary-sub{font-size:12px;color:var(--ag-gray-500);margin-top:1px;}
-  .order-summary-badges{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;}
+  .order-summary-badges{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto;flex-shrink:0;padding-top:2px;}
 
   /* Detail Produk modal — photo + name/category/status header, same family as order-summary */
   .product-summary-head{display:flex;align-items:center;gap:14px;margin-bottom:4px;}
@@ -1489,9 +1490,13 @@
     font-size:12px;font-weight:700;color:var(--ag-green);text-decoration:none;display:inline-flex;align-items:center;gap:5px;
   }
   .doc-lightbox-open-link svg{width:14px;height:14px;}
-  .doc-lightbox-box-pdf{width:min(880px,92vw);height:min(88vh,900px);max-width:880px;}
+  .doc-lightbox-box-pdf{width:min(880px,92vw);height:min(82vh,760px);max-width:880px;}
   .doc-lightbox-box-pdf .doc-lightbox-body{padding:0;background:var(--ag-gray-100);}
   .doc-lightbox-frame{width:100%;height:100%;border:none;display:block;min-height:70vh;}
+  @media (max-width:600px){
+    .doc-lightbox-overlay{padding:16px;}
+    .doc-lightbox-box-pdf{height:min(78vh,680px);}
+  }
 
   /* Product picker (Agent side) */
   .product-pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;}
@@ -1605,13 +1610,16 @@
   @media (max-width: 720px){
     /* Search selalu full-width sendiri; sisanya (dropdown, reset, counter) dikelompokkan
        dalam .filter-controls-row supaya presisi satu baris yang sama & tidak makan baris
-       ekstra terpisah-pisah seperti sebelumnya. */
-    .filter-bar{padding:9px 10px;gap:7px;margin:10px 0 14px;flex-direction:column;align-items:stretch;}
+       ekstra terpisah-pisah seperti sebelumnya. Dipadatkan (padding/gap lebih kecil, field
+       lebih pendek) supaya filter tidak makan ruang vertikal terlalu banyak di HP. */
+    .filter-bar{padding:8px 10px;gap:6px;margin:10px 0 14px;flex-direction:column;align-items:stretch;}
     .filter-search{max-width:none;flex:0 0 auto;}
-    .filter-controls-row{flex-wrap:wrap;}
-    .filter-select-wrap{flex:1 1 140px;}
-    .filter-select{width:100%;max-width:none;}
-    .filter-count-pill{margin-left:auto;}
+    .filter-search input{padding:7px 12px 7px 32px;font-size:12.5px;}
+    .filter-controls-row{flex-wrap:wrap;gap:6px;}
+    .filter-select-wrap{flex:1 1 130px;}
+    .filter-select{width:100%;max-width:none;padding:6px 26px 6px 11px;font-size:12.5px;}
+    .filter-count-pill{margin-left:auto;padding:5px 10px;font-size:11px;}
+    .filter-reset-btn{padding:6px 11px;font-size:12px;}
   }
   .filter-controls-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;width:100%;}
 
@@ -1901,8 +1909,8 @@
   /* Rapikan modal registrasi & field-row-2 di layar sempit (mobile) supaya
      kolom Email / No. Telepon tidak sempit & terpotong seperti di layar lebar. */
   @media (max-width:560px){
-    .reg-overlay{padding:0;align-items:flex-end;}
-    .reg-card{max-width:100%;max-height:94vh;border-radius:20px 20px 0 0;}
+    .reg-overlay{padding:8px;align-items:flex-end;}
+    .reg-card{max-width:100%;max-height:94vh;border-radius:20px;}
     .reg-hero{padding:22px 20px 18px;}
     .reg-hero-title{font-size:19px;}
     .reg-hero-sub{font-size:12.5px;}
@@ -1910,6 +1918,11 @@
     .reg-footer{padding:14px 20px 20px;}
     .field-row-2{grid-template-columns:1fr;gap:0;}
     .doc-grid{grid-template-columns:repeat(auto-fit,minmax(130px,1fr));}
+    /* Cek Status: modal pendek (1 layar, tidak perlu scroll) tetap ditampilkan sebagai
+       kartu melayang di tengah dengan jarak dari tepi layar, bukan bottom-sheet penuh
+       seperti Registrasi — supaya terasa seperti popup modern, bukan nempel mentok. */
+    #checkStatusModal{padding:18px;align-items:center;}
+    #checkStatusModal .reg-card{max-width:440px;border-radius:22px;max-height:90vh;}
   }
 
   /* Success popup */
