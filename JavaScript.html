@@ -2790,9 +2790,29 @@
     var filtered = applyListFilters_(rows, FILTER_STATE_PROMOS_, ['PromoCode','PromoName','Description'], fieldConfigs);
     var filterHtml = filterBarHtml_('onFilterChangePromos_', 'Cari kode, nama, atau deskripsi promo...', fieldConfigs, FILTER_STATE_PROMOS_, filtered.length, rows.length);
     var canEdit = STATE.user.role === 'ADMIN';
-    var listHtml = filtered.length
-      ? '<div class="promo-list">' + filtered.map(function(r){ return promoCardHtml_(r, canEdit); }).join('') + '</div>'
-      : emptyState_(rows.length ? 'Tidak ada promo yang cocok' : 'Belum ada promo', rows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'Buat promo pertama untuk mulai menarik Agent.', ICONS.promo);
+    // FIX: sebelumnya halaman ini SELALU render kartu (promoCardHtml_) di semua ukuran
+    // layar, termasuk desktop — beda sendiri dari Agent/Store/Product/Commission yang
+    // sudah pakai tabel di layar lebar + kartu di HP (lihat renderTableOrCards_). Sekarang
+    // dibuatkan `cols` tabel supaya konsisten: desktop = tabel ringkas, mobile (<=760px)
+    // = kartu (otomatis lewat CSS .table-scroll-has-cards / .data-card-list).
+    var cols = [
+      {label:'Promo', titleCol:true, render:function(r){
+        return '<div class="cell-agent"><div class="cell-agent-name">'+escapeHtml(r.PromoName||'-')+'</div>' +
+          '<div class="cell-agent-sub">Kode: '+escapeHtml(r.PromoCode||'-')+'</div></div>';
+      }},
+      {label:'Deskripsi', fullWidth:true, render:function(r){ return r.Description ? escapeHtml(r.Description) : '-'; }},
+      {label:'Periode', render:function(r){ return formatDateDMY_(r.StartDate)+' &ndash; '+formatDateDMY_(r.EndDate); }},
+      {label:'Status', render:function(r){ return statusBadge(r.EffectiveStatus); }}
+    ];
+    var actions = function(r){
+      var view = 'viewPromo(\''+r.PromoID+'\')';
+      var edit = canEdit ? 'editPromo(\''+r.PromoID+'\')' : null;
+      var del = canEdit ? 'deletePromoConfirm(\''+r.PromoID+'\',\''+escapeHtml(r.PromoName||'').replace(/'/g,"\\'")+'\')' : null;
+      return rowActionButtons(view, edit, del);
+    };
+    var emptyTitlePromo_ = rows.length ? 'Tidak ada promo yang cocok' : 'Belum ada promo';
+    var emptySubPromo_ = rows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'Buat promo pertama untuk mulai menarik Agent.';
+    var listHtml = renderTableOrCards_(cols, filtered, actions, emptyTitlePromo_, emptySubPromo_, ICONS.promo);
     return '<div class="card"><div class="list-header">' +
       '<span class="card-title">Promo</span>' +
       (canEdit?'<button type="button" class="btn btn-primary btn-sm list-header-btn" onclick="editPromo(null)"><span class="btn-icon">'+ICONS.plus+'</span><span>Tambah Promo</span></button>':'') +
@@ -2883,10 +2903,6 @@
       message: 'Promo "'+promoName+'" akan dihapus permanen.',
       confirmLabel: 'Ya, Hapus', danger: true, icon: ICONS.trash,
       onConfirm: function(){
-        // Tampilkan skeleton loading di list segera setelah user konfirmasi, supaya tidak
-        // terlihat "diam saja" selama menunggu round-trip ke server — baru user tahu proses
-        // sedang berjalan lewat toast setelah selesai.
-        showListSkeleton_('promo-list', promoCardSkeletonHtml_);
         google.script.run.withSuccessHandler(function(res){
           if(res.success){ showToast('Promo dihapus.','success'); renderPromos(); }
           else { showToast(res.message||'Gagal menghapus.','error'); renderPromos(); }
@@ -3162,7 +3178,7 @@
       var filterHtml = filterBarHtml_('onFilterChangePO_', 'Cari PO ID, Agent, atau deskripsi...', fieldConfigs, FILTER_STATE_PO_, filtered.length, rows.length);
       var cols = [
         {label:'No.', render:function(r,i){ return String(i+1); }},
-        {label:'PO ID', render:function(r){return '<span class="mono-id">'+escapeHtml(r.POID)+'</span>';}}
+        {label:'PO ID', titleCol:true, render:function(r){return '<span class="mono-id">'+escapeHtml(r.POID)+'</span>';}}
       ];
       if(agentMap){
         cols.push({label:'Agent', render:function(r){
@@ -3267,9 +3283,15 @@
             '<a href="#" class="btn btn-primary btn-sm" onclick="showPage(\'agents\');return false;">Buka Profil Saya</a>' +
           '</div>'
         : '';
-      var listHtml = filtered.length
-        ? '<div class="po-list">' + filtered.map(function(r){ return poCardHtml_(r, agentMap, actions); }).join('') + '</div>'
-        : emptyState_(rows.length ? 'Tidak ada PO yang cocok' : 'Belum ada transaksi', rows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'PO yang dibuat Agent akan muncul di sini.', ICONS.transactions);
+      // FIX: sebelumnya bagian ini SELALU render kartu (poCardHtml_) di semua ukuran layar,
+      // padahal `cols` + `actions` di atas sudah lengkap dibangun untuk tabel — persis pola
+      // yang dipakai Agent/Store/Product/Commission (lihat renderTableOrCards_). Sekarang
+      // dipakai supaya di layar lebar (desktop) tampil sebagai tabel ringkas, dan otomatis
+      // beralih ke kartu hanya di layar sempit (<=760px, lihat CSS .table-scroll-has-cards
+      // / .data-card-list) — bukan kartu terus-menerus di semua ukuran layar.
+      var emptyTitlePO_ = rows.length ? 'Tidak ada PO yang cocok' : 'Belum ada transaksi';
+      var emptySubPO_ = rows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'PO yang dibuat Agent akan muncul di sini.';
+      var listHtml = renderTableOrCards_(cols, filtered, actions, emptyTitlePO_, emptySubPO_, ICONS.transactions);
       var html =
         '<div class="card"><div class="list-header"><span class="card-title">Transaksi / PO</span>' + buatPOBtn +
         '</div>' + lockedNotice + filterHtml + listHtml + '</div>';
@@ -4076,7 +4098,7 @@
       var filtered = applyListFilters_(rows, FILTER_STATE_ORDERS_, searchFields, fieldConfigs);
       var filterHtml = filterBarHtml_('onFilterChangeOrders_', 'Cari Order ID, PO, Store, atau Agent...', fieldConfigs, FILTER_STATE_ORDERS_, filtered.length, rows.length);
       var cols = [
-        {label:'Order ID', render:function(r){return '<span class="mono-id">'+escapeHtml(r.OrderID)+'</span>';}},
+        {label:'Order ID', titleCol:true, render:function(r){return '<span class="mono-id">'+escapeHtml(r.OrderID)+'</span>';}},
         {label:'PO', render:function(r){return '<span class="mono-id">'+escapeHtml(r.POID)+'</span>';}}
       ];
       if(storeMap && agentMap){
@@ -4130,12 +4152,17 @@
         btns += '</div>';
         return btns;
       };
+      // FIX: sama seperti Transaksi/PO — `cols` + `actions` di atas sudah lengkap dibangun
+      // untuk tabel tapi sebelumnya tidak pernah dipakai (langsung render orderCardHtml_
+      // terus-menerus). Sekarang pakai renderTableOrCards_ supaya desktop = tabel, mobile
+      // (<=760px) = kartu, konsisten dengan Agent/Store/Product/Commission.
+      var emptyTitleOrder_ = rows.length ? 'Tidak ada order yang cocok' : 'Belum ada order';
+      var emptySubOrder_ = rows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'Order akan muncul setelah PO disetujui.';
       var html =
         '<div class="card"><div class="list-header"><span class="card-title">Order</span></div>' +
         filterHtml +
-        (filtered.length
-          ? '<div class="order-list">' + filtered.map(function(r){ return orderCardHtml_(r, storeMap, agentMap, actions); }).join('') + '</div>'
-          : emptyState_(rows.length ? 'Tidak ada order yang cocok' : 'Belum ada order', rows.length ? 'Coba ubah kata kunci pencarian atau filter yang dipakai.' : 'Order akan muncul setelah PO disetujui.', ICONS.orders)) + '</div>';
+        renderTableOrCards_(cols, filtered, actions, emptyTitleOrder_, emptySubOrder_, ICONS.orders) +
+        '</div>';
       paintPage_('orders', html);
   }
 
