@@ -173,6 +173,7 @@
     sessionStorage_remove('ag_user');
     STATE.token = null; STATE.user = null;
     PAGE_HTML_CACHE = {};
+    sessionStorage_remove(PAGE_CACHE_STORAGE_KEY_); // jangan sampai user berikutnya di tab yg sama lihat cache HTML user lama
     DASH_DATA_CACHE_ = null;
     DETAIL_MODAL_CACHE_ = {};
     MY_SIGNATURE_STATUS_CACHE_ = null;
@@ -523,6 +524,10 @@
   }
 
   function bootApp(){
+    // Pulihkan cache HTML menu dari sessionStorage SEBELUM showPage('dashboard')
+    // dipanggil — ini yang membuat reload di desktop terasa instan seperti buka
+    // ulang PWA di HP (lihat catatan panjang di deklarasi PAGE_HTML_CACHE di atas).
+    restorePageCache_();
     document.getElementById('loginScreen').style.display = 'none';
     document.getElementById('appShell').style.display = 'flex';
     document.getElementById('userNameLabel').textContent = STATE.user.name;
@@ -826,6 +831,45 @@
   // =============================================================
   var PAGE_HTML_CACHE = {}; // pageKey -> last rendered innerHTML (instant paint on revisit)
 
+  // =============================================================
+  // PERSISTENT PAGE CACHE (survives F5/reload — bukan cuma survive pindah menu)
+  // -------------------------------------------------------------
+  // MASALAH: PAGE_HTML_CACHE di atas cuma variabel JS biasa, jadi HILANG TOTAL
+  // setiap kali halaman di-reload (F5/Ctrl+R). Itu sebabnya "buka menu lama
+  // banget loading" HANYA terasa di desktop: di HP, PWA yang di-install dari
+  // homescreen jarang benar-benar di-reload — app cuma dibuka/ditutup (browser
+  // menahan proses di background), jadi PAGE_HTML_CACHE tetap ada di memori dan
+  // menu terasa instan. Di desktop, tiap reload memaksa preloadAllPages_()
+  // mengambil ulang SEMUA menu dari nol (di-antre bertahap 400ms/menu ke GAS),
+  // jadi kalau user langsung klik menu lain sesaat setelah reload, dia harus
+  // menunggu antrian + round-trip backend itu selesai dulu.
+  // FIX: simpan PAGE_HTML_CACHE ke sessionStorage tiap kali berubah, lalu
+  // dipulihkan lagi di awal boot SEBELUM showPage('dashboard') dipanggil.
+  // Hasilnya: reload pun tetap instant-paint dari cache lama (persis sensasi
+  // PWA di HP), sementara data tetap di-refresh diam-diam di background lewat
+  // preloadAllPages_() seperti biasa (tidak pernah stale lama).
+  var PAGE_CACHE_STORAGE_KEY_ = 'ag_page_html_cache_v1';
+  var persistPageCacheTimer_ = null;
+  function persistPageCache_(){
+    // Debounce dikit supaya reload halaman yang mendarat banyak sekaligus (preload
+    // 12 menu beruntun) tidak nulis ke sessionStorage 12x dalam sedetik.
+    clearTimeout(persistPageCacheTimer_);
+    persistPageCacheTimer_ = setTimeout(function(){
+      try{ sessionStorage_set(PAGE_CACHE_STORAGE_KEY_, JSON.stringify(PAGE_HTML_CACHE)); }
+      catch(e){ /* quota/serialize gagal — abaikan, cache tetap jalan in-memory */ }
+    }, 150);
+  }
+  function restorePageCache_(){
+    try{
+      var raw = sessionStorage_get(PAGE_CACHE_STORAGE_KEY_);
+      if(!raw) return;
+      var parsed = JSON.parse(raw);
+      if(parsed && typeof parsed === 'object'){
+        Object.keys(parsed).forEach(function(k){ PAGE_HTML_CACHE[k] = parsed[k]; });
+      }
+    }catch(e){ /* cache korup/kosong — biarkan boot berjalan normal tanpa cache */ }
+  }
+
   function showPage(pageKey){
     STATE.currentPage = pageKey;
     // Reset per-page filter state whenever a page is entered normally (sidebar, KPI cards,
@@ -906,6 +950,7 @@
   var CONTENT_LOCK_SAFETY_TIMER_ = null;
   function paintPage_(pageKey, html){
     PAGE_HTML_CACHE[pageKey] = html;
+    persistPageCache_();
     // Only overwrite the DOM if the user is still on this page (they may have navigated away
     // while this background fetch was in flight).
     if(STATE.currentPage === pageKey){
