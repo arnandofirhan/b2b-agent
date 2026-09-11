@@ -1864,8 +1864,9 @@
       danger: false,
       icon: ICONS.fileDoc,
       onConfirm: function(){
-        showToast('Memproses...', 'info');
+        setPageLoading_(true, 'Menempel ulang tanda tangan');
         google.script.run.withSuccessHandler(function(res){
+          setPageLoading_(false);
           if(res && res.success){
             showToast(res.message || 'Tanda tangan berhasil ditempel ulang.', 'success');
             closeModal();
@@ -1873,7 +1874,7 @@
           } else {
             showToast((res && res.message) || 'Gagal menempel ulang tanda tangan.', 'error');
           }
-        }).withFailureHandler(function(e){ handleBackendError(e); }).reembedExistingSignature(STATE.token, agentId);
+        }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).reembedExistingSignature(STATE.token, agentId);
       }
     });
   }
@@ -1948,13 +1949,15 @@
         confirmLabel: 'Ya, Ganti',
         icon: ICONS.edit,
         onConfirm: function(){
+          setPageLoading_(true, 'Mengganti dokumen');
           google.script.run.withSuccessHandler(function(res){
+            setPageLoading_(false);
             if(res.success){
               showToast(res.message || 'Dokumen berhasil diganti.', 'success');
               renderAgents();
               closeModal();
             } else showToast(res.message || 'Gagal mengganti dokumen.', 'error');
-          }).withFailureHandler(function(e){ handleBackendError(e); })
+          }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); })
             .replaceAgentDocument(STATE.token, agentId, docType, fileObj);
         }
       });
@@ -1976,10 +1979,12 @@
         confirmLabel: 'Ya, Ganti',
         icon: ICONS.edit,
         onConfirm: function(){
+          setPageLoading_(true, 'Mengganti dokumen');
           google.script.run.withSuccessHandler(function(res){
+            setPageLoading_(false);
             if(res.success){ showToast(res.message || 'Dokumen berhasil diganti.', 'success'); renderAgents(); closeModal(); }
             else showToast(res.message || 'Gagal mengganti dokumen.', 'error');
-          }).withFailureHandler(function(e){ handleBackendError(e); })
+          }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); })
             .agentSelfReplaceDocument(STATE.token, docType, fileObj);
         }
       });
@@ -2022,7 +2027,9 @@
         confirmLabel: 'Ya, Ganti',
         icon: ICONS.edit,
         onConfirm: function(){
+          setPageLoading_(true, 'Mengganti dokumen');
           google.script.run.withSuccessHandler(function(res){
+            setPageLoading_(false);
             closeModal();
             if(res.success){
               showToast(res.message || 'Dokumen berhasil diganti.', 'success');
@@ -2030,7 +2037,7 @@
                 if(fresh.success) renderCheckStatusResult_(fresh);
               }).checkRegistrationStatus(CHECK_STATUS_IDENTITY_.email, CHECK_STATUS_IDENTITY_.ktp);
             } else showToast(res.message || 'Gagal mengganti dokumen.', 'error');
-          }).withFailureHandler(function(e){ closeModal(); handleBackendError(e); })
+          }).withFailureHandler(function(e){ setPageLoading_(false); closeModal(); handleBackendError(e); })
             .publicReplaceAgentDocument(CHECK_STATUS_IDENTITY_.email, CHECK_STATUS_IDENTITY_.ktp, docType, fileObj);
         }
       });
@@ -2183,7 +2190,9 @@
         confirmLabel: 'Ya, Ganti',
         icon: ICONS.edit,
         onConfirm: function(){
+          setPageLoading_(true, 'Mengganti dokumen');
           google.script.run.withSuccessHandler(function(res){
+            setPageLoading_(false);
             if(res.success){
               showToast('Dokumen berhasil diganti.', 'success');
               if(ORDER_DOC_ACTIVE_ORDERID_) invalidateOrderDocListCache_(ORDER_DOC_ACTIVE_ORDERID_);
@@ -2191,7 +2200,7 @@
               if(refresh) refresh();
               renderOrders();
             } else showToast(res.message || 'Gagal mengganti dokumen.', 'error');
-          }).withFailureHandler(function(e){ handleBackendError(e); })
+          }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); })
             .replaceSupportingDocument(STATE.token, docId, fileObj);
         }
       });
@@ -2213,7 +2222,9 @@
       danger: true,
       icon: ICONS.trash,
       onConfirm: function(){
+        setPageLoading_(true, 'Menghapus dokumen');
         google.script.run.withSuccessHandler(function(res){
+          setPageLoading_(false);
           if(res.success){
             showToast('Dokumen dihapus.', 'success');
             if(ORDER_DOC_ACTIVE_ORDERID_) invalidateOrderDocListCache_(ORDER_DOC_ACTIVE_ORDERID_);
@@ -2221,7 +2232,7 @@
             if(refresh) refresh();
             renderOrders();
           } else showToast(res.message || 'Gagal menghapus dokumen.', 'error');
-        }).withFailureHandler(function(e){ handleBackendError(e); }).deleteSupportingDocument(STATE.token, docId);
+        }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).deleteSupportingDocument(STATE.token, docId);
       }
     });
   }
@@ -2320,10 +2331,12 @@
       danger: true,
       icon: ICONS.trash,
       onConfirm: function(){
+        setPageLoading_(true, 'Menghapus agent');
         google.script.run.withSuccessHandler(function(res){
+          setPageLoading_(false);
           if(res.success){ showToast('Agent dihapus.','success'); renderAgents(); }
           else showToast(res.message||'Gagal menghapus.','error');
-        }).withFailureHandler(function(e){ handleBackendError(e); }).deleteAgent(STATE.token, agentId);
+        }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).deleteAgent(STATE.token, agentId);
       }
     });
   }
@@ -2818,21 +2831,27 @@
     };
     if(!payload.ProductName){ showToast('Product Item wajib diisi.','error'); return; }
 
+    // Satu overlay saja yang berjalan dari awal (baik lewat upload gambar dulu maupun
+    // langsung simpan), pesannya cukup diganti di tengah jalan kalau prosesnya dua
+    // tahap — supaya tidak terlihat "berkedip" mati-hidup dua kali.
     function doSave(imageUrl){
       payload.ImageURL = imageUrl || '';
+      setPageLoading_(true, 'Menyimpan produk');
       google.script.run.withSuccessHandler(function(res){
+        setPageLoading_(false);
         if(res.success){ closeModal(); showToast('Produk disimpan.','success'); renderProducts(); }
         else showToast(res.message||'Gagal menyimpan.','error');
-      }).withFailureHandler(function(e){ handleBackendError(e); }).saveProduct(STATE.token, payload);
+      }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).saveProduct(STATE.token, payload);
     }
 
     if(PRODUCT_IMAGE_STATE.fileObj){
       var saveBtn = document.getElementById('modalSaveBtn');
       if(saveBtn){ saveBtn.disabled = true; saveBtn.textContent = 'Mengupload...'; }
+      setPageLoading_(true, 'Mengupload gambar produk');
       google.script.run.withSuccessHandler(function(res){
         if(res && res.success) doSave(res.url);
-        else { showToast('Gagal upload gambar.','error'); if(saveBtn){saveBtn.disabled=false;saveBtn.textContent='Simpan';} }
-      }).withFailureHandler(function(e){ handleBackendError(e); if(saveBtn){saveBtn.disabled=false;saveBtn.textContent='Simpan';} })
+        else { setPageLoading_(false); showToast('Gagal upload gambar.','error'); if(saveBtn){saveBtn.disabled=false;saveBtn.textContent='Simpan';} }
+      }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); if(saveBtn){saveBtn.disabled=false;saveBtn.textContent='Simpan';} })
         .uploadProductImage(STATE.token, PRODUCT_IMAGE_STATE.fileObj);
     } else {
       doSave(PRODUCT_IMAGE_STATE.url);
@@ -2847,10 +2866,17 @@
       danger: true,
       icon: ICONS.trash,
       onConfirm: function(){
+        // Sebelumnya tidak ada feedback visual sama sekali antara klik "Ya, Hapus" dan
+        // hasilnya muncul (list produk cuma diam2 lalu tiba2 berubah) — user tidak tahu
+        // apakah klik-nya terdaftar atau app freeze. Ditambahkan overlay loading modern
+        // yang sama dgn aksi lain (mis. approve Agent), supaya semua aksi hapus terasa
+        // responsif & informatif.
+        setPageLoading_(true, 'Menghapus produk');
         google.script.run.withSuccessHandler(function(res){
+          setPageLoading_(false);
           if(res.success){ showToast('Produk dihapus.','success'); renderProducts(); }
           else showToast(res.message||'Gagal menghapus.','error');
-        }).withFailureHandler(function(e){ handleBackendError(e); }).deleteProduct(STATE.token, productId);
+        }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).deleteProduct(STATE.token, productId);
       }
     });
   }
@@ -2995,10 +3021,12 @@
       message: 'Promo "'+promoName+'" akan dihapus permanen.',
       confirmLabel: 'Ya, Hapus', danger: true, icon: ICONS.trash,
       onConfirm: function(){
+        setPageLoading_(true, 'Menghapus promo');
         google.script.run.withSuccessHandler(function(res){
+          setPageLoading_(false);
           if(res.success){ showToast('Promo dihapus.','success'); renderPromos(); }
           else { showToast(res.message||'Gagal menghapus.','error'); renderPromos(); }
-        }).withFailureHandler(function(e){ handleBackendError(e); renderPromos(); }).deletePromo(STATE.token, promoId);
+        }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); renderPromos(); }).deletePromo(STATE.token, promoId);
       }
     });
   }
@@ -3153,10 +3181,12 @@
       message: 'Store "'+storeName+'" akan dihapus permanen.',
       confirmLabel: 'Ya, Hapus', danger: true, icon: ICONS.trash,
       onConfirm: function(){
+        setPageLoading_(true, 'Menghapus store');
         google.script.run.withSuccessHandler(function(res){
+          setPageLoading_(false);
           if(res.success){ showToast('Store dihapus.','success'); renderStores(); }
           else showToast(res.message||'Gagal menghapus.','error');
-        }).withFailureHandler(function(e){ handleBackendError(e); }).deleteStore(STATE.token, storeId);
+        }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).deleteStore(STATE.token, storeId);
       }
     });
   }
@@ -3415,7 +3445,9 @@
       danger: true,
       icon: ICONS.cancel,
       onConfirm: function(){
+        setPageLoading_(true, 'Membatalkan PO');
         google.script.run.withSuccessHandler(function(res){
+          setPageLoading_(false);
           if(res.success){
             showToast('PO dibatalkan.','success');
             invalidateDetailModalCache_('po:'+poId);
@@ -3423,7 +3455,7 @@
             renderPO();
           }
           else showToast(res.message||'Gagal membatalkan PO.','error');
-        }).withFailureHandler(function(e){ handleBackendError(e); }).cancelPO(STATE.token, poId);
+        }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).cancelPO(STATE.token, poId);
       }
     });
   }
@@ -3441,7 +3473,9 @@
       danger: true,
       icon: ICONS.trash,
       onConfirm: function(){
+        setPageLoading_(true, 'Menghapus PO');
         google.script.run.withSuccessHandler(function(res){
+          setPageLoading_(false);
           if(res.success){
             showToast('PO dihapus.','success');
             renderPO();
@@ -3451,7 +3485,7 @@
             delete PAGE_HTML_CACHE['commission'];
           }
           else showToast(res.message||'Gagal menghapus.','error');
-        }).withFailureHandler(function(e){ handleBackendError(e); }).deletePO(STATE.token, poId);
+        }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).deletePO(STATE.token, poId);
       }
     });
   }
@@ -3605,10 +3639,12 @@
       iconStyle: 'info',
       icon: ICONS.mail,
       onConfirm: function(){
+        setPageLoading_(true, 'Mengirim email');
         google.script.run.withSuccessHandler(function(res){
+          setPageLoading_(false);
           if(res.success){ showToast(res.message,'success'); closeModal(); renderPO(); }
           else showToast(res.message,'error');
-        }).withFailureHandler(function(e){ handleBackendError(e); }).sendSuratPenawaranEmail(STATE.token, poId);
+        }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).sendSuratPenawaranEmail(STATE.token, poId);
       }
     });
   }
@@ -3624,10 +3660,12 @@
       iconStyle: 'info',
       icon: ICONS.refresh,
       onConfirm: function(){
+        setPageLoading_(true, 'Membuat ulang Surat Penawaran');
         google.script.run.withSuccessHandler(function(res){
+          setPageLoading_(false);
           if(res.success){ showToast('Surat Penawaran berhasil dibuat ulang.','success'); closeModal(); renderPO(); }
           else showToast(res.message||'Gagal membuat ulang Surat Penawaran.','error');
-        }).withFailureHandler(function(e){ handleBackendError(e); }).regenerateSuratPenawaran(STATE.token, poId);
+        }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).regenerateSuratPenawaran(STATE.token, poId);
       }
     });
   }
@@ -4140,10 +4178,12 @@
       confirmLabel: 'Ya, Buat Order',
       iconStyle: 'info',
       onConfirm: function(){
+        setPageLoading_(true, 'Membuat Order');
         google.script.run.withSuccessHandler(function(res){
+          setPageLoading_(false);
           if(res.success){ showToast('Order '+res.orderId+' dibuat.','success'); renderPO(); offerWaNotif_(res.waLink); }
           else showToast(res.message,'error');
-        }).withFailureHandler(function(e){ handleBackendError(e); }).createOrderFromPO(STATE.token, poId);
+        }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).createOrderFromPO(STATE.token, poId);
       }
     });
   }
@@ -4767,10 +4807,12 @@
       iconStyle: 'info',
       icon: ICON_CHECK_SM,
       onConfirm: function(){
+        setPageLoading_(true, 'Menghitung komisi & menandai lunas');
         google.script.run.withSuccessHandler(function(res){
+          setPageLoading_(false);
           if(res.success){ invalidateDetailModalCache_('order:'+orderId); showToast('Pembayaran tercatat, komisi dihitung.','success'); renderOrders(); }
           else showToast(res.message,'error');
-        }).withFailureHandler(function(e){ handleBackendError(e); }).markCustomerPayment(STATE.token, orderId, true);
+        }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).markCustomerPayment(STATE.token, orderId, true);
       }
     });
   }
@@ -5129,11 +5171,13 @@
       icon: ICONS.commission,
       iconStyle: 'info',
       onConfirm: function(){
+        setPageLoading_(true, 'Mengajukan klaim komisi');
         google.script.run.withSuccessHandler(function(res){
+          setPageLoading_(false);
           invalidateDetailModalCache_('commission:'+id);
           if(res && res.success===false){ showToast(res.message,'error'); return; }
           closeModal(); showToast((res && res.message) || 'Klaim komisi diajukan.','success'); renderCommissions();
-        }).withFailureHandler(function(e){ handleBackendError(e); }).submitCommissionClaim(STATE.token, id);
+        }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).submitCommissionClaim(STATE.token, id);
       }
     });
   }
@@ -5147,11 +5191,13 @@
       openFormModal('Tolak Klaim Komisi', body, function(){
         var note = val_('comRejectNote').trim();
         if(!note){ showToast('Alasan penolakan wajib diisi.','error'); return; }
+        setPageLoading_(true, 'Memproses penolakan');
         google.script.run.withSuccessHandler(function(res){
+          setPageLoading_(false);
           invalidateDetailModalCache_('commission:'+id);
           if(res && res.success===false){ showToast(res.message,'error'); return; }
           closeModal(); showToast('Klaim komisi ditolak.','success'); renderCommissions();
-        }).withFailureHandler(function(e){ handleBackendError(e); }).verifyCommission(STATE.token, id, decision, note);
+        }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).verifyCommission(STATE.token, id, decision, note);
       });
       return;
     }
@@ -5162,11 +5208,13 @@
       confirmIcon: ICONS.check,
       icon: ICONS.review,
       onConfirm: function(){
+        setPageLoading_(true, 'Memverifikasi klaim komisi');
         google.script.run.withSuccessHandler(function(res){
+          setPageLoading_(false);
           invalidateDetailModalCache_('commission:'+id);
           if(res && res.success===false){ showToast(res.message,'error'); return; }
           closeModal(); showToast('Komisi diverifikasi.','success'); renderCommissions();
-        }).withFailureHandler(function(e){ handleBackendError(e); }).verifyCommission(STATE.token, id, decision);
+        }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).verifyCommission(STATE.token, id, decision);
       }
     });
   }
@@ -5316,10 +5364,12 @@
       message: 'Skema "'+label+'" akan dihapus permanen.',
       confirmLabel: 'Ya, Hapus', danger: true, icon: ICONS.trash,
       onConfirm: function(){
+        setPageLoading_(true, 'Menghapus skema');
         google.script.run.withSuccessHandler(function(res){
+          setPageLoading_(false);
           if(res.success){ showToast('Skema dihapus.','success'); renderCommissionScheme(); }
           else showToast(res.message||'Gagal menghapus.','error');
-        }).withFailureHandler(function(e){ handleBackendError(e); }).deleteCommissionScheme(STATE.token, schemeId);
+        }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).deleteCommissionScheme(STATE.token, schemeId);
       }
     });
   }
@@ -5433,7 +5483,9 @@
       icon: ICONS.mail,
       iconStyle: 'info',
       onConfirm: function(){
+        setPageLoading_(true, 'Membuat password baru & mengirim email');
         google.script.run.withSuccessHandler(function(res){
+          setPageLoading_(false);
           if(res.success){
             openViewModal('Password Sementara Dibuat',
               detailRow('Email', escapeHtml(res.email)) +
@@ -5443,7 +5495,7 @@
               ' Anda bisa langsung memberi tahu kredensial ini secara manual bila perlu.</p>'
             );
           } else showToast(res.message||'Gagal.','error');
-        }).withFailureHandler(function(e){ handleBackendError(e); }).resendUserCredentials(STATE.token, userId);
+        }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).resendUserCredentials(STATE.token, userId);
       }
     });
   }
@@ -5456,10 +5508,12 @@
       danger: true,
       icon: ICONS.trash,
       onConfirm: function(){
+        setPageLoading_(true, 'Menghapus user');
         google.script.run.withSuccessHandler(function(res){
+          setPageLoading_(false);
           if(res.success){ showToast('User dihapus.','success'); renderUsers(); }
           else showToast(res.message||'Gagal menghapus.','error');
-        }).withFailureHandler(function(e){ handleBackendError(e); }).deleteUser(STATE.token, userId);
+        }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).deleteUser(STATE.token, userId);
       }
     });
   }
@@ -6045,6 +6099,17 @@
   }
   function closeRegisterSuccess(){ document.getElementById('regSuccessOverlay').classList.remove('show'); }
 
+  /** Splash full-page selama submitAgentRegistration() memproses (upload 3 dokumen +
+      simpan data ke backend, bisa perlu beberapa detik) — sebelumnya user cuma melihat
+      tombol berubah jadi "Mengirim..." tanpa indikator lain, terasa seperti layar
+      freeze. Splash ini memakai logo brand yang berdenyut supaya prosesnya terasa
+      hidup & informatif, konsisten dengan overlay setPageLoading_ di modul lain. */
+  function showRegSubmitSplash_(show){
+    var el = document.getElementById('regSubmitOverlay');
+    if(!el) return;
+    el.classList.toggle('show', !!show);
+  }
+
   function submitAgentRegistration(){
     var errEl = document.getElementById('regError');
     errEl.style.display = 'none';
@@ -6067,6 +6132,7 @@
 
     var btn = document.getElementById('regSubmitBtn');
     btn.disabled = true; btn.textContent = 'Mengirim...';
+    showRegSubmitSplash_(true);
 
     var payload = {
       fullName: val_('regFullName'), email: val_('regEmail'), phone: val_('regPhone'),
@@ -6075,6 +6141,7 @@
     };
     google.script.run.withSuccessHandler(function(res){
       btn.disabled = false; btn.textContent = 'Kirim Registrasi';
+      showRegSubmitSplash_(false);
       if(res.success){
         closeRegisterModal();
         openRegisterSuccess(res.message);
@@ -6084,6 +6151,7 @@
       }
     }).withFailureHandler(function(e){
       btn.disabled = false; btn.textContent = 'Kirim Registrasi';
+      showRegSubmitSplash_(false);
       errEl.textContent = 'Terjadi kesalahan: ' + (e.message || e);
       errEl.style.display = 'block';
     }).registerAgent(payload);
