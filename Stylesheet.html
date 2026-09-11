@@ -1765,14 +1765,16 @@
      selama field kosong & tidak fokus, supaya cuma ghost custom yg kelihatan — begitu user
      klik/fokus atau field sudah terisi, teks asli dimunculkan lagi. Mobile TIDAK disentuh. */
   @media (min-width:721px){
-    .date-field-wrap.has-placeholder-ghost input[type=date]:placeholder-shown{color:transparent;}
-    .date-field-wrap.has-placeholder-ghost input[type=date]:focus{color:var(--ag-gray-800);}
-    .date-field-wrap.has-placeholder-ghost input[type=date]:focus ~ .date-field-ghost{display:none;}
+    .date-field-wrap.has-placeholder-ghost input[type=date]::-webkit-datetime-edit-fields-wrapper{opacity:0;}
+    .date-field-wrap.has-placeholder-ghost.has-value input[type=date]::-webkit-datetime-edit-fields-wrapper,
+    .date-field-wrap.has-placeholder-ghost:focus-within input[type=date]::-webkit-datetime-edit-fields-wrapper{opacity:1;}
+    .date-field-wrap.has-placeholder-ghost:focus-within .date-field-ghost{display:none;}
   }
-  .filter-daterange{display:flex;align-items:center;gap:6px;flex:1 1 auto;min-width:0;}
-  .filter-daterange .date-field-wrap--sm{flex:1;min-width:0;}
+  .filter-daterange{display:flex;align-items:center;gap:6px;flex:0 0 auto;min-width:0;}
+  .filter-daterange .date-field-wrap--sm{flex:0 0 148px;min-width:0;}
   @media (max-width: 720px){
     .filter-daterange{flex:1 1 100%;}
+    .filter-daterange .date-field-wrap--sm{flex:1;}
   }
 
   /* ---------- Text field dgn ikon dekoratif di kiri (Promo Code, Promo Name, dst) ---------- */
