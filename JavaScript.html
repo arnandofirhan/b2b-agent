@@ -2581,6 +2581,9 @@
       {key:'status', label:'Status', options:uniqueOptions_(rows,'Status'), match:function(r,v){return r.Status===v;}}
     ];
     var filtered = applyListFilters_(rows, FILTER_STATE_PRODUCTS_, ['ProductName','Category','Packaging'], fieldConfigs);
+    // Diurutkan per Category (A-Z) lalu nama produk supaya daftar Master Item Product
+    // jadi rujukan urutan yang sama dipakai di grid Buat PO & semua popup item.
+    filtered = sortByCategoryThenName_(filtered, function(p){ return p; });
     var filterHtml = filterBarHtml_('onFilterChangeProducts_', 'Cari nama produk, kategori, atau packaging...', fieldConfigs, FILTER_STATE_PRODUCTS_, filtered.length, rows.length);
     var cols = [
       {label:'No.', render:function(r,i){ return String(i+1); }},
@@ -3441,10 +3444,13 @@
       // konsisten dgn pola "Total Nominal PO" di popup Detail Komisi, supaya nominalnya
       // langsung nyambung sama rincian produk yang dijumlahkan, bukan nongol terpisah di grid.
       var totalItemsAmount = (items||[]).reduce(function(sum, it){ return sum + (Number(it.LineTotal)||0); }, 0);
+      // Diurutkan per Category lalu nama produk supaya konsisten dgn grid Buat PO — juga
+      // berlaku utk PO lama yang item-nya tersimpan bukan dalam urutan kategori.
+      var sortedItems = sortByCategoryThenName_(items||[], function(it){ return productMap[it.ProductID]; });
       var itemsHtml = (items&&items.length)
         ? '<div class="agent-detail-section-title po-cart-title" style="margin-bottom:10px;">Item Dibeli <span class="po-cart-count">'+items.length+'</span></div>' +
           '<div class="po-cart-section" style="margin-bottom:18px;">' +
-            items.map(function(it){
+            sortedItems.map(function(it){
               var p = productMap[it.ProductID] || {};
               var thumb = p.ImageURL
                 ? '<img src="'+escapeHtml(p.ImageURL)+'" alt="">'
@@ -3718,6 +3724,9 @@
       var matchesQuery = !q || (p.ProductName||'').toLowerCase().indexOf(q) !== -1;
       return visible && matchesQuery;
     });
+    // Diurutkan per Category (A-Z) lalu nama produk, supaya Agent gampang menyusuri
+    // produk yang berdekatan kategorinya alih-alih urutan acak dari Master Item Product.
+    list = sortByCategoryThenName_(list, function(p){ return p; });
     if(!list.length){ grid.innerHTML = '<div class="po-cart-empty">Produk tidak ditemukan.</div>'; return; }
     grid.innerHTML = list.map(function(p){
       var inCart = !!NEWPO_CART_[p.ProductID];
@@ -3772,7 +3781,10 @@
   function renderNewPOCart_(){
     var list = document.getElementById('poCartList');
     if(!list) return;
-    var ids = Object.keys(NEWPO_CART_);
+    // Keranjang ditampilkan terurut per Category lalu nama produk (konsisten dgn grid
+    // pemilihan di atasnya) — bukan urutan klik, supaya Agent gampang mengecek isi
+    // keranjang tanpa harus mencari-cari produk yang urutannya loncat-loncat.
+    var ids = sortByCategoryThenName_(Object.keys(NEWPO_CART_), function(pid){ return findNewPOProduct_(pid); });
     var countEl = document.getElementById('poCartCount');
     if(countEl) countEl.textContent = ids.reduce(function(sum,pid){ return sum + NEWPO_CART_[pid]; }, 0);
     if(!ids.length){
@@ -3871,7 +3883,11 @@
   }
 
   function submitPO(){
-    var ids = Object.keys(NEWPO_CART_);
+    // Item dikirim ke backend dalam urutan Category lalu nama produk (bukan urutan
+    // klik) supaya PO tersimpan sudah rapi sejak awal — semua popup yang menampilkan
+    // item PO (Detail PO, Review PO, dst) langsung ikut rapi karena mereka membaca
+    // urutan item persis seperti tersimpan.
+    var ids = sortByCategoryThenName_(Object.keys(NEWPO_CART_), function(pid){ return findNewPOProduct_(pid); });
     if(!ids.length){ showToast('Tambahkan minimal 1 produk ke keranjang.','error'); return; }
 
     if(NEWPO_EDIT_APPROVED_ID_){
@@ -3963,7 +3979,9 @@
         for(var d=0; d<=10; d++){ discOptions += '<option value="'+d+'">'+(d===0?'Full Price (0%)':d+'%')+'</option>'; }
 
         var subtotal = items.reduce(function(sum, it){ return sum + (Number(it.LineTotal)||0); }, 0);
-        var itemRows = items.map(function(it){
+        // Diurutkan per Category lalu nama produk supaya konsisten dgn tampilan lain.
+        var sortedReviewItems = sortByCategoryThenName_(items, function(it){ return productMap[it.ProductID]; });
+        var itemRows = sortedReviewItems.map(function(it){
           var p = productMap[it.ProductID] || {};
           var thumb = p.ImageURL
             ? '<img src="'+escapeHtml(p.ImageURL)+'" alt="">'
@@ -4302,10 +4320,12 @@
       // Subtotal item ditaruh sbg baris total di BAWAH daftar Item Order — konsisten dgn pola
       // "Total Nominal PO" di popup Detail Komisi & Subtotal di popup Detail PO.
       var totalOrderItemsAmount = (items||[]).reduce(function(sum, it){ return sum + (Number(it.LineTotal)||0); }, 0);
+      // Diurutkan per Category lalu nama produk supaya konsisten dgn tampilan lain.
+      var sortedOrderItems = sortByCategoryThenName_(items||[], function(it){ return productMap[it.ProductID]; });
       var itemsHtml = (items&&items.length)
         ? '<div class="agent-detail-section-title po-cart-title" style="margin-bottom:10px;">Item Order <span class="po-cart-count">'+items.length+'</span></div>' +
           '<div class="po-cart-section">' +
-            items.map(function(it){
+            sortedOrderItems.map(function(it){
               var p = productMap[it.ProductID] || {};
               var thumb = p.ImageURL
                 ? '<img src="'+escapeHtml(p.ImageURL)+'" alt="">'
@@ -4974,8 +4994,11 @@
       // bukan replikasi penuh isi PO (yang sudah bisa dilihat lewat Detail PO).
       var itemsHtml = '';
       if(items && items.length){
-        var showAll = items.length <= 2;
-        var visibleItems = showAll ? items : items.slice(0,2);
+        // Diurutkan per Category lalu nama produk supaya konsisten dgn tampilan lain — juga
+        // supaya 2 item "ringkas" yang ditampilkan bukan sekadar 2 item pertama yang acak.
+        var sortedKomisiItems = sortByCategoryThenName_(items, function(it){ return productMap[it.ProductID]; });
+        var showAll = sortedKomisiItems.length <= 2;
+        var visibleItems = showAll ? sortedKomisiItems : sortedKomisiItems.slice(0,2);
         var rowsHtml = visibleItems.map(function(it){
           var p = productMap[it.ProductID] || {};
           var thumb = p.ImageURL
@@ -6610,6 +6633,29 @@
   // =============================================================
   // HELPERS
   // =============================================================
+
+  /** Urutan tampil produk yang KONSISTEN di seluruh aplikasi: diurutkan berdasarkan
+      Category dulu (A-Z, case-insensitive — mis. ATJ, BKJ, BKT, BPT), baru ProductName
+      (A-Z) sbg tie-breaker untuk produk dalam Category yang sama. Dipakai di grid
+      pemilihan produk saat Buat PO, daftar keranjang, tabel Master Item Product, dan
+      SEMUA popup yang menampilkan rincian item (Detail PO, Detail Order, Detail Komisi,
+      Review PO) — supaya produk selalu tampil berkelompok rapi per kategori, bukan
+      urutan acak sesuai kapan diklik/diinput.
+      `list` = array item apa saja (produk itu sendiri, atau item PO/Order/Cart-id);
+      `getProduct` = function(item) yang mengembalikan objek produk {Category, ProductName}
+      terkait item tsb (identity function kalau item-nya sudah berupa objek produk). */
+  function sortByCategoryThenName_(list, getProduct){
+    return (list||[]).slice().sort(function(a,b){
+      var pa = getProduct(a) || {}, pb = getProduct(b) || {};
+      var ca = (pa.Category||'').trim().toLowerCase();
+      var cb = (pb.Category||'').trim().toLowerCase();
+      if(ca !== cb) return ca < cb ? -1 : 1;
+      var na = (pa.ProductName||'').trim().toLowerCase();
+      var nb = (pb.ProductName||'').trim().toLowerCase();
+      return na < nb ? -1 : (na > nb ? 1 : 0);
+    });
+  }
+
   function formatRupiah(n){
     n = Number(n) || 0;
     return 'Rp' + n.toLocaleString('id-ID');
