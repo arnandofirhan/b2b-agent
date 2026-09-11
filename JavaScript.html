@@ -2741,6 +2741,27 @@
 
   var PRODUCT_IMAGE_STATE = { fileObj: null, url: null };
 
+  // Packaging produk disimpan sbg "1 Box" / "12 Pcs" (qty + unit digabung jadi satu string).
+  // Helper ini ambil BAGIAN UNIT-nya saja (mis. "Box", "Pcs") supaya bisa dipakai sbg label
+  // dinamis di troli/PO ("Rp39.000 / Box") — dulu di-hardcode "/ unit" utk semua produk,
+  // padahal tiap produk bisa beda satuan (Pcs, Box, Dus, dll) sesuai Packaging di Master Item.
+  function packagingUnitLabel_(p){
+    var pkg = p && p.Packaging ? String(p.Packaging).trim() : '';
+    if(!pkg) return 'unit';
+    var m = pkg.match(/^(\d+(?:\.\d+)?)\s*(.*)$/);
+    var unit = (m && m[2]) ? m[2].trim() : '';
+    if(!unit) return 'unit';
+    // Satuan bisa berupa "Pcs/Box" (satuan eceran/satuan kemasan) — utk troli & PO yang
+    // dipakai adalah SATUAN KEMASAN-nya saja (bagian SETELAH garis miring), krn yang
+    // dijual/diambil per PO itu per kemasan (Box/Pack/Karton), bukan per Pcs eceran.
+    // "Box/Karton" -> "Karton", "Pcs/Box" -> "Box", "Box" (tanpa slash) -> tetap "Box".
+    if(unit.indexOf('/') !== -1){
+      var parts = unit.split('/');
+      unit = parts[parts.length - 1].trim();
+    }
+    return unit || 'unit';
+  }
+
   function editProduct(productId){
     var p = productId ? findProduct_(productId) : {};
     p = p || {};
@@ -3548,7 +3569,7 @@
                 '<div class="po-cart-thumb">'+thumb+'</div>' +
                 '<div style="flex:1;min-width:0;">' +
                   '<div class="po-cart-name">'+escapeHtml(p.ProductName||it.ProductID)+'</div>' +
-                  '<div class="po-cart-unitprice">'+formatRupiah(it.UnitPrice)+' / unit &times; '+it.Qty+'</div>' +
+                  '<div class="po-cart-unitprice">'+formatRupiah(it.UnitPrice)+' / '+escapeHtml(packagingUnitLabel_(p))+' &times; '+it.Qty+'</div>' +
                 '</div>' +
                 '<div class="po-cart-linetotal">'+formatRupiah(it.LineTotal)+'</div>' +
               '</div>';
@@ -3898,7 +3919,7 @@
           '<div class="po-cart-thumb">'+thumb+'</div>' +
           '<div style="flex:1;min-width:0;">' +
             '<div class="po-cart-name">'+escapeHtml(p.ProductName)+'</div>' +
-            '<div class="po-cart-unitprice">'+formatRupiah(p.RegularPrice)+' / unit</div>' +
+            '<div class="po-cart-unitprice">'+formatRupiah(p.RegularPrice)+' / '+escapeHtml(packagingUnitLabel_(p))+'</div>' +
           '</div>' +
         '</div>' +
         '<div class="po-cart-actions-row">' +
@@ -4083,7 +4104,7 @@
             '<div class="po-cart-thumb">'+thumb+'</div>' +
             '<div style="flex:1;min-width:0;">' +
               '<div class="po-cart-name">'+escapeHtml(p.ProductName||it.ProductID)+'</div>' +
-              '<div class="po-cart-unitprice">'+formatRupiah(it.UnitPrice)+' / unit &times; '+it.Qty+'</div>' +
+              '<div class="po-cart-unitprice">'+formatRupiah(it.UnitPrice)+' / '+escapeHtml(packagingUnitLabel_(p))+' &times; '+it.Qty+'</div>' +
             '</div>' +
             '<div class="po-cart-linetotal">'+formatRupiah(it.LineTotal)+'</div>' +
           '</div>';
@@ -4429,7 +4450,7 @@
                 '<div class="po-cart-thumb">'+thumb+'</div>' +
                 '<div style="flex:1;min-width:0;">' +
                   '<div class="po-cart-name">'+escapeHtml(p.ProductName||it.ProductID)+'</div>' +
-                  '<div class="po-cart-unitprice">'+formatRupiah(it.UnitPrice)+' / unit &times; '+it.Qty+'</div>' +
+                  '<div class="po-cart-unitprice">'+formatRupiah(it.UnitPrice)+' / '+escapeHtml(packagingUnitLabel_(p))+' &times; '+it.Qty+'</div>' +
                 '</div>' +
                 '<div class="po-cart-linetotal">'+formatRupiah(it.LineTotal)+'</div>' +
               '</div>';
@@ -5105,7 +5126,7 @@
             '<div class="po-cart-thumb">'+thumb+'</div>' +
             '<div style="flex:1;min-width:0;">' +
               '<div class="po-cart-name">'+escapeHtml(p.ProductName||it.ProductID)+'</div>' +
-              '<div class="po-cart-unitprice">'+formatRupiah(it.UnitPrice)+' / unit &times; '+it.Qty+'</div>' +
+              '<div class="po-cart-unitprice">'+formatRupiah(it.UnitPrice)+' / '+escapeHtml(packagingUnitLabel_(p))+' &times; '+it.Qty+'</div>' +
             '</div>' +
             '<div class="po-cart-linetotal">'+formatRupiah(it.LineTotal)+'</div>' +
           '</div>';
