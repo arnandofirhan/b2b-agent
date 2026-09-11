@@ -446,7 +446,16 @@
     width:100%;padding:10px 12px 10px 36px;border:1.5px solid var(--ag-gray-200);
     border-radius:var(--radius-md);font-size:13px;transition:border-color .15s,box-shadow .15s;
     background:var(--ag-gray-50);
+    /* FIX: field ini sebelumnya tidak set `color` sama sekali, jadi di beberapa
+       Android WebView/Chrome (fitur "force dark"/auto-darkening pada elemen tanpa
+       warna teks eksplisit) teksnya ikut dipaksa terang di atas background terang →
+       tulisan jadi tidak kelihatan saat mengetik. Set eksplisit supaya konsisten di
+       semua browser, termasuk saat dark mode aplikasi aktif. */
+    color:var(--ag-gray-900);
+    caret-color:var(--ag-gray-900);
+    -webkit-text-fill-color:var(--ag-gray-900);
   }
+  .po-product-search::placeholder{color:var(--ag-gray-400);opacity:1;}
   .po-product-search:focus{
     outline:none;border-color:var(--ag-green);background:var(--ag-surface);
     box-shadow:0 0 0 3px var(--ag-green-soft);
