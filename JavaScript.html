@@ -546,13 +546,29 @@
       reports: renderReports,
       calendar: renderCalendarPage
     };
-    MENU_ITEMS.forEach(function(item){
-      if(item.key === 'dashboard') return; // already loaded by showPage() above
-      if(item.roles.indexOf(STATE.user.role) === -1) return;
-      var fn = renderers[item.key];
-      if(typeof fn === 'function'){
-        try{ fn(); }catch(e){ /* silent — a failed background preload shouldn't disrupt the user */ }
-      }
+    var keys = MENU_ITEMS
+      .filter(function(item){
+        if(item.key === 'dashboard') return false; // already loaded by showPage() above
+        if(item.roles.indexOf(STATE.user.role) === -1) return false;
+        return typeof renderers[item.key] === 'function';
+      })
+      .map(function(item){ return item.key; });
+
+    // PENTING: dulu semua halaman di-render() sekaligus di sini, di tick yang sama — itu
+    // artinya belasan google.script.run call (tiap render() bisa berisi 1-3 call) menembak
+    // backend GAS bersamaan begitu user login. Meski api-bridge.js sudah punya antrian
+    // MAX_CONCURRENT, ledakan sebanyak itu tetap bisa bikin sebagian eksekusi GAS gagal/
+    // timeout (kena limit eksekusi paralel / lock Sheet), yang muncul ke user sebagai error
+    // "HTTP 404 dari server" di tengah-tengah dia lagi buka halaman lain. Sekarang setiap
+    // halaman di-preload SATU PER SATU dengan jeda, supaya request ke backend datang
+    // bertahap (trickle), bukan serentak — dan seandainya satu preload tetap gagal,
+    // pageErrorEl_() di atas memastikan itu tidak pernah menimpa layar user kalau dia
+    // sedang tidak melihat halaman itu.
+    var STAGGER_MS = 400;
+    keys.forEach(function(key, i){
+      setTimeout(function(){
+        try{ renderers[key](); }catch(e){ /* silent — a failed background preload shouldn't disrupt the user */ }
+      }, i * STAGGER_MS);
     });
   }
 
@@ -1475,7 +1491,7 @@
     if(STATE.user.role === 'AGENT'){
       google.script.run.withSuccessHandler(function(agent){
         paintPage_('agents', renderAgentSelfCard(agent));
-      }).withFailureHandler(function(e){ handleBackendError(e, PAGE_HTML_CACHE['agents'] ? null : document.getElementById('content')); })
+      }).withFailureHandler(function(e){ handleBackendError(e, pageErrorEl_('agents')); })
         .getAgentDetail(STATE.token, STATE.user.agentId);
       return;
     }
@@ -1484,7 +1500,7 @@
         AGENTS_CACHE = rows;
         paintPage_('agents', agentsPageHtml_());
       })
-      .withFailureHandler(function(e){ handleBackendError(e, PAGE_HTML_CACHE['agents'] ? null : document.getElementById('content')); })
+      .withFailureHandler(function(e){ handleBackendError(e, pageErrorEl_('agents')); })
       .listAgents(STATE.token, null);
   }
 
@@ -2521,7 +2537,7 @@
         PRODUCTS_CACHE = rows;
         paintPage_('products', productsPageHtml_());
       })
-      .withFailureHandler(function(e){ handleBackendError(e, PAGE_HTML_CACHE['products'] ? null : document.getElementById('content')); })
+      .withFailureHandler(function(e){ handleBackendError(e, pageErrorEl_('products')); })
       .listProducts(STATE.token);
   }
 
@@ -2772,7 +2788,7 @@
     google.script.run.withSuccessHandler(function(rows){
       PROMOS_CACHE = rows;
       paintPage_('promo', promosPageHtml_());
-    }).withFailureHandler(function(e){ handleBackendError(e, PAGE_HTML_CACHE['promo'] ? null : document.getElementById('content')); }).listPromos(STATE.token, false);
+    }).withFailureHandler(function(e){ handleBackendError(e, pageErrorEl_('promo')); }).listPromos(STATE.token, false);
   }
 
   var FILTER_STATE_PROMOS_ = { q:'', status:'__ALL__' };
@@ -2944,7 +2960,7 @@
     google.script.run.withSuccessHandler(function(rows){
       STORES_CACHE = rows;
       paintPage_('stores', storesPageHtml_());
-    }).withFailureHandler(function(e){ handleBackendError(e, PAGE_HTML_CACHE['stores'] ? null : document.getElementById('content')); }).listStores(STATE.token);
+    }).withFailureHandler(function(e){ handleBackendError(e, pageErrorEl_('stores')); }).listStores(STATE.token);
   }
 
   var FILTER_STATE_STORES_ = { q:'', status:'__ALL__' };
@@ -3092,8 +3108,8 @@
           var agentMap = {};
           if(agent) agentMap[agent.AgentID] = agent;
           renderPOList_(agent && agent.MOUStatus === 'SIGNED' && agent.AgentStatus === 'ACTIVE', agentMap);
-        }catch(err){ handleBackendError(err, document.getElementById('content')); }
-      }).withFailureHandler(function(e){ if(mySeq === PO_REQUEST_SEQ_) handleBackendError(e, document.getElementById('content')); })
+        }catch(err){ handleBackendError(err, pageErrorEl_('transactions')); }
+      }).withFailureHandler(function(e){ if(mySeq === PO_REQUEST_SEQ_) handleBackendError(e, pageErrorEl_('transactions')); })
         .getAgentDetail(STATE.token, STATE.user.agentId);
       return;
     }
@@ -3107,8 +3123,8 @@
       google.script.run.withSuccessHandler(function(rows){
         if(mySeq !== PO_REQUEST_SEQ_) return; // a newer visit/request has since started — drop this stale response
         try{ renderPOTable_(rows, canCreatePO, agentMapPreset || null); }
-        catch(err){ handleBackendError(err, document.getElementById('content')); }
-      }).withFailureHandler(function(e){ if(mySeq === PO_REQUEST_SEQ_) handleBackendError(e, document.getElementById('content')); }).listPO(STATE.token);
+        catch(err){ handleBackendError(err, pageErrorEl_('transactions')); }
+      }).withFailureHandler(function(e){ if(mySeq === PO_REQUEST_SEQ_) handleBackendError(e, pageErrorEl_('transactions')); }).listPO(STATE.token);
       return;
     }
     // Staff view: PO rows + agent names/phones fetched in one combined call instead of 2
@@ -3119,8 +3135,8 @@
         var agentMap = {};
         (data.agents||[]).forEach(function(a){ agentMap[a.AgentID] = a; });
         renderPOTable_(data.pos, canCreatePO, agentMap);
-      }catch(err){ handleBackendError(err, document.getElementById('content')); }
-    }).withFailureHandler(function(e){ if(mySeq === PO_REQUEST_SEQ_) handleBackendError(e, document.getElementById('content')); }).getPOsPageData(STATE.token);
+      }catch(err){ handleBackendError(err, pageErrorEl_('transactions')); }
+    }).withFailureHandler(function(e){ if(mySeq === PO_REQUEST_SEQ_) handleBackendError(e, pageErrorEl_('transactions')); }).getPOsPageData(STATE.token);
   }
 
   var FILTER_STATE_PO_ = { q:'', status:'__ALL__', promo:'__ALL__', tanggalFrom:'', tanggalTo:'' };
@@ -4061,7 +4077,7 @@
       google.script.run.withSuccessHandler(function(rows){
         ORDER_CACHE_ = rows;
         renderOrdersTable_(rows, null, null);
-      }).withFailureHandler(function(e){ handleBackendError(e, PAGE_HTML_CACHE['orders'] ? null : document.getElementById('content')); }).listOrders(STATE.token);
+      }).withFailureHandler(function(e){ handleBackendError(e, pageErrorEl_('orders')); }).listOrders(STATE.token);
       return;
     }
     // Staff view needs Store + Agent joined in (via PO -> AgentID, and Order -> StoreID), so
@@ -4074,7 +4090,7 @@
       var agentMap = {};
       (data.agents||[]).forEach(function(a){ agentMap[a.AgentID] = a; });
       renderOrdersTable_(data.orders, storeMap, agentMap);
-    }).withFailureHandler(function(e){ handleBackendError(e, PAGE_HTML_CACHE['orders'] ? null : document.getElementById('content')); }).getOrdersPageData(STATE.token);
+    }).withFailureHandler(function(e){ handleBackendError(e, pageErrorEl_('orders')); }).getOrdersPageData(STATE.token);
   }
 
   var FILTER_STATE_ORDERS_ = { q:'', deliveryStatus:'__ALL__', paymentStatus:'__ALL__', transactionStatus:'__ALL__' };
@@ -4841,7 +4857,7 @@
     google.script.run.withSuccessHandler(function(rows){
       COMMISSION_CACHE_ = rows;
       paintPage_('commission', commissionsPageHtml_());
-    }).withFailureHandler(function(e){ handleBackendError(e, PAGE_HTML_CACHE['commission'] ? null : document.getElementById('content')); }).listCommissions(STATE.token);
+    }).withFailureHandler(function(e){ handleBackendError(e, pageErrorEl_('commission')); }).listCommissions(STATE.token);
   }
 
   /** Export PDF "Laporan Komisi" per baris — sama seperti exportReportsCsv_ (server bikin
@@ -5154,7 +5170,7 @@
         '<p style="font-size:11.5px;color:var(--ag-gray-400);margin:14px 2px 0;">Referensi MOU Pasal 4: Full Price 10%, Diskon &le;3% &rarr; 7%, &gt;3-5% &rarr; 5%, &gt;5-10% &rarr; 3%.</p>' +
         '</div>';
       paintPage_('commission-scheme', html);
-    }).withFailureHandler(function(e){ handleBackendError(e, PAGE_HTML_CACHE['commission-scheme'] ? null : document.getElementById('content')); }).listCommissionScheme(STATE.token);
+    }).withFailureHandler(function(e){ handleBackendError(e, pageErrorEl_('commission-scheme')); }).listCommissionScheme(STATE.token);
   }
   var SCHEME_CACHE = null;
 
@@ -5251,7 +5267,7 @@
     google.script.run.withSuccessHandler(function(rows){
       USERS_CACHE = rows;
       paintPage_('users', usersPageHtml_());
-    }).withFailureHandler(function(e){ handleBackendError(e, PAGE_HTML_CACHE['users'] ? null : document.getElementById('content')); }).listUsers(STATE.token);
+    }).withFailureHandler(function(e){ handleBackendError(e, pageErrorEl_('users')); }).listUsers(STATE.token);
   }
 
   function findUser_(userId){
@@ -5367,7 +5383,7 @@
       AUDIT_LOG_CACHE = rows;
       AUDIT_LOG_STATE.page = 1;
       paintPage_('audit-log', auditLogPageHtml_());
-    }).withFailureHandler(function(e){ handleBackendError(e, PAGE_HTML_CACHE['audit-log'] ? null : document.getElementById('content')); }).listAuditLog(STATE.token, 1000);
+    }).withFailureHandler(function(e){ handleBackendError(e, pageErrorEl_('audit-log')); }).listAuditLog(STATE.token, 1000);
   }
 
   function auditLogActionBadge_(action){
@@ -5606,7 +5622,7 @@
         '<div class="settings-grid">' + logoCardHtml + groupsHtml + notifCardHtml + '</div>';
       paintPage_('settings', html);
       renderCompanyLogoCard_();
-    }).withFailureHandler(function(e){ handleBackendError(e, PAGE_HTML_CACHE['settings'] ? null : document.getElementById('content')); }).getSettings(STATE.token);
+    }).withFailureHandler(function(e){ handleBackendError(e, pageErrorEl_('settings')); }).getSettings(STATE.token);
   }
 
   // =============================================================
@@ -6661,6 +6677,20 @@
     }, 8000);
   }
 
+  /** Dipakai oleh semua fungsi render halaman (baik saat diklik user maupun saat
+      di-preload diam-diam di background oleh preloadAllPages_()) untuk menentukan ke
+      elemen mana pesan error boleh ditulis. Aturannya: HANYA tampilkan error di #content
+      kalau (a) halaman yang gagal itu SEDANG dilihat user sekarang, DAN (b) belum ada
+      versi cache-nya untuk ditampilkan sebagai fallback. Kalau kegagalan itu berasal dari
+      preload halaman lain yang sedang tidak aktif, kembalikan null supaya handleBackendError
+      diam-diam saja (tidak menimpa layar user dengan pesan error dari halaman yang bahkan
+      tidak sedang dia lihat). */
+  function pageErrorEl_(pageKey){
+    if(STATE.currentPage !== pageKey) return null;
+    if(PAGE_HTML_CACHE[pageKey]) return null;
+    return document.getElementById('content');
+  }
+
   function handleBackendError(err, contentEl){
     var msg = err && err.message ? err.message : String(err);
     if(msg.indexOf('SESSION_EXPIRED') !== -1){
@@ -6726,7 +6756,7 @@
       REPORTS_STATE_.data = data;
       if(STATE.currentPage !== 'reports') return;
       renderReportsBody_(data);
-    }).withFailureHandler(function(e){ if(!REPORTS_STATE_.data) handleBackendError(e, document.getElementById('reportsBody')); })
+    }).withFailureHandler(function(e){ if(!REPORTS_STATE_.data && STATE.currentPage === 'reports') handleBackendError(e, document.getElementById('reportsBody')); })
       .getReportsData(STATE.token, REPORTS_STATE_.dateFrom, REPORTS_STATE_.dateTo);
   }
 
@@ -6886,7 +6916,7 @@
       if(curYm !== ym) return; // user navigated away to a different month before this returned
       renderCalendarGrid_();
     }).withFailureHandler(function(e){
-      if(!CALENDAR_STATE_.dataByYm[ym]) handleBackendError(e, document.getElementById('calendarBody'));
+      if(!CALENDAR_STATE_.dataByYm[ym] && STATE.currentPage === 'calendar') handleBackendError(e, document.getElementById('calendarBody'));
     }).getCalendarPickups(STATE.token, ym);
   }
 
