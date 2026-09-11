@@ -387,8 +387,8 @@
               <div class="notif-dropdown-head">
                 <span>Notifikasi</span>
                 <div class="notif-dropdown-head-actions">
-                  <button type="button" class="notif-mark-all" onclick="markAllNotifSeen_()">Tandai semua dibaca</button>
-                  <button type="button" class="notif-close-btn" onclick="closeNotifDropdown_()" title="Tutup" aria-label="Tutup notifikasi">
+                  <button type="button" class="notif-mark-all" onclick="event.stopPropagation(); markAllNotifSeen_()">Tandai semua dibaca</button>
+                  <button type="button" class="notif-close-btn" onclick="event.stopPropagation(); closeNotifDropdown_()" title="Tutup" aria-label="Tutup notifikasi">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
                   </button>
                 </div>
