@@ -36,10 +36,13 @@
   var REQUEST_TIMEOUT_MS = 60000;
 
   // Maksimal request ke GAS yang boleh berjalan BERSAMAAN. Sisanya otomatis
-  // diantre dan baru dijalankan begitu ada slot kosong. 4 dipilih supaya
-  // aman di bawah kuota eksekusi simultan Web App GAS, tapi tetap terasa
-  // cepat walau ada belasan halaman di-preload sekaligus saat login.
-  var MAX_CONCURRENT = 4;
+  // diantre dan baru dijalankan begitu ada slot kosong. Diturunkan dari 4 ke 2 setelah
+  // ditemukan bahwa preloadAllPages_() di JavaScript.html masih bisa membebani GAS saat
+  // >10 halaman di-preload sekaligus usai login, menyebabkan sebagian eksekusi GAS
+  // gagal/timeout dan direspons 404 lewat redirect echo?user_content_key=... . Sekarang
+  // preloadAllPages_() JUGA sudah di-stagger (tidak lagi menembak semua sekaligus), jadi
+  // kombinasi keduanya membuat beban ke backend jauh lebih halus.
+  var MAX_CONCURRENT = 2;
   var activeCount_ = 0;
   var queue_ = [];
 
