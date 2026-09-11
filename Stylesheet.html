@@ -700,8 +700,12 @@
   }
   .remember-check input:checked{background:var(--ag-green);border-color:var(--ag-green);}
   .remember-check input:checked::after{
-    content:'';position:absolute;left:4px;top:1px;width:4px;height:8px;
-    border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg);
+    /* Centang di-center pakai transform (bukan left/top manual) supaya presisi di
+       tengah kotak checkbox persis berapa pun ukuran border-nya — sebelumnya posisi
+       left/top fixed sedikit geser dari tengah sehingga kelihatan "kurang di tengah". */
+    content:'';position:absolute;left:50%;top:46%;width:4px;height:8px;
+    border:solid #fff;border-width:0 2px 2px 0;
+    transform:translate(-50%,-50%) rotate(45deg);
   }
   .login-forgot-link{font-size:12.5px;color:var(--ag-green);font-weight:600;text-decoration:none;background:none;border:none;cursor:pointer;padding:0;}
   .login-forgot-link:hover{text-decoration:underline;}
