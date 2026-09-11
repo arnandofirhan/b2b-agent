@@ -1,4 +1,5 @@
 {
+  "_splash_native_note": "Splash yang tampil sekarang HANYA splash native Android/Chrome (splash custom HTML kita sudah di-hide permanen). Splash native ini otomatis dibangun dari 3 hal di file ini: (1) icon 512x512 di bawah — pastikan isinya PERSIS ikon yang sama dengan desain splash modern (logo hijau tua + huruf 'A' krem/emas, tanpa background transparan karena splash native selalu menaruhnya di atas kotak solid background_color); (2) background_color — disamakan dgn warna krem splash modern; (3) name — dipakai sbg teks di bawah ikon, tidak bisa diubah ukuran/font/warnanya (dikontrol OS, bukan CSS kita). Kalau mau splash native ini makin mirip desain modern: re-export icon-512.png & icon-192.png dari file desain splash modern yang sama (crop cuma bagian ikon persegi-nya saja, tanpa teks 'B2B Agent Management' & tanpa hiasan gelombang pojok, karena splash native tidak bisa menampilkan elemen-elemen itu).",
   "name": "Agrinesia B2B Agent Management",
   "short_name": "B2B Agent",
   "description": "Sistem manajemen agent B2B Agrinesia — PO, komisi, dan operasional agent.",
