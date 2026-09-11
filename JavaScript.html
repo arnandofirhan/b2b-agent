@@ -236,7 +236,9 @@
     if(e) e.stopPropagation();
     var menu = document.getElementById('userMenu');
     if(!menu) return;
-    menu.classList.toggle('open');
+    var willOpen = !menu.classList.contains('open');
+    closeNotifDropdown_(); // 2 dropdown topbar tidak pernah tumpang tindih terbuka bareng
+    if(willOpen) menu.classList.add('open'); else closeUserMenu();
   }
   function closeUserMenu(){
     var menu = document.getElementById('userMenu');
@@ -255,14 +257,15 @@
     actionFn();
     setTimeout(closeUserMenu, 0);
   }
-  document.addEventListener('click', function(e){
-    var menu = document.getElementById('userMenu');
-    if(!menu || !menu.classList.contains('open')) return;
-    if(!menu.contains(e.target)) closeUserMenu();
-  });
-  // Ditangani sepenuhnya oleh toggleNotifDropdown_/closeNotifDropdown_ + backdrop klik;
-  // listener klik-global terpisah dihapus karena rawan race/double-trigger di mobile
-  // (lihat catatan di toggleNotifDropdown_ di bawah).
+  // CATATAN: dulu ada listener document.addEventListener('click', ...) generik di sini utk
+  // menutup dropdown saat tap di luar. Listener klik-di-document itu SUDAH DIHAPUS — pola yg
+  // sama persis pernah menyebabkan bug di notif dropdown (lihat catatan di toggleNotifDropdown_
+  // paling bawah file: "listener klik-global terpisah dihapus karena rawan race/double-trigger
+  // di mobile"), dan bug itu jugalah yg bikin tombol "Ganti Password" kadang tidak merespons
+  // DAN "menular" bikin tombol lain (Keluar, Buat PO, Tambah Promo) ikut tidak bisa diklik
+  // sampai layar disentuh ulang. Sekarang tutup-saat-tap-di-luar ditangani oleh elemen fisik
+  // .user-menu-backdrop (lihat markup #userMenuBackdrop di index.html) — jauh lebih stabil di
+  // Android WebView krn tidak bergantung pada urutan bubbling event klik.
 
   // =============================================================
   // MY SIGNATURE (Admin/Supervisor/Manager) — auto-stamped on Approve PO
@@ -3189,8 +3192,9 @@
       ? '<span class="badge badge-green">'+r.ApprovedDiscount+'%</span>' : '<span class="badge badge-neutral">-</span>';
     return '<div class="po-card">' +
       '<div class="po-card-top">' +
-        '<div><div class="po-card-id">'+escapeHtml(r.POID)+'</div>'+agentBlock+'</div>' +
-        statusBadge(poDisplayStatus_(r)) +
+        '<div class="po-card-id">'+escapeHtml(r.POID)+'</div>' +
+        '<div class="po-card-agent-block">'+agentBlock+'</div>' +
+        '<div class="po-card-status-row">'+statusBadge(poDisplayStatus_(r))+'</div>' +
       '</div>' +
       '<div class="po-card-grid">' +
         '<div class="po-card-field"><span>Tanggal</span><b>'+(r.CreatedAt?formatDateDMY_(r.CreatedAt):'-')+'</b></div>' +
