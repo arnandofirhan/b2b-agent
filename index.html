@@ -21,6 +21,23 @@
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="icon" href="icon-192.png" type="image/png">
+
+  <!-- ===== BOOT SPLASH =====
+       CSS ini SENGAJA ditaruh inline di <head> (bukan di Stylesheet.html) supaya aktif
+       SEBELUM apa pun lain dimuat/di-fetch — inilah layar polos hijau gelap + ikon saja
+       yang sempat kelihatan tiap app dibuka dari home screen sebelum halaman Login
+       muncul. Sekarang diganti gambar splash yang sudah didesain (splash-screen.png).
+       CATATAN: upload file splash-screen.png ke repo GitHub Pages yang sama (folder
+       yang sama dengan index.html) — nama file harus persis "splash-screen.png". -->
+  <style>
+    html,body{margin:0;}
+    #bootSplash{
+      position:fixed;inset:0;z-index:99999;
+      background:#0B3D2E url('splash-screen.png') center/cover no-repeat;
+      transition:opacity .35s ease;
+    }
+    #bootSplash.boot-splash-hide{opacity:0;pointer-events:none;}
+  </style>
   <script>
     // Terapkan preferensi Dark Mode SEBELUM CSS/HTML lain dirender, supaya halaman
     // tidak "kedip" terang lalu berubah gelap saat baru dibuka/refresh.
@@ -80,6 +97,8 @@
   </script>
 </head>
 <body>
+
+  <div id="bootSplash"></div>
 
   <!-- ===================== LOGIN SCREEN ===================== -->
   <div id="loginScreen" class="login-screen">
@@ -366,7 +385,7 @@
           </button>
 
           <div class="user-menu" id="userMenu">
-            <button class="user-menu-trigger" onclick="toggleUserMenu()">
+            <button class="user-menu-trigger" onclick="toggleUserMenu(event)">
               <div class="avatar" id="userAvatar">?</div>
               <div class="user-meta">
                 <div class="user-name" id="userNameLabel">-</div>
@@ -375,11 +394,11 @@
               <svg class="user-menu-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="m6 9 6 6 6-6"/></svg>
             </button>
             <div class="user-menu-dropdown" id="userMenuDropdown">
-              <button class="user-menu-item" onclick="closeUserMenu();openChangePasswordModal()">
+              <button class="user-menu-item" onclick="handleUserMenuAction_(event, openChangePasswordModal)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                 <span>Ganti Password</span>
               </button>
-              <button class="user-menu-item danger" onclick="closeUserMenu();confirmLogout()">
+              <button class="user-menu-item danger" onclick="handleUserMenuAction_(event, confirmLogout)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
                 <span>Keluar</span>
               </button>
