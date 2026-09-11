@@ -3422,11 +3422,13 @@
       // dengan popup Detail Komisi yang sudah pakai pola ini.
       var agentDisplayName = (data.agentName && data.agentName.trim()) ? data.agentName : po.AgentID;
       var head =
-        '<div class="order-summary-head">' +
-          '<div class="order-summary-icon">'+ICONS.transactions+'</div>' +
-          '<div>' +
-            '<div class="order-summary-title">'+escapeHtml(po.POID)+'</div>' +
-            '<div class="order-summary-sub">Agent '+escapeHtml(agentDisplayName)+' &middot; '+(po.CreatedAt ? formatDateDMY_(po.CreatedAt) : '-')+'</div>' +
+        '<div class="order-summary-head has-multi-badges">' +
+          '<div class="order-summary-head-top">' +
+            '<div class="order-summary-icon">'+ICONS.transactions+'</div>' +
+            '<div>' +
+              '<div class="order-summary-title">'+escapeHtml(po.POID)+'</div>' +
+              '<div class="order-summary-sub">Agent '+escapeHtml(agentDisplayName)+' &middot; '+(po.CreatedAt ? formatDateDMY_(po.CreatedAt) : '-')+'</div>' +
+            '</div>' +
           '</div>' +
           '<div class="order-summary-badges">' + statusBadge(po.Status) + '</div>' +
         '</div>';
