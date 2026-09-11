@@ -4159,7 +4159,7 @@
       (products||[]).forEach(function(p){ productMap[p.ProductID] = p; });
 
       var head =
-        '<div class="order-summary-head">' +
+        '<div class="order-summary-head has-multi-badges">' +
           '<div class="order-summary-head-top">' +
             '<div class="order-summary-icon">'+ICONS.orders+'</div>' +
             '<div>' +
@@ -6617,8 +6617,10 @@
             '<span class="filter-daterange-sep">&ndash;</span>' +
             '<div class="date-field-wrap date-field-wrap--sm has-placeholder-ghost">'+ICONS.calendar+'<input type="date" id="reportsTo" value="'+escapeHtml(REPORTS_STATE_.dateTo)+'" title="Sampai" onchange="onReportsDateChange_();this.nextElementSibling.style.display=this.value?\'none\':\'\'"><span class="date-field-ghost"'+(REPORTS_STATE_.dateTo?' style="display:none"':'')+'>Sampai</span></div>' +
           '</div>' +
-          '<button type="button" class="filter-reset-btn" onclick="resetReportsFilter_()">'+FILTER_ICON_RESET_+' Reset</button>' +
-          '<button type="button" class="btn btn-primary" style="margin-left:auto;padding:8px 14px;font-size:13px;" onclick="exportReportsCsv_()">'+ICONS.download+' Export CSV</button>' +
+          '<div class="filter-controls-row" style="width:auto;flex:1 1 auto;">' +
+            '<button type="button" class="filter-reset-btn" onclick="resetReportsFilter_()">'+FILTER_ICON_RESET_+' Reset</button>' +
+            '<button type="button" class="btn btn-primary" style="margin-left:auto;padding:8px 14px;font-size:13px;" onclick="exportReportsCsv_()">'+ICONS.download+' Export CSV</button>' +
+          '</div>' +
         '</div>' +
         '<div id="reportsBody">'+(REPORTS_STATE_.data ? '' : '<div class="spinner"></div>')+'</div>' +
       '</div>';
