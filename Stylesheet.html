@@ -795,6 +795,16 @@
   .user-menu .user-meta{display:flex;flex-direction:column;align-items:flex-start;line-height:1.25;}
   .user-menu-caret{color:var(--ag-gray-500);transition:transform .15s ease;flex-shrink:0;}
   .user-menu.open .user-menu-caret{transform:rotate(180deg);}
+  /* Backdrop TRANSPARAN full-layar dipakai utk menutup dropdown saat tap di luar — dipasang
+     sbg elemen DOM sungguhan (bukan cuma listener klik-di-document) supaya konsisten dgn pola
+     notif-backdrop, yang sudah TERBUKTI lebih andal di beberapa Android WebView drpd listener
+     klik global. Listener klik global sebelumnya kadang membuat tap PERTAMA pada item menu
+     (mis. "Ganti Password") "kebentur" logika tutup-menu pada siklus event yg sama, membuat
+     WebView kehilangan jejak sentuhan itu — efeknya aksi tidak jalan DAN sentuhan berikutnya
+     di tombol lain (Keluar, Buat PO, Tambah Promo, dst) ikut tidak terdaftar sampai layar
+     disentuh/reflow ulang. Backdrop fisik ini menghindari race tsb sepenuhnya. */
+  .user-menu-backdrop{display:none;position:fixed;inset:0;background:transparent;z-index:29;}
+  .user-menu.open .user-menu-backdrop{display:block;}
   .user-menu-dropdown{
     display:none;position:absolute;top:calc(100% + 8px);right:0;min-width:190px;background:var(--ag-surface);
     border:1px solid var(--ag-gray-200);border-radius:var(--radius-md);box-shadow:0 12px 28px rgba(16,24,32,.14);
@@ -1757,10 +1767,25 @@
   .po-list{display:flex;flex-direction:column;gap:12px;margin-top:4px;}
   .po-card{border:1px solid var(--ag-gray-200);border-radius:var(--radius-md);padding:14px;background:var(--ag-surface);display:flex;flex-direction:column;gap:12px;transition:box-shadow .15s ease,border-color .15s ease;}
   .po-card:hover{box-shadow:0 4px 14px rgba(20,60,40,.08);border-color:var(--ag-gray-300);}
-  .po-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;}
-  .po-card-id{font-family:'SFMono-Regular',Consolas,monospace;font-size:13px;font-weight:700;color:var(--ag-gray-900);}
-  .po-card-agent-name{font-size:12.5px;font-weight:600;color:var(--ag-gray-700);margin-top:3px;}
-  .po-card-agent-sub{font-size:11px;color:var(--ag-gray-500);margin-top:1px;}
+  /* Kolom vertikal (bukan baris flex kiri-kanan spt sebelumnya) supaya PO ID & nama Agent
+     masing-masing dapat lebar PENUH kartu utk 1 baris rapi dgn ellipsis — sebelumnya badge
+     status di sebelah kanan "menekan" lebar kolom kiri sehingga ID/nama malah patah jadi
+     2-3 baris acak. Badge status sekarang jadi baris tersendiri di bawah info Agent. */
+  .po-card-top{display:flex;flex-direction:column;gap:3px;min-width:0;}
+  .po-card-id{
+    font-family:'SFMono-Regular',Consolas,monospace;font-size:13px;font-weight:700;color:var(--ag-gray-900);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;
+  }
+  .po-card-agent-block{min-width:0;}
+  .po-card-agent-name{
+    font-size:12.5px;font-weight:600;color:var(--ag-gray-700);margin-top:3px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;
+  }
+  .po-card-agent-sub{
+    font-size:11px;color:var(--ag-gray-500);margin-top:1px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;
+  }
+  .po-card-status-row{margin-top:4px;}
   .po-card-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;background:var(--ag-gray-50);border-radius:10px;padding:10px 12px;}
   .po-card-field{display:flex;flex-direction:column;gap:3px;min-width:0;}
   .po-card-field span{font-size:10.5px;color:var(--ag-gray-500);font-weight:700;text-transform:uppercase;letter-spacing:.03em;}
