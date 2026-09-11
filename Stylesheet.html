@@ -249,6 +249,33 @@
     width:100%;padding:10px 12px;border:1px solid var(--ag-gray-200);border-radius:var(--radius-sm);
     font-size:14px;background:var(--ag-surface);color:var(--ag-gray-900);
   }
+  /* Native <select> (mis. field "Status" di form Produk) sebelumnya dibiarkan pakai
+     panah bawaan browser/OS — di Android/Chrome itu SERING tampil hitam pekat dan
+     kontras aneh dgn field lain yang panahnya abu-abu tipis (lihat .combo-select-arrow).
+     Di-reset dgn appearance:none lalu digambar ulang pakai SVG chevron abu-abu yang
+     sama persis dgn combo-select supaya semua dropdown di app (native maupun custom)
+     terlihat konsisten & modern. */
+  .form-group select{
+    appearance:none;-webkit-appearance:none;-moz-appearance:none;
+    padding-right:38px;cursor:pointer;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239AA3AC' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 12px center;background-size:14px 14px;
+  }
+  .form-group select:focus{
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231E7A4C' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  }
+  /* Field number bawaan (mis. Packaging "Jumlah", Shelf Life, Regular Price) di sebagian
+     Android/Chrome menampilkan tombol stepper +/- HITAM PEKAT bawaan OS yang sangat
+     kontras & tidak sesuai desain (ini yang terlihat di kolom Packaging pada screenshot
+     user). Disembunyikan total di sini — user tetap bisa ketik angka manual seperti
+     biasa, cuma tanpa stepper bawaan yang jelek itu. */
+  .form-group input[type="number"]::-webkit-outer-spin-button,
+  .form-group input[type="number"]::-webkit-inner-spin-button{
+    -webkit-appearance:none;margin:0;
+  }
+  .form-group input[type="number"]{
+    -moz-appearance:textfield;
+  }
   .form-group input::placeholder, .form-group textarea::placeholder{color:var(--ag-gray-400);opacity:1;}
   /* Chrome/Safari mewarnai field yang di-autofill (mis. dari password manager) dengan
      background abu-abu/biru bawaan browser yang tidak bisa diubah lewat background-color
@@ -2043,6 +2070,37 @@
   .success-title{font-size:19px;font-weight:800;color:var(--ag-gray-900);margin:0 0 8px;}
   .success-message{font-size:13.5px;color:var(--ag-gray-600);line-height:1.6;margin:0 0 26px;}
   .success-card .btn{width:100%;}
+
+  /* ---------- Registration submit splash ----------
+     Sebelumnya klik "Kirim Registrasi" hanya mengganti teks tombol jadi "Mengirim..."
+     tanpa indikator visual lain — selama proses upload 3 dokumen + simpan data
+     berlangsung (bisa beberapa detik), layar terasa diam/tidak responsif sampai tiba2
+     popup sukses muncul. Splash ini memberi overlay penuh dengan logo brand yang
+     berdenyut + pesan progres, jadi user tahu persis registrasi sedang diproses. */
+  .reg-submit-overlay{
+    display:none;position:fixed;inset:0;background:rgba(6,20,15,.72);z-index:260;
+    align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(3px);
+  }
+  .reg-submit-overlay.show{display:flex;}
+  .reg-submit-card{
+    text-align:center;animation:success-in .3s cubic-bezier(.2,.9,.3,1.2);
+  }
+  .reg-submit-logo{
+    width:84px;height:84px;border-radius:24px;background:var(--ag-surface);
+    display:flex;align-items:center;justify-content:center;margin:0 auto 22px;
+    box-shadow:0 20px 50px rgba(0,0,0,.35);animation:reg-submit-pulse 1.4s ease-in-out infinite;
+  }
+  .reg-submit-logo img{width:100%;height:100%;object-fit:contain;padding:14px;box-sizing:border-box;}
+  @keyframes reg-submit-pulse{
+    0%,100%{transform:scale(1);box-shadow:0 20px 50px rgba(0,0,0,.35);}
+    50%{transform:scale(1.06);box-shadow:0 24px 60px rgba(0,0,0,.45);}
+  }
+  .reg-submit-text{color:#fff;font-size:15px;font-weight:700;letter-spacing:.01em;}
+  .reg-submit-text .reg-submit-dot{animation:page-loading-dot-blink 1.4s infinite;opacity:0;}
+  .reg-submit-text .reg-submit-dot:nth-child(1){animation-delay:0s;}
+  .reg-submit-text .reg-submit-dot:nth-child(2){animation-delay:.2s;}
+  .reg-submit-text .reg-submit-dot:nth-child(3){animation-delay:.4s;}
+  .reg-submit-sub{color:rgba(255,255,255,.7);font-size:12.5px;margin-top:8px;}
 
   /* ---------- Responsive ---------- */
   @media (max-width: 860px){
