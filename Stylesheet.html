@@ -2412,6 +2412,13 @@
   .agent-product-price{ font-size:13px; font-weight:700; color:var(--ag-green); }
   .agent-product-add-btn{ width:26px; height:26px; border-radius:50%; border:none; background:var(--ag-green);
     color:#fff; font-size:16px; line-height:1; cursor:pointer; }
+  .agent-product-qty-stepper{ display:flex; align-items:center; gap:8px; background:var(--ag-green-soft);
+    border-radius:20px; padding:2px 6px; }
+  .agent-product-qty-stepper button{ width:22px; height:22px; border-radius:50%; border:none; background:var(--ag-green);
+    color:#fff; font-size:14px; line-height:1; cursor:pointer; }
+  .agent-product-qty-stepper span{ font-size:13px; font-weight:700; min-width:16px; text-align:center; }
+  .agent-cart-badge{ position:absolute; top:2px; right:14px; background:#E0462E; color:#fff; font-size:10px;
+    font-weight:700; min-width:16px; height:16px; border-radius:8px; display:flex; align-items:center; justify-content:center; padding:0 4px; }
 
   /* ===================== ADMIN — Dashboard Settings ===================== */
   .dash-settings-intro{ font-size:13px; color:var(--ag-gray-400); margin-bottom:12px; }
@@ -2425,5 +2432,14 @@
   @media (min-width:769px){
     .agent-shortcut-grid{ grid-template-columns:repeat(4,140px); }
     .agent-category-row{ overflow-x:visible; flex-wrap:wrap; }
+    /* Di desktop, layar jauh lebih lebar dari mobile — tanpa batasan ini banner ikut
+       melebar penuh & jadi sangat tinggi (rasio gambar tetap terjaga tapi ukurannya
+       jadi tidak proporsional dibanding sisa konten). Dibatasi lebar maksimal + tinggi
+       tetap, gambar tetap "cover" (crop rapi, tidak gepeng). */
+    .agent-dash{ max-width:900px; margin:0 auto; }
+    .agent-dash-banners{ max-width:900px; }
+    .agent-banner-card{ height:280px; min-height:0; }
+    .agent-banner-card img{ height:280px; min-height:0; }
+    .agent-product-grid{ grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); }
   }
 </style>
