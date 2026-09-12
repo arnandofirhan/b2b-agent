@@ -3888,7 +3888,10 @@
   var NEWPO_PRODUCTS_CACHE_ = null; // last successfully loaded products, for instant re-open
   var NEWPO_PROMOS_CACHE_ = null;   // last successfully loaded promos, for instant re-open
 
-  function newPOForm(){
+  // preserveCart=true dipakai saat dibuka dari "Troli" Dashboard Agent, supaya isi NEWPO_CART_
+  // yang sudah disiapkan sebelum memanggil fungsi ini TIDAK direset ke {} (perilaku default
+  // untuk "Buat PO" biasa tetap reset, karena itu memang dimaksudkan sebagai PO baru yang kosong).
+  function newPOForm(preserveCart){
     NEWPO_RESUBMIT_ID_ = null;
     NEWPO_EDIT_APPROVED_ID_ = null;
 
@@ -3896,7 +3899,7 @@
     // wait) and refresh both lists quietly in the background so it stays accurate.
     if(NEWPO_PRODUCTS_CACHE_ && NEWPO_PROMOS_CACHE_){
       NEWPO_PRODUCTS_ = NEWPO_PRODUCTS_CACHE_;
-      NEWPO_CART_ = {};
+      if(!preserveCart) NEWPO_CART_ = {};
       renderNewPOForm_(NEWPO_PRODUCTS_CACHE_, NEWPO_PROMOS_CACHE_);
     }
 
@@ -6543,6 +6546,8 @@
   // yang datanya diatur Admin lewat menu "Dashboard Settings" — TIDAK ADA yang di-hardcode
   // di sini, jadi Admin bisa ubah tanpa perlu edit kode/deploy ulang.
   // =============================================================
+  var AGENT_DASH_CFG_CACHE_ = null; // config terakhir dari getAgentDashboardConfig, dipakai untuk re-render cepat saat qty troli berubah
+
   function renderAgentDashboard(){
     var content = document.getElementById('content');
     // Sama seperti halaman lain: kalau sudah pernah dibuka sebelumnya, tampilkan versi
@@ -6568,6 +6573,7 @@
   }
 
   function paintAgentDashboard_(cfg){
+    AGENT_DASH_CFG_CACHE_ = cfg;
     var content = document.getElementById('content');
     var name = (STATE.user && STATE.user.name) ? STATE.user.name : '';
     var banners = cfg.banners || [];
@@ -6598,15 +6604,19 @@
       html += '<div class="agent-dash-greeting">Selamat datang, <strong>'+escapeHtml(name)+'</strong></div>';
     }
 
-    // Shortcut utama
+    // Shortcut utama (Troli menggantikan Promo — Promo tetap bisa diakses lewat bottom nav /
+    // sidebar seperti biasa; Troli dipakai buat review barang yang sudah di-"+" dari sini)
     html += '<div class="agent-shortcut-grid">'
       + agentShortcut_('products', 'Katalog', 'transactions')
       + agentShortcut_('transactions', 'Buat Order', 'transactions')
       + agentShortcut_('orders', 'Riwayat Order', 'orders')
-      + agentShortcut_('promo', 'Promo', 'promo')
+      + agentCartShortcutHtml_()
       + '</div>';
 
-    // Kategori produk
+    // Kategori produk — shortcut ikon per kategori (mis. Bakpia Kukus, Bolu Kukus, dst) yang
+    // saat diklik mengarahkan Agent ke halaman terkait (diatur Admin lewat linkAction).
+    // Section ini SENGAJA disembunyikan otomatis kalau Admin belum menambahkan item apapun
+    // di "Dashboard Settings" > Kategori Produk.
     if(categories.length){
       html += '<div class="agent-section-head"><span>Kategori Produk</span></div>';
       html += '<div class="agent-category-row">';
@@ -6620,18 +6630,27 @@
       html += '</div>';
     }
 
-    // Produk unggulan
+    // Produk unggulan — tombol "+" berubah jadi stepper qty (-, angka, +) begitu produk itu
+    // sudah ada di troli, supaya Agent langsung lihat berapa banyak yang sudah ditambahkan
+    // tanpa perlu buka Troli dulu.
     if(featured.length){
       html += '<div class="agent-section-head"><span>Produk Unggulan</span></div>';
       html += '<div class="agent-product-grid">';
       featured.forEach(function(p){
+        var qty = AGENT_DASH_CART_[p.productId] || 0;
         html += '<div class="agent-product-card">'
           + (p.badge ? '<div class="agent-product-badge">'+escapeHtml(p.badge)+'</div>' : '')
           + '<div class="agent-product-img">'+(p.imageUrl ? '<img src="'+escapeHtml(p.imageUrl)+'" alt="">' : '')+'</div>'
           + '<div class="agent-product-name">'+escapeHtml(p.name)+'</div>'
           + '<div class="agent-product-price-row">'
           + '<span class="agent-product-price">'+formatRupiah(p.price)+'</span>'
-          + '<button class="agent-product-add-btn" title="Tambah ke Order" onclick="agentDashAddToOrder_(\''+escapeHtml(p.productId)+'\')">+</button>'
+          + (qty > 0
+              ? '<div class="agent-product-qty-stepper">'
+                + '<button onclick="changeAgentDashCartQty_(\''+escapeHtml(p.productId)+'\',-1)">&minus;</button>'
+                + '<span>'+qty+'</span>'
+                + '<button onclick="changeAgentDashCartQty_(\''+escapeHtml(p.productId)+'\',1)">+</button>'
+                + '</div>'
+              : '<button class="agent-product-add-btn" title="Tambah ke Troli" onclick="changeAgentDashCartQty_(\''+escapeHtml(p.productId)+'\',1)">+</button>')
           + '</div></div>';
       });
       html += '</div>';
@@ -6646,6 +6665,17 @@
     return '<div class="agent-shortcut-item" onclick="showPage(\''+pageKey+'\')">'
       + '<div class="agent-shortcut-icon">'+(ICONS[iconKey]||'')+'</div>'
       + '<div class="agent-shortcut-label">'+escapeHtml(label)+'</div></div>';
+  }
+
+  // Shortcut "Troli" — dengan badge jumlah item kalau sudah ada isinya, klik buka modal
+  // "Buat PO" yang sudah ada, tapi cart-nya DIPERTAHANKAN (bukan direset) karena isinya
+  // datang dari "+" yang diklik di Dashboard.
+  function agentCartShortcutHtml_(){
+    var count = Object.keys(AGENT_DASH_CART_).reduce(function(sum,pid){ return sum + AGENT_DASH_CART_[pid]; }, 0);
+    return '<div class="agent-shortcut-item" onclick="openAgentCart_()" style="position:relative;">'
+      + (count > 0 ? '<span class="agent-cart-badge">'+count+'</span>' : '')
+      + '<div class="agent-shortcut-icon">'+ICONS.transactions+'</div>'
+      + '<div class="agent-shortcut-label">Troli</div></div>';
   }
 
   // linkAction sederhana: nama halaman ('transactions','orders','promo', dst). Kalau Admin
@@ -6675,23 +6705,28 @@
     dots.forEach(function(d, i){ d.classList.toggle('is-active', i === idx); });
   }
 
-  // Tombol "+" di produk unggulan: buka modal "Buat PO" yang SUDAH ADA (bukan bikin alur
-  // order baru) dan langsung masukkan produk ini ke keranjangnya, supaya Agent tidak perlu
-  // cari lagi produknya satu-satu di grid. newPOForm() kadang render sinkron (dari cache)
-  // dan kadang async (fetch pertama kali) — di-poll singkat sampai grid-nya siap sebelum
-  // menambahkan ke cart, supaya tidak coba nambah ke modal yang belum ter-render.
-  function agentDashAddToOrder_(productId){
-    newPOForm();
-    var tries = 0;
-    var timer = setInterval(function(){
-      tries++;
-      if(document.getElementById('poProductGrid') && NEWPO_PRODUCTS_ && NEWPO_PRODUCTS_.length){
-        clearInterval(timer);
-        addToNewPOCart_(productId);
-      } else if(tries > 40){ // ~4 detik, lalu menyerah diam-diam (modal tetap terbuka)
-        clearInterval(timer);
-      }
-    }, 100);
+  // Troli Dashboard Agent — TERPISAH dari NEWPO_CART_ (yang dipakai modal "Buat PO") supaya
+  // nambah produk dari Dashboard TIDAK ke-reset tiap kali newPOForm() dipanggil ulang (mis.
+  // saat klik "Buat Order"). Isinya baru "dituangkan" ke NEWPO_CART_ pas Agent klik "Troli".
+  var AGENT_DASH_CART_ = {};
+
+  function changeAgentDashCartQty_(productId, delta){
+    var q = (AGENT_DASH_CART_[productId] || 0) + delta;
+    if(q <= 0) delete AGENT_DASH_CART_[productId];
+    else AGENT_DASH_CART_[productId] = q;
+    if(AGENT_DASH_CFG_CACHE_) paintAgentDashboard_(AGENT_DASH_CFG_CACHE_);
+  }
+
+  // Klik "Troli": isi NEWPO_CART_ dari AGENT_DASH_CART_, lalu buka modal "Buat PO" yang sudah
+  // ada dengan cart DIPERTAHANKAN (parameter true) supaya barang yang sudah di-"+" dari
+  // Dashboard langsung kelihatan di keranjang modal, siap dilanjutkan jadi PO.
+  function openAgentCart_(){
+    if(!Object.keys(AGENT_DASH_CART_).length){
+      showToast('Troli masih kosong. Klik "+" di Produk Unggulan dulu.', 'error');
+      return;
+    }
+    NEWPO_CART_ = Object.assign({}, AGENT_DASH_CART_);
+    newPOForm(true);
   }
 
   // =============================================================
