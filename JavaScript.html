@@ -7261,8 +7261,8 @@
       var product = type === 'PRODUCT' ? findProduct_(r.ProductID) : null;
       var thumbImageUrl = type === 'PRODUCT' ? (product ? product.ImageURL : '') : r.ImageURL;
       var thumb = thumbImageUrl
-        ? '<img src="'+escapeHtml(thumbImageUrl)+'" style="width:44px;height:44px;object-fit:cover;border-radius:8px;">'
-        : '<div style="width:44px;height:44px;border-radius:8px;background:var(--ag-gray-100);"></div>';
+        ? '<img src="'+escapeHtml(thumbImageUrl)+'" style="width:44px;height:44px;object-fit:cover;border-radius:8px;flex-shrink:0;">'
+        : '<div style="width:44px;height:44px;border-radius:8px;background:var(--ag-gray-100);flex-shrink:0;"></div>';
       var titleText = type === 'PRODUCT'
         ? ('Produk: '+escapeHtml(product ? product.ProductName : r.ProductID))
         : escapeHtml(r.Title || '(tanpa judul)');
@@ -7272,9 +7272,11 @@
           + '<div class="dash-config-row-title">'+titleText+'</div>'
           + (r.Subtitle ? '<div class="dash-config-row-sub">'+escapeHtml(r.Subtitle)+'</div>' : '')
         + '</div>'
-        + '<div class="dash-config-row-order">Urutan: <input type="number" class="dash-sort-input" style="width:56px;" value="'+(r.SortOrder||0)+'" onchange="updateDashboardConfigSort_(\''+r.ConfigID+'\', this.value)"></div>'
-        + '<label class="switch"><input type="checkbox" '+(isActive?'checked':'')+' onchange="toggleDashboardConfigActive_(\''+r.ConfigID+'\', this.checked)"><span class="slider"></span></label>'
-        + rowActionButtons(null, 'openDashboardConfigModal_(\''+type+'\',\''+r.ConfigID+'\')', 'deleteDashboardConfigConfirm_(\''+r.ConfigID+'\')')
+        + '<div class="dash-config-row-controls">'
+          + '<div class="dash-config-row-order">Urutan: <input type="number" class="dash-sort-input" style="width:56px;" value="'+(r.SortOrder||0)+'" onchange="updateDashboardConfigSort_(\''+r.ConfigID+'\', this.value)"></div>'
+          + '<label class="switch"><input type="checkbox" '+(isActive?'checked':'')+' onchange="toggleDashboardConfigActive_(\''+r.ConfigID+'\', this.checked)"><span class="slider"></span></label>'
+          + rowActionButtons(null, 'openDashboardConfigModal_(\''+type+'\',\''+r.ConfigID+'\')', 'deleteDashboardConfigConfirm_(\''+r.ConfigID+'\')')
+        + '</div>'
         + '</div>';
     });
     out += '</div>';
@@ -7358,11 +7360,22 @@
     return html;
   }
 
+  // Label field bericon dipakai khusus di popup Tambah/Edit Banner-Kategori-Produk
+  // Dashboard Settings (biar konsisten sama pola field-icon yg sudah dipakai popup
+  // Ganti Password), supaya popup terasa lebih modern & gampang dipindai matanya.
+  function dcFieldLabel_(icon, text){
+    return '<label class="dc-field-label">'+icon+'<span>'+text+'</span></label>';
+  }
+  function dcInputWithIcon_(icon, innerHtml){
+    return '<div class="input-with-icon">'+icon+innerHtml+'</div>';
+  }
+
   function openDashboardConfigModal_(type, configId){
     var item = configId ? findDashboardConfigItem_(configId) : null;
     DASH_IMAGE_STATE_ = { fileObj: null, url: item ? item.ImageURL : null };
     var isProduct = type === 'PRODUCT';
     var title = (configId ? 'Edit ' : 'Tambah ') + (type==='BANNER'?'Banner':type==='CATEGORY'?'Kategori':'Produk Unggulan');
+    var titleIcon = type==='BANNER'?ICONS.promo:(type==='CATEGORY'?ICONS.products:ICONS.commission);
 
     var body = '';
     if(isProduct){
@@ -7370,22 +7383,26 @@
       var options = sortedProducts.map(function(p){
         return '<option value="'+p.ProductID+'" '+((item&&item.ProductID===p.ProductID)?'selected':'')+'>'+escapeHtml(p.ProductName)+'</option>';
       }).join('');
-      body += '<div class="form-group"><label>Pilih Produk</label><select id="dcProductId">'+options+'</select></div>'
-        + '<div class="form-group"><label>Label Badge (opsional, mis. "Best Seller")</label><input type="text" id="dcTitle" value="'+escapeHtml(item?item.Title:'')+'"></div>';
+      body += '<div class="form-group">'+dcFieldLabel_(ICONS.products,'Pilih Produk')
+        + dcInputWithIcon_(ICONS.products,'<select id="dcProductId">'+options+'</select>')+'</div>'
+        + '<div class="form-group">'+dcFieldLabel_(ICONS.promo,'Label Badge (opsional, mis. "Best Seller")')
+        + dcInputWithIcon_(ICONS.promo,'<input type="text" id="dcTitle" value="'+escapeHtml(item?item.Title:'')+'">')+'</div>';
     } else {
-      body += '<div class="form-group"><label>Judul</label><input type="text" id="dcTitle" value="'+escapeHtml(item?item.Title:'')+'"></div>';
+      body += '<div class="form-group">'+dcFieldLabel_(ICONS.fileDoc,'Judul')
+        + dcInputWithIcon_(ICONS.fileDoc,'<input type="text" id="dcTitle" value="'+escapeHtml(item?item.Title:'')+'">')+'</div>';
       if(type === 'BANNER'){
-        body += '<div class="form-group"><label>Subjudul</label><input type="text" id="dcSubtitle" value="'+escapeHtml(item?item.Subtitle:'')+'"></div>';
+        body += '<div class="form-group">'+dcFieldLabel_(ICONS.edit,'Subjudul')
+          + dcInputWithIcon_(ICONS.edit,'<input type="text" id="dcSubtitle" value="'+escapeHtml(item?item.Subtitle:'')+'">')+'</div>';
       }
-      body += '<div class="form-group"><label>Gambar</label>'+imageUploadWidgetHtml_(item?item.ImageURL:null)+'</div>'
-        + '<div class="form-group"><label>Aksi saat diklik (opsional)</label><select id="dcLinkAction">'
-        + dashConfigLinkSelectHtml_(item?item.LinkAction:'')
-        + '</select></div>';
+      body += '<div class="form-group">'+dcFieldLabel_(ICONS.camera,'Gambar')+imageUploadWidgetHtml_(item?item.ImageURL:null)+'</div>'
+        + '<div class="form-group">'+dcFieldLabel_(ICONS.external,'Aksi saat diklik (opsional)')
+        + dcInputWithIcon_(ICONS.external,'<select id="dcLinkAction">'+dashConfigLinkSelectHtml_(item?item.LinkAction:'')+'</select>')+'</div>';
     }
-    body += '<div class="form-group"><label>Urutan Tampil</label><input type="number" id="dcSortOrder" value="'+(item?item.SortOrder:(DASHBOARD_CONFIG_CACHE_.filter(function(r){return r.ItemType===type;}).length))+'"></div>';
+    body += '<div class="form-group">'+dcFieldLabel_(ICONS.reports,'Urutan Tampil')
+      + dcInputWithIcon_(ICONS.reports,'<input type="number" id="dcSortOrder" value="'+(item?item.SortOrder:(DASHBOARD_CONFIG_CACHE_.filter(function(r){return r.ItemType===type;}).length))+'">')+'</div>';
 
     openModal(
-      '<div class="modal-header"><h3>'+title+'</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>'
+      '<div class="modal-header"><span class="modal-title dc-modal-title">'+titleIcon+'<span>'+title+'</span></span><button class="modal-close" onclick="closeModal()">&times;</button></div>'
       + '<div class="modal-body">'+body+'</div>'
       + '<div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal()">Batal</button>'
       + '<button class="btn btn-primary" id="modalSaveBtn" onclick="saveDashboardConfigForm_(\''+type+'\',\''+(configId||'')+'\')">Simpan</button></div>'
