@@ -3940,10 +3940,7 @@
       var searchIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>';
       var body =
         '<div class="po-search-wrap">'+searchIcon+'<input type="text" class="po-product-search" id="poProductSearch" placeholder="Cari produk..." oninput="renderNewPOProductGrid_()"></div>' +
-        (NEWPO_CATEGORY_FILTER_
-          ? '<div class="po-category-chip" id="poCategoryChip">Kategori: <strong>'+escapeHtml(NEWPO_CATEGORY_FILTER_)+'</strong>'
-            + '<span onclick="clearNewPOCategoryFilter_()" title="Hapus filter">&times;</span></div>'
-          : '') +
+        '<div class="po-category-tabs" id="poCategoryTabs">'+newPOCategoryTabsHtml_(products)+'</div>' +
         '<div class="po-product-grid" id="poProductGrid"></div>' +
         '<div class="po-cart-section">' +
           '<div class="po-cart-title">Keranjang <span class="po-cart-count" id="poCartCount">0</span></div>' +
@@ -4011,9 +4008,34 @@
   }
 
   function clearNewPOCategoryFilter_(){
-    NEWPO_CATEGORY_FILTER_ = null;
-    var chip = document.getElementById('poCategoryChip');
-    if(chip) chip.remove();
+    switchNewPOCategory_(null);
+  }
+
+  // Tab kategori — dibangun dari kategori yang BENERAN ada di daftar produk (bukan hardcode),
+  // jadi otomatis ikut kategori baru dari Master Item Product. "Semua" selalu ada di paling
+  // depan. Pindah tab TIDAK mereset keranjang — Agent bebas gonta-ganti kategori sambil
+  // qty yang sudah dimasukkan tetap aman, tanpa perlu tutup-buka modal.
+  function newPOCategoryTabsHtml_(products){
+    var cats = [];
+    (products||[]).forEach(function(p){
+      var c = String(p.Category||'').trim();
+      if(c && cats.indexOf(c) === -1) cats.push(c);
+    });
+    cats.sort();
+    if(!cats.length) return '';
+    var tabs = [{v:null, label:'Semua'}].concat(cats.map(function(c){ return {v:c, label:c}; }));
+    return tabs.map(function(t){
+      var active = (NEWPO_CATEGORY_FILTER_ && t.v) ? (t.v.toUpperCase() === NEWPO_CATEGORY_FILTER_.toUpperCase())
+                    : (!NEWPO_CATEGORY_FILTER_ && !t.v);
+      return '<button type="button" class="po-category-tab'+(active?' is-active':'')+'" '
+        + 'onclick="switchNewPOCategory_('+(t.v?'\''+escapeHtml(t.v)+'\'':'null')+')">'+escapeHtml(t.label)+'</button>';
+    }).join('');
+  }
+
+  function switchNewPOCategory_(cat){
+    NEWPO_CATEGORY_FILTER_ = cat || null;
+    var tabsWrap = document.getElementById('poCategoryTabs');
+    if(tabsWrap) tabsWrap.innerHTML = newPOCategoryTabsHtml_(NEWPO_PRODUCTS_);
     renderNewPOProductGrid_();
   }
 
