@@ -179,7 +179,7 @@
     DASH_DATA_CACHE_ = null;
     DETAIL_MODAL_CACHE_ = {};
     MY_SIGNATURE_STATUS_CACHE_ = null;
-    NOTIF_STATE_.items = []; NOTIF_STATE_.seen = {};
+    NOTIF_STATE_.items = [];
     if(NOTIF_POLL_INTERVAL_){ clearInterval(NOTIF_POLL_INTERVAL_); NOTIF_POLL_INTERVAL_ = null; }
     document.getElementById('appShell').style.display = 'none';
     document.getElementById('loginScreen').style.display = 'flex';
@@ -1633,13 +1633,16 @@
       if(canManage && (r.MOUStatus === 'WAITING_SIGNATURE' || r.MOUStatus === 'SIGNED')){
         html += '<button class="action-btn doc" title="Generate Ulang MOU (format terbaru)" onclick="regenerateMOUPrompt(\''+r.AgentID+'\',\''+escapeHtml(r.FullName||'').replace(/'/g,"\\'")+'\',\''+r.MOUStatus+'\')">'+ICONS.fileDoc+'</button>';
       }
-      if(canDelete){
+      if(canDelete && r.RegistrationStatus === 'APPROVED'){
         // FIX: dulu ada tombol "Hapus" yang menghapus baris Agent secara permanen —
         // ini menyebabkan AgentID-nya bisa "didaur ulang" ke agent baru berikutnya
         // (lihat catatan lengkap di deleteAgent() Code.gs), yang membuat riwayat
         // transaksi lama tiba-tiba menampilkan nama agent BARU padahal itu transaksi
         // agent LAMA. Sekarang tombolnya jadi Nonaktifkan/Aktifkan — baris Agent (dan
         // AgentID-nya) tidak pernah dihapus, jadi tidak akan pernah tertukar lagi.
+        // Tombol ini hanya relevan untuk agent yang registrasinya sudah APPROVED —
+        // agent yang masih SUBMITTED/REJECTED belum pernah "aktif" jadi tidak perlu
+        // tombol aktifkan/nonaktifkan.
         if(r.AgentStatus === 'INACTIVE'){
           html += '<button class="action-btn" title="Aktifkan Kembali" onclick="activateAgentConfirm(\''+r.AgentID+'\',\''+escapeHtml(r.FullName||'').replace(/'/g,"\\'")+'\')" style="color:var(--ag-green);">'+ICONS.power+'</button>';
         } else {
@@ -7455,21 +7458,15 @@
 
   // =============================================================
   // NOTIFIKASI
+  // Status "SUDAH DIBACA" disimpan di SERVER (bukan localStorage) — setiap
+  // notif dari getNotifications() sudah membawa flag n.seen yang dihitung
+  // backend dari sheet NOTIF_SEEN per user. Ini supaya badge & status
+  // "sudah dibaca" konsisten di semua device (HP, desktop, dst.) yang
+  // dipakai user yang sama, bukan cuma di browser tempat notif itu diklik.
   // =============================================================
-  var NOTIF_STATE_ = { items: [], seen: {} };
-
-  function loadNotifSeen_(){
-    try{
-      var raw = localStorage.getItem('ag_notif_seen_' + (STATE.user ? STATE.user.userId : ''));
-      NOTIF_STATE_.seen = raw ? JSON.parse(raw) : {};
-    }catch(e){ NOTIF_STATE_.seen = {}; }
-  }
-  function saveNotifSeen_(){
-    try{ localStorage.setItem('ag_notif_seen_' + (STATE.user ? STATE.user.userId : ''), JSON.stringify(NOTIF_STATE_.seen)); }catch(e){}
-  }
+  var NOTIF_STATE_ = { items: [] };
 
   function loadNotifications_(){
-    loadNotifSeen_();
     // Notifikasi (ikon lonceng) bukan sesuatu yang user tunggu secara aktif — selalu
     // tandai low-priority supaya tidak menyalip request yang dipicu langsung oleh klik user.
     window.__BG_LOW_PRIORITY__ = true;
@@ -7486,7 +7483,7 @@
   function renderNotifBadge_(){
     var badge = document.getElementById('notifBadge');
     if(!badge) return;
-    var unseenCount = NOTIF_STATE_.items.filter(function(n){ return !NOTIF_STATE_.seen[n.id]; }).length;
+    var unseenCount = NOTIF_STATE_.items.filter(function(n){ return !n.seen; }).length;
     if(unseenCount > 0){
       badge.style.display = 'flex';
       badge.textContent = unseenCount > 9 ? '9+' : String(unseenCount);
@@ -7494,6 +7491,7 @@
       badge.style.display = 'none';
     }
   }
+
 
   var NOTIF_DROPDOWN_LIMIT_ = 5; // maks notif yang tampil sebelum "Lihat Semua"
   var notifSeeAllExpanded_ = false;
@@ -7623,7 +7621,7 @@
     box.innerHTML = '';
     visible.forEach(function(n){
       var color = NOTIF_TYPE_COLOR_[n.type] || '#8A94A6';
-      var isUnseen = !NOTIF_STATE_.seen[n.id];
+      var isUnseen = !n.seen;
       var row = document.createElement('div');
       row.className = 'notif-row'+(isUnseen?' notif-row-unseen':'');
       row.innerHTML =
@@ -7649,22 +7647,32 @@
     }
   }
 
-  /** Klik satu notif: tandai dibaca, TUTUP dropdown dulu (mengosongkan portal secara
-      total), baru navigasi. Karena penutupan sekarang instan & absolut (bukan CSS
-      transition), tidak ada lagi jendela waktu di mana sentuhan bisa "nyasar" ke elemen
-      lain — closeNotifDropdown_ dipanggil sinkron sebelum baris navigasi berikutnya. */
+  /** Klik satu notif: tandai dibaca (optimis di UI lalu dikonfirmasi ke server), TUTUP
+      dropdown dulu (mengosongkan portal secara total), baru navigasi. Karena penutupan
+      sekarang instan & absolut (bukan CSS transition), tidak ada lagi jendela waktu di
+      mana sentuhan bisa "nyasar" ke elemen lain — closeNotifDropdown_ dipanggil sinkron
+      sebelum baris navigasi berikutnya.
+      Status seen dikirim ke SERVER (markNotifSeen) supaya konsisten di semua device milik
+      user ini — bukan cuma disimpan lokal di browser yang sedang dipakai. UI di-update
+      duluan secara optimis (n.seen = true langsung, badge langsung berkurang) supaya
+      terasa instan; kalau request ke server gagal, polling loadNotifications_ berikutnya
+      (tiap 2 menit) otomatis mengoreksi balik state-nya dari sumber kebenaran di server. */
   function onNotifClick_(id, poId){
-    NOTIF_STATE_.seen[id] = true;
-    saveNotifSeen_();
+    var n = NOTIF_STATE_.items.filter(function(item){ return item.id === id; })[0];
+    if(n) n.seen = true;
     renderNotifBadge_();
     closeNotifDropdown_();
+    google.script.run.withSuccessHandler(function(){}).withFailureHandler(function(){ /* silent — akan terkoreksi di polling berikutnya */ }).markNotifSeen(STATE.token, id);
     if(poId) goToPOWithIdFilter_(poId);
   }
 
+  /** Tombol "Tandai semua dibaca": tandai semua notif yang lagi tampil sebagai seen (optimis
+      di UI), lalu kirim SATU request batch ke server (markAllNotifSeen) supaya semuanya
+      konsisten di semua device milik user ini juga. */
   function markAllNotifSeen_(){
-    NOTIF_STATE_.items.forEach(function(n){ NOTIF_STATE_.seen[n.id] = true; });
-    saveNotifSeen_();
+    NOTIF_STATE_.items.forEach(function(n){ n.seen = true; });
     renderNotifBadge_();
     renderNotifDropdownList_();
+    google.script.run.withSuccessHandler(function(){}).withFailureHandler(function(){ /* silent — akan terkoreksi di polling berikutnya */ }).markAllNotifSeen(STATE.token);
   }
 </script>
