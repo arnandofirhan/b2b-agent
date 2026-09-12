@@ -2574,6 +2574,38 @@
   .agent-category-label{ font-size:11px; text-align:center; font-weight:600; }
 
   .agent-product-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
+  /* "Sedang Banyak Dipesan" — geser samping (bukan grid), supaya beda gaya dari "Produk
+     Unggulan" di bawahnya & user tidak bosan lihat grid dobel berturut-turut. Pola fade
+     kiri/kanan + snap sama seperti .agent-category-row-wrap di bawah. */
+  .agent-trend-row-wrap{ position:relative; margin-bottom:4px; }
+  .agent-trend-row{
+    display:flex; gap:12px; overflow-x:auto; padding-bottom:4px; scroll-snap-type:x proximity;
+    scrollbar-width:none; -ms-overflow-style:none; -webkit-overflow-scrolling:touch;
+  }
+  .agent-trend-row::-webkit-scrollbar{ display:none; height:0; }
+  .agent-trend-row-wrap::after{
+    content:''; position:absolute; top:0; right:0; bottom:4px; width:32px; pointer-events:none;
+    background:linear-gradient(90deg, transparent 0%, var(--ag-gray-50) 100%); opacity:1; transition:opacity .2s ease;
+  }
+  .agent-trend-row-wrap.is-at-end::after{ opacity:0; }
+  .agent-trend-row-wrap::before{
+    content:''; position:absolute; top:0; left:0; bottom:4px; width:32px; pointer-events:none; z-index:1;
+    background:linear-gradient(270deg, transparent 0%, var(--ag-gray-50) 100%); opacity:0; transition:opacity .2s ease;
+  }
+  .agent-trend-row-wrap:not(.is-at-start)::before{ opacity:1; }
+  /* Kartu trending SENGAJA lebih lebar & gambarnya landscape (bukan persegi seperti kartu
+     grid Produk Unggulan) — biar dari bentuknya saja langsung terasa beda section. */
+  .agent-trend-card{
+    flex:0 0 auto; scroll-snap-align:start; width:198px; position:relative; background:var(--ag-surface);
+    border:1px solid var(--ag-gray-200); border-radius:14px; padding:10px; display:flex; flex-direction:column; gap:6px;
+    transition:box-shadow .15s ease, transform .15s ease;
+  }
+  .agent-trend-card:hover{ box-shadow:0 8px 20px rgba(16,24,32,.09); transform:translateY(-2px); }
+  .agent-trend-img{
+    width:100%; aspect-ratio:16/10; border-radius:10px; overflow:hidden; background:var(--ag-gray-100);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .agent-trend-img img{ width:100%; height:100%; object-fit:cover; display:block; }
   .agent-product-card{ position:relative; background:var(--ag-surface); border:1px solid var(--ag-gray-200); border-radius:14px; padding:10px;
     box-shadow:0 1px 3px rgba(16,24,32,.04); transition:box-shadow .15s ease, transform .15s ease; }
   .agent-product-card:hover{ box-shadow:0 8px 20px rgba(16,24,32,.09); transform:translateY(-2px); }
