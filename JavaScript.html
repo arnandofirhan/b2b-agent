@@ -69,7 +69,8 @@
     phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.362 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.338 1.85.573 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>',
     bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
     chevronDown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
-    moreHoriz: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>'
+    moreHoriz: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
+    power: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><path d="M12 2v10"/></svg>'
   };
 
   // ---------- Menu definition per role ----------
@@ -1632,7 +1633,19 @@
       if(canManage && (r.MOUStatus === 'WAITING_SIGNATURE' || r.MOUStatus === 'SIGNED')){
         html += '<button class="action-btn doc" title="Generate Ulang MOU (format terbaru)" onclick="regenerateMOUPrompt(\''+r.AgentID+'\',\''+escapeHtml(r.FullName||'').replace(/'/g,"\\'")+'\',\''+r.MOUStatus+'\')">'+ICONS.fileDoc+'</button>';
       }
-      if(canDelete) html += '<button class="action-btn delete" title="Hapus" onclick="deleteAgentConfirm(\''+r.AgentID+'\',\''+escapeHtml(r.FullName||'').replace(/'/g,"\\'")+'\')">'+ICONS.trash+'</button>';
+      if(canDelete){
+        // FIX: dulu ada tombol "Hapus" yang menghapus baris Agent secara permanen —
+        // ini menyebabkan AgentID-nya bisa "didaur ulang" ke agent baru berikutnya
+        // (lihat catatan lengkap di deleteAgent() Code.gs), yang membuat riwayat
+        // transaksi lama tiba-tiba menampilkan nama agent BARU padahal itu transaksi
+        // agent LAMA. Sekarang tombolnya jadi Nonaktifkan/Aktifkan — baris Agent (dan
+        // AgentID-nya) tidak pernah dihapus, jadi tidak akan pernah tertukar lagi.
+        if(r.AgentStatus === 'INACTIVE'){
+          html += '<button class="action-btn" title="Aktifkan Kembali" onclick="activateAgentConfirm(\''+r.AgentID+'\',\''+escapeHtml(r.FullName||'').replace(/'/g,"\\'")+'\')" style="color:var(--ag-green);">'+ICONS.power+'</button>';
+        } else {
+          html += '<button class="action-btn delete" title="Nonaktifkan" onclick="deleteAgentConfirm(\''+r.AgentID+'\',\''+escapeHtml(r.FullName||'').replace(/'/g,"\\'")+'\')">'+ICONS.power+'</button>';
+        }
+      }
       html += '</div>';
       return html;
     };
@@ -2404,20 +2417,52 @@
     }).withFailureHandler(function(e){ handleBackendError(e); }).updateAgent(STATE.token, agentId, fields);
   }
 
+  /** FIX: pesan & judul diubah total supaya sesuai perilaku baru deleteAgent() di
+      Code.gs — sekarang benar2 MENONAKTIFKAN (soft-delete), bukan menghapus permanen.
+      Nama fungsi "deleteAgentConfirm" & endpoint "deleteAgent" DIPERTAHANKAN apa adanya
+      supaya tidak perlu ubah nama di banyak tempat; yang berubah cuma isi pesannya dan
+      perilaku backend-nya. */
   function deleteAgentConfirm(agentId, agentName){
     openConfirmModal({
-      title: 'Hapus Agent?',
-      message: 'Agent "'+agentName+'" akan dihapus permanen, termasuk akun login-nya di menu Kelola User (jika ada) — otomatis ikut terhapus. Dokumen di Drive tidak ikut terhapus.',
-      confirmLabel: 'Ya, Hapus',
+      title: 'Nonaktifkan Agent?',
+      message: 'Agent "'+agentName+'" akan dinonaktifkan beserta akun login-nya (jika ada). ' +
+        'Data & riwayat transaksinya TETAP TERSIMPAN apa adanya dan tidak akan pernah ' +
+        'digantikan oleh agent lain di kemudian hari. Agent yang nonaktif tidak bisa ' +
+        'login atau membuat PO baru, tapi bisa diaktifkan kembali kapan saja.',
+      confirmLabel: 'Ya, Nonaktifkan',
       danger: true,
-      icon: ICONS.trash,
+      icon: ICONS.power,
       onConfirm: function(){
-        setPageLoading_(true, 'Menghapus agent');
+        setPageLoading_(true, 'Menonaktifkan agent');
         google.script.run.withSuccessHandler(function(res){
           setPageLoading_(false);
-          if(res.success){ showToast('Agent dihapus.','success'); renderAgents(); }
-          else showToast(res.message||'Gagal menghapus.','error');
+          if(res.success){ showToast('Agent dinonaktifkan.','success'); renderAgents(); }
+          else showToast(res.message||'Gagal menonaktifkan.','error');
         }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).deleteAgent(STATE.token, agentId);
+      }
+    });
+  }
+
+  /** Kebalikan dari deleteAgentConfirm di atas — aktifkan lagi agent yang sebelumnya
+      dinonaktifkan. Akun login TIDAK otomatis ikut aktif lagi (lihat catatan di
+      activateAgent() Code.gs) — admin perlu buka Kelola User terpisah untuk itu kalau
+      memang agent ini perlu bisa login lagi. */
+  function activateAgentConfirm(agentId, agentName){
+    openConfirmModal({
+      title: 'Aktifkan Kembali Agent?',
+      message: 'Agent "'+agentName+'" akan diaktifkan kembali dan bisa membuat PO lagi. ' +
+        'Catatan: akun login-nya (jika sebelumnya ikut dinonaktifkan) tidak otomatis aktif — ' +
+        'aktifkan terpisah lewat menu Kelola User bila agent ini perlu login lagi.',
+      confirmLabel: 'Ya, Aktifkan',
+      danger: false,
+      icon: ICONS.power,
+      onConfirm: function(){
+        setPageLoading_(true, 'Mengaktifkan agent');
+        google.script.run.withSuccessHandler(function(res){
+          setPageLoading_(false);
+          if(res.success){ showToast('Agent diaktifkan kembali.','success'); renderAgents(); }
+          else showToast(res.message||'Gagal mengaktifkan.','error');
+        }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).activateAgent(STATE.token, agentId);
       }
     });
   }
