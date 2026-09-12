@@ -6901,6 +6901,7 @@
     var banners = cfg.banners || [];
     var categories = cfg.categories || [];
     var featured = cfg.featuredProducts || [];
+    var trending = cfg.trendingProducts || [];
     // MOU belum SIGNED = Agent belum boleh transaksi sama sekali (backend sudah menolak
     // PO kalau ini terjadi — lihat createPO/submitPO). Dashboard mengunci Katalog/Troli
     // LEBIH AWAL di sisi tampilan supaya Agent tidak perlu klik-klik dulu baru tahu ditolak.
@@ -6979,11 +6980,41 @@
       html += '</div></div>';
     }
 
+    // "Sedang Banyak Dipesan" — ISINYA DIATUR MANUAL oleh Admin lewat Dashboard Settings
+    // (pilih produk + label badge sendiri, mis. "BEST SELLER"/"HOT"/"REKOMENDASI"), BUKAN
+    // dihitung otomatis dari data transaksi — supaya Admin punya kendali penuh atas section
+    // ini, sama seperti "Produk Unggulan" di bawah (hanya beda ItemType: TRENDING vs PRODUCT).
+    if(trending.length){
+      html += '<div class="agent-section-head"><div class="agent-section-head-text">'
+        + '<span>\ud83d\udd25 Sedang Banyak Dipesan</span>'
+        + '<div class="agent-section-subtitle">Produk yang paling diminati Agent lainnya</div>'
+        + '</div></div>';
+      html += '<div class="agent-product-grid">';
+      trending.forEach(function(p){
+        var qty = AGENT_DASH_CART_[p.productId] || 0;
+        html += '<div class="agent-product-card">'
+          + (p.badge ? '<div class="agent-product-badge">'+escapeHtml(p.badge)+'</div>' : '')
+          + '<div class="agent-product-img">'+(p.imageUrl ? '<img src="'+escapeHtml(p.imageUrl)+'" alt="">' : '')+'</div>'
+          + '<div class="agent-product-name">'+escapeHtml(p.name)+'</div>'
+          + '<div class="agent-product-price-row">'
+          + '<span class="agent-product-price">'+formatRupiah(p.price)+'</span>'
+          + (qty > 0
+              ? '<div class="agent-product-qty-stepper">'
+                + '<button onclick="changeAgentDashCartQty_(\''+escapeHtml(p.productId)+'\',-1)">&minus;</button>'
+                + '<span>'+qty+'</span>'
+                + '<button onclick="changeAgentDashCartQty_(\''+escapeHtml(p.productId)+'\',1)">+</button>'
+                + '</div>'
+              : '<button class="agent-product-add-btn" title="Tambah ke Troli" onclick="changeAgentDashCartQty_(\''+escapeHtml(p.productId)+'\',1)">+</button>')
+          + '</div></div>';
+      });
+      html += '</div>';
+    }
+
     // Produk unggulan — tombol "+" berubah jadi stepper qty (-, angka, +) begitu produk itu
     // sudah ada di troli, supaya Agent langsung lihat berapa banyak yang sudah ditambahkan
     // tanpa perlu buka Troli dulu.
     if(featured.length){
-      html += '<div class="agent-section-head"><span>Produk Unggulan</span></div>';
+      html += '<div class="agent-section-head"><span>\u2b50 Produk Unggulan</span></div>';
       html += '<div class="agent-product-grid">';
       featured.forEach(function(p){
         var qty = AGENT_DASH_CART_[p.productId] || 0;
@@ -7233,7 +7264,8 @@
     var groups = [
       { type:'BANNER', label:'Banner Atas' },
       { type:'CATEGORY', label:'Kategori Produk' },
-      { type:'PRODUCT', label:'Produk Unggulan' }
+      { type:'TRENDING', label:'🔥 Sedang Banyak Dipesan' },
+      { type:'PRODUCT', label:'⭐ Produk Unggulan' }
     ];
     var html = '<div class="dash-settings-intro">Atur konten Dashboard Agent (mobile & desktop) di sini. '
       + 'Perubahan langsung berlaku ke semua Agent begitu disimpan.</div>';
@@ -7254,16 +7286,17 @@
     var out = '<div class="dash-config-list">';
     rows.forEach(function(r){
       var isActive = (r.IsActive === true || r.IsActive === 'TRUE');
-      // Untuk tipe PRODUCT, baris config TIDAK pernah punya ImageURL sendiri (cuma
+      var isProductLike = (type === 'PRODUCT' || type === 'TRENDING');
+      // Untuk tipe PRODUCT/TRENDING, baris config TIDAK pernah punya ImageURL sendiri (cuma
       // menyimpan ProductID) — sebelumnya kode ini langsung pakai r.ImageURL yang memang
       // kosong, makanya thumbnail selalu tampil kotak abu-abu polos. Sekarang ambil gambar
       // dari master produknya lewat findProduct_.
-      var product = type === 'PRODUCT' ? findProduct_(r.ProductID) : null;
-      var thumbImageUrl = type === 'PRODUCT' ? (product ? product.ImageURL : '') : r.ImageURL;
+      var product = isProductLike ? findProduct_(r.ProductID) : null;
+      var thumbImageUrl = isProductLike ? (product ? product.ImageURL : '') : r.ImageURL;
       var thumb = thumbImageUrl
         ? '<img src="'+escapeHtml(thumbImageUrl)+'" style="width:44px;height:44px;object-fit:cover;border-radius:8px;flex-shrink:0;">'
         : '<div style="width:44px;height:44px;border-radius:8px;background:var(--ag-gray-100);flex-shrink:0;"></div>';
-      var titleText = type === 'PRODUCT'
+      var titleText = isProductLike
         ? ('Produk: '+escapeHtml(product ? product.ProductName : r.ProductID))
         : escapeHtml(r.Title || '(tanpa judul)');
       out += '<div class="dash-config-row">'
@@ -7373,9 +7406,10 @@
   function openDashboardConfigModal_(type, configId){
     var item = configId ? findDashboardConfigItem_(configId) : null;
     DASH_IMAGE_STATE_ = { fileObj: null, url: item ? item.ImageURL : null };
-    var isProduct = type === 'PRODUCT';
-    var title = (configId ? 'Edit ' : 'Tambah ') + (type==='BANNER'?'Banner':type==='CATEGORY'?'Kategori':'Produk Unggulan');
-    var titleIcon = type==='BANNER'?ICONS.promo:(type==='CATEGORY'?ICONS.products:ICONS.commission);
+    var isProduct = (type === 'PRODUCT' || type === 'TRENDING');
+    var typeLabel = type==='BANNER' ? 'Banner' : type==='CATEGORY' ? 'Kategori' : type==='TRENDING' ? 'Produk (Sedang Banyak Dipesan)' : 'Produk Unggulan';
+    var title = (configId ? 'Edit ' : 'Tambah ') + typeLabel;
+    var titleIcon = type==='BANNER'?ICONS.promo:(type==='CATEGORY'?ICONS.products:(type==='TRENDING'?ICONS.commission:ICONS.commission));
 
     var body = '';
     if(isProduct){
@@ -7383,10 +7417,20 @@
       var options = sortedProducts.map(function(p){
         return '<option value="'+p.ProductID+'" '+((item&&item.ProductID===p.ProductID)?'selected':'')+'>'+escapeHtml(p.ProductName)+'</option>';
       }).join('');
+      // Label Badge: khusus TRENDING dikasih daftar cepat (BEST SELLER/HOT/dst) supaya Admin
+      // tidak perlu ketik manual tiap kali — tetap bisa diketik bebas karena ini <input>, bukan <select>.
+      var badgeHint = type==='TRENDING'
+        ? '<div class="dc-badge-quickpicks">'
+          + ['BEST SELLER','HOT','REKOMENDASI','NEW'].map(function(b){
+              return '<button type="button" class="dc-badge-chip" onclick="document.getElementById(\'dcTitle\').value=\''+b+'\'">'+b+'</button>';
+            }).join('')
+          + '</div>'
+        : '';
       body += '<div class="form-group">'+dcFieldLabel_(ICONS.products,'Pilih Produk')
         + dcInputWithIcon_(ICONS.products,'<select id="dcProductId">'+options+'</select>')+'</div>'
         + '<div class="form-group">'+dcFieldLabel_(ICONS.promo,'Label Badge (opsional, mis. "Best Seller")')
-        + dcInputWithIcon_(ICONS.promo,'<input type="text" id="dcTitle" value="'+escapeHtml(item?item.Title:'')+'">')+'</div>';
+        + dcInputWithIcon_(ICONS.promo,'<input type="text" id="dcTitle" value="'+escapeHtml(item?item.Title:'')+'">')
+        + badgeHint + '</div>';
     } else {
       body += '<div class="form-group">'+dcFieldLabel_(ICONS.fileDoc,'Judul')
         + dcInputWithIcon_(ICONS.fileDoc,'<input type="text" id="dcTitle" value="'+escapeHtml(item?item.Title:'')+'">')+'</div>';
@@ -7449,7 +7493,7 @@
       SortOrder: Number(val_('dcSortOrder')) || 0,
       IsActive: true
     };
-    if(type === 'PRODUCT'){
+    if(type === 'PRODUCT' || type === 'TRENDING'){
       payload.ProductID = val_('dcProductId');
       payload.Title = val_('dcTitle');
       if(!payload.ProductID){ showToast('Pilih produk terlebih dahulu.','error'); return; }
@@ -7460,7 +7504,7 @@
     }
 
     function doSave(imageUrl){
-      if(type !== 'PRODUCT') payload.ImageURL = imageUrl || '';
+      if(type !== 'PRODUCT' && type !== 'TRENDING') payload.ImageURL = imageUrl || '';
       setPageLoading_(true, 'Menyimpan');
       google.script.run.withSuccessHandler(function(res){
         setPageLoading_(false);
@@ -7469,14 +7513,14 @@
       }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).saveDashboardConfigItem(STATE.token, payload);
     }
 
-    if(type !== 'PRODUCT' && DASH_IMAGE_STATE_.fileObj){
+    if(type !== 'PRODUCT' && type !== 'TRENDING' && DASH_IMAGE_STATE_.fileObj){
       setPageLoading_(true, 'Mengupload gambar');
       google.script.run.withSuccessHandler(function(res){
         if(res && res.success) doSave(res.url);
         else { setPageLoading_(false); showToast('Gagal upload gambar.','error'); }
       }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).uploadDashboardConfigImage(STATE.token, DASH_IMAGE_STATE_.fileObj);
     } else {
-      doSave(type !== 'PRODUCT' ? DASH_IMAGE_STATE_.url : null);
+      doSave((type !== 'PRODUCT' && type !== 'TRENDING') ? DASH_IMAGE_STATE_.url : null);
     }
   }
 
