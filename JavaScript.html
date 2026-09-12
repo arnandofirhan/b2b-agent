@@ -80,6 +80,7 @@
     { key: 'dashboard',   icon: ICONS.dashboard, label: 'Dashboard',        roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
     { key: 'agents',      icon: ICONS.agent,     label: 'Agent',            roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
     { key: 'products',    icon: ICONS.products,  label: 'Master Item Product', roles: ['ADMIN','MANAGER'] },
+    { key: 'catalog',     icon: ICONS.products,  label: 'Katalog',          roles: ['AGENT','SUPERVISOR'] },
     { key: 'promo',       icon: ICONS.promo,     label: 'Promo',            roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
     { key: 'transactions',icon: ICONS.transactions, label: 'Transaksi / PO',roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
     { key: 'orders',      icon: ICONS.orders,    label: 'Order',            roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
@@ -98,7 +99,7 @@
   // MENU_ITEMS above remains the flat source of truth for role/icon/label/preload) ----------
   var MENU_GROUPS = [
     { key: '__top__',   label: null,               items: ['dashboard'] }, // ungrouped, always visible, no header
-    { key: 'transaksi', label: 'Transaksi',         items: ['promo','transactions','orders','commission','commission-scheme'] },
+    { key: 'transaksi', label: 'Transaksi',         items: ['catalog','promo','transactions','orders','commission','commission-scheme'] },
     { key: 'master',    label: 'Master Data',       items: ['agents','products','stores'] },
     { key: 'laporan',   label: 'Laporan & Jadwal',  items: ['reports','calendar'] },
     { key: 'sistem',    label: 'Sistem',            items: ['users','settings','dashboard-settings','audit-log'] }
@@ -108,6 +109,7 @@
 
   var PAGE_TITLES = {
     dashboard: 'Dashboard', agents: 'Agent', products: 'Master Item Product',
+    catalog: 'Katalog Produk',
     promo: 'Promo', transactions: 'Transaksi / PO', orders: 'Order',
     commission: 'Commission', 'commission-scheme': 'Skema Komisi',
     stores: 'Store Management', users: 'Kelola User', settings: 'Pengaturan',
@@ -1030,6 +1032,7 @@
         case 'dashboard': return renderDashboard();
         case 'agents': return renderAgents();
         case 'products': return renderProducts();
+        case 'catalog': return renderCatalog();
         case 'promo': return renderPromos();
         case 'stores': return renderStores();
         case 'transactions': return renderPO();
@@ -2895,6 +2898,140 @@
       if(u && !seen[u]){ seen[u] = true; out.push(u); }
     });
     return out;
+  }
+
+  // =============================================================
+  // KATALOG (Agent/Supervisor) — halaman browsing produk READ-ONLY, murni informasi
+  // (foto, kategori, packaging, shelf life, regular price, status). BUKAN troli/order —
+  // klik card cuma buka detail info, tidak ada tombol tambah/qty di sini sama sekali.
+  // Data sumbernya sama dgn Master Item Product (listProducts) supaya selalu sinkron
+  // tanpa perlu endpoint/sheet baru.
+  // =============================================================
+  var CATALOG_PRODUCTS_CACHE_ = null;
+  var CATALOG_FILTER_ = { q:'', category:null };
+
+  function renderCatalog(){
+    if(CATALOG_PRODUCTS_CACHE_){
+      paintPage_('catalog', catalogPageHtml_());
+      renderCatalogGrid_();
+    }
+    google.script.run
+      .withSuccessHandler(function(rows){
+        CATALOG_PRODUCTS_CACHE_ = rows;
+        if(!document.getElementById('catalogGrid')){
+          paintPage_('catalog', catalogPageHtml_());
+        }
+        renderCatalogGrid_();
+      })
+      .withFailureHandler(function(e){ handleBackendError(e, pageErrorEl_('catalog')); })
+      .listProducts(STATE.token);
+  }
+
+  function catalogPageHtml_(){
+    var searchIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>';
+    return '<div class="card">' +
+      '<div class="catalog-search-row">' +
+        '<div class="po-search-wrap">'+searchIcon+'<input type="text" class="po-product-search" id="catalogSearch" placeholder="Cari nama produk..." oninput="onCatalogSearch_(this.value)"></div>' +
+      '</div>' +
+      '<div class="po-category-tabs" id="catalogCategoryTabs"></div>' +
+      '<div class="catalog-grid" id="catalogGrid"></div>' +
+    '</div>';
+  }
+
+  function onCatalogSearch_(val){
+    CATALOG_FILTER_.q = (val||'').trim().toLowerCase();
+    renderCatalogGrid_();
+  }
+
+  function switchCatalogCategory_(cat){
+    CATALOG_FILTER_.category = cat || null;
+    renderCatalogGrid_();
+  }
+
+  function catalogCategoryTabsHtml_(products){
+    var cats = [];
+    (products||[]).forEach(function(p){
+      var c = String(p.Category||'').trim();
+      if(c && cats.indexOf(c) === -1) cats.push(c);
+    });
+    cats.sort();
+    if(!cats.length) return '';
+    var tabs = [{v:null, label:'Semua'}].concat(cats.map(function(c){ return {v:c, label:c}; }));
+    return tabs.map(function(t){
+      var active = CATALOG_FILTER_.category ? (t.v && t.v.toUpperCase() === CATALOG_FILTER_.category.toUpperCase())
+                    : !t.v;
+      return '<button type="button" class="po-category-tab'+(active?' is-active':'')+'" '
+        + 'onclick="switchCatalogCategory_('+(t.v?'\''+escapeHtml(t.v)+'\'':'null')+')">'+escapeHtml(t.label)+'</button>';
+    }).join('');
+  }
+
+  function renderCatalogGrid_(){
+    var grid = document.getElementById('catalogGrid');
+    var tabsEl = document.getElementById('catalogCategoryTabs');
+    if(!grid || !CATALOG_PRODUCTS_CACHE_) return;
+    if(tabsEl && !tabsEl.innerHTML) tabsEl.innerHTML = catalogCategoryTabsHtml_(CATALOG_PRODUCTS_CACHE_);
+
+    // Produk INACTIVE tetap disembunyikan dari Katalog Agent — konsisten dengan grid Buat PO,
+    // karena produk yang sudah dinonaktifkan Admin memang tidak lagi relevan utk dilihat Agent.
+    var list = CATALOG_PRODUCTS_CACHE_.filter(function(p){
+      if(p.Status === 'INACTIVE') return false;
+      var matchesQuery = !CATALOG_FILTER_.q || (p.ProductName||'').toLowerCase().indexOf(CATALOG_FILTER_.q) !== -1;
+      var matchesCategory = !CATALOG_FILTER_.category || (String(p.Category||'').toUpperCase() === CATALOG_FILTER_.category.toUpperCase());
+      return matchesQuery && matchesCategory;
+    });
+    list = sortByCategoryThenName_(list, function(p){ return p; });
+
+    if(!list.length){
+      grid.innerHTML = '<div class="po-cart-empty">Produk tidak ditemukan.</div>';
+      return;
+    }
+    grid.innerHTML = list.map(function(p){
+      var thumb = p.ImageURL
+        ? '<img src="'+escapeHtml(p.ImageURL)+'" alt="">'
+        : '<div class="po-product-thumb-empty">'+ICONS.products+'</div>';
+      return '<div class="po-product-tile" onclick="openCatalogProductDetail_(\''+p.ProductID+'\')">' +
+        '<div class="po-product-thumb">'+thumb+'</div>' +
+        '<div class="po-product-info">' +
+          '<div class="catalog-tile-category">'+escapeHtml(p.Category||'-')+'</div>' +
+          '<div class="po-product-name">'+escapeHtml(p.ProductName)+'</div>' +
+          '<div class="catalog-tile-packaging">'+escapeHtml(p.Packaging||'-')+'</div>' +
+          '<div class="catalog-tile-price">'+formatRupiah(p.RegularPrice)+'</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  /** Detail info produk lengkap — READ ONLY, dipanggil dari klik card Katalog Agent.
+   *  Reuse pola visual yg sama dengan viewProduct() (Admin), tapi sumber datanya dari
+   *  CATALOG_PRODUCTS_CACHE_ supaya halaman ini tidak bergantung pada state Admin. */
+  function openCatalogProductDetail_(productId){
+    var p = null;
+    for(var i=0;i<CATALOG_PRODUCTS_CACHE_.length;i++){
+      if(CATALOG_PRODUCTS_CACHE_[i].ProductID === productId){ p = CATALOG_PRODUCTS_CACHE_[i]; break; }
+    }
+    if(!p){ showToast('Data tidak ditemukan.','error'); return; }
+    var img = p.ImageURL
+      ? '<img src="'+escapeHtml(p.ImageURL)+'" alt="">'
+      : '<div class="product-summary-photo-empty">'+ICONS.products+'</div>';
+    var head =
+      '<div class="product-summary-head">' +
+        '<div class="product-summary-photo">' + img + '</div>' +
+        '<div class="product-summary-meta">' +
+          '<div class="product-summary-title">'+escapeHtml(p.ProductName)+'</div>' +
+          '<div class="product-summary-sub">'+escapeHtml(p.Category||'-')+' &middot; '+escapeHtml(p.Packaging||'-')+'</div>' +
+          '<div class="product-summary-badges">'+statusBadge(p.Status)+'</div>' +
+        '</div>' +
+      '</div>';
+    var infoGrid =
+      '<div class="agent-detail-section-title">Informasi Produk</div>' +
+      '<div class="agent-detail-grid">' +
+        detailField_('Product Item', escapeHtml(p.ProductName)) +
+        detailField_('Category', escapeHtml(p.Category||'-')) +
+        detailField_('Packaging', escapeHtml(p.Packaging||'-')) +
+        detailField_('Shelf Life', p.ShelfLife ? escapeHtml(p.ShelfLife)+' hari' : '-') +
+        detailField_('Regular Price', formatRupiah(p.RegularPrice)) +
+      '</div>';
+    openViewModal('Detail Produk', head + infoGrid, '');
   }
 
   function findProduct_(productId){
@@ -6846,11 +6983,12 @@
     showToast('Selesaikan tanda tangan MOU dulu sebelum bisa order. Cek halaman Profil.', 'error');
   }
 
-  // Shortcut "Katalog" — sebelumnya SALAH diarahkan ke halaman Transaksi/PO (dobel persis
-  // dengan "Buat Order"), jadi klik Katalog kelihatan seperti tidak melakukan apa-apa yang
-  // beda. Sekarang langsung membuka modal pilih produk (newPOForm) buat browsing katalog.
+  // Shortcut "Katalog" — dulu sempat diarahkan ke Transaksi/PO (dobel dgn "Buat Order"),
+  // lalu ke modal newPOForm (dobel dgn "Troli"). Sekarang diarahkan ke halaman Katalog
+  // tersendiri: grid semua produk dari Master Item Product, klik card = lihat info
+  // lengkap (packaging, shelf life, regular price, dst) — BUKAN alur order/troli.
   function agentCatalogShortcutHtml_(locked){
-    var onclick = locked ? 'agentShortcutLockedClick_()' : 'newPOForm(false)';
+    var onclick = locked ? 'agentShortcutLockedClick_()' : 'showPage(\'catalog\')';
     return '<div class="agent-shortcut-item'+(locked?' is-locked':'')+'" onclick="'+onclick+'">'
       + '<div class="agent-shortcut-icon">'+ICONS.products+'</div>'
       + '<div class="agent-shortcut-label">Katalog</div></div>';
