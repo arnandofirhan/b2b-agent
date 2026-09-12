@@ -70,7 +70,8 @@
     bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
     chevronDown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
     moreHoriz: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
-    power: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><path d="M12 2v10"/></svg>'
+    power: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><path d="M12 2v10"/></svg>',
+    location: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>'
   };
 
   // ---------- Menu definition per role ----------
@@ -2394,15 +2395,23 @@
     if(!a){ showToast('Data tidak ditemukan.','error'); return; }
     var isAdmin = STATE.user.role === 'ADMIN';
     var emailField = isAdmin
-      ? formField_('agEmail','Email',a.Email,'email') +
+      ? formField_('agEmail','Email',a.Email,'email','',false,ICONS.mail) +
         '<p style="font-size:11.5px;color:var(--ag-gray-600);margin:-10px 0 16px;">Mengubah email juga akan memperbarui email login Agent.</p>'
-      : '<div class="form-group"><label>Email</label><input type="email" value="'+escapeHtml(a.Email)+'" disabled style="background:var(--ag-gray-50);color:var(--ag-gray-400);"><p style="font-size:11.5px;color:var(--ag-gray-600);margin:6px 0 0;">Hanya Admin yang dapat mengubah email.</p></div>';
+      : '<div class="form-group"><label>Email</label><div class="text-field-wrap" style="background:var(--ag-gray-50);">'+ICONS.mail+'<input type="email" value="'+escapeHtml(a.Email)+'" disabled style="background:transparent;color:var(--ag-gray-400);"></div><p style="font-size:11.5px;color:var(--ag-gray-600);margin:6px 0 0;">Hanya Admin yang dapat mengubah email.</p></div>';
+    var ktpField =
+      '<div class="form-group"><label>Nomor KTP</label><div class="text-field-wrap">'+ICONS.fileDoc+
+        '<input type="text" id="agKTPNumber" inputmode="numeric" maxlength="16" value="'+escapeHtml(a.KTPNumber||'')+'" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').slice(0,16);">' +
+      '</div></div>';
+    var addressField =
+      '<div class="form-group"><label>Alamat sesuai KTP</label><div class="text-field-wrap text-field-wrap--textarea">'+ICONS.location+
+        '<textarea id="agAddress" rows="2">'+escapeHtml(a.AddressKTP||'')+'</textarea>' +
+      '</div></div>';
     var body =
-      formField_('agFullName','Nama Lengkap',a.FullName) +
+      formField_('agFullName','Nama Lengkap',a.FullName,'text','',false,ICONS.agent) +
       emailField +
-      formField_('agPhone','No. Telepon / WhatsApp',a.Phone) +
-      '<div class="form-group"><label>Nomor KTP</label><input type="text" id="agKTPNumber" inputmode="numeric" maxlength="16" value="'+escapeHtml(a.KTPNumber||'')+'" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').slice(0,16);"></div>' +
-      '<div class="form-group"><label>Alamat sesuai KTP</label><textarea id="agAddress" rows="2">'+escapeHtml(a.AddressKTP||'')+'</textarea></div>';
+      formField_('agPhone','No. Telepon / WhatsApp',a.Phone,'text','',false,ICONS.phone) +
+      ktpField +
+      addressField;
     openFormModal('Edit Agent', body, function(){ saveAgentForm(agentId); });
   }
 
