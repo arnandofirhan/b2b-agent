@@ -766,16 +766,25 @@
     return el;
   }
 
+  // Urutan 4 ikon utama Bottom Nav khusus per role — dipisah dari MENU_GROUPS (yang tetap
+  // dipakai apa adanya utk sidebar desktop & isi sheet "Lainnya") karena urutan yang enak
+  // dipakai di 4-slot mobile beda dgn urutan grouping sidebar. Role yang TIDAK disebut di
+  // sini otomatis fallback ke urutan lama (flatten MENU_GROUPS, ambil 4 pertama).
+  var BOTTOM_NAV_PRIMARY_ORDER_ = {
+    AGENT: ['dashboard','transactions','orders','commission']
+  };
+
   function renderBottomNav(){
     var bar = document.getElementById('bottomNav');
     if(!bar) return; // elemen hanya ada kalau index.html sudah dipasangi markup bottom nav
     bar.innerHTML = '';
     var counts = NAV_BADGE_COUNTS_ || {};
 
-    // Urutan menu mengikuti urutan MENU_GROUPS/MENU_ITEMS (sama seperti sidebar), difilter
-    // sesuai role, lalu diratakan jadi satu daftar flat untuk dipilih 4 yang pertama.
     var itemsByKey = {};
     MENU_ITEMS.forEach(function(item){ itemsByKey[item.key] = item; });
+
+    // Urutan menu mengikuti urutan MENU_GROUPS/MENU_ITEMS (sama seperti sidebar), difilter
+    // sesuai role, lalu diratakan jadi satu daftar flat untuk dipilih 4 yang pertama.
     var flatVisible = [];
     MENU_GROUPS.forEach(function(group){
       group.items.forEach(function(k){
@@ -784,8 +793,21 @@
       });
     });
 
-    var primary = flatVisible.slice(0, BOTTOM_NAV_PRIMARY_MAX_);
-    var rest = flatVisible.slice(BOTTOM_NAV_PRIMARY_MAX_);
+    var customOrder = BOTTOM_NAV_PRIMARY_ORDER_[STATE.user.role];
+    var primary, rest;
+    if(customOrder){
+      // Susun 4 slot sesuai urutan custom, lalu sisanya (apapun yang visible tapi tidak
+      // disebut di urutan custom) tetap masuk sheet "Lainnya" mengikuti urutan flatten biasa.
+      primary = customOrder
+        .map(function(k){ return itemsByKey[k]; })
+        .filter(function(item){ return item && item.roles.indexOf(STATE.user.role) !== -1; });
+      var primaryKeys = {};
+      primary.forEach(function(item){ primaryKeys[item.key] = true; });
+      rest = flatVisible.filter(function(item){ return !primaryKeys[item.key]; });
+    } else {
+      primary = flatVisible.slice(0, BOTTOM_NAV_PRIMARY_MAX_);
+      rest = flatVisible.slice(BOTTOM_NAV_PRIMARY_MAX_);
+    }
 
     primary.forEach(function(item){ bar.appendChild(buildBottomNavItemEl_(item, counts)); });
 
@@ -7022,12 +7044,15 @@
   }
 
   // Shortcut "Ringkasan Piutang" — total tagihan yang belum lunas dari PO milik Agent ini
-  // (join PO x Orders lewat POID, dihitung di getAgentDashboardConfig backend). Tap ke
-  // halaman Transaksi/PO. Info saja, jadi tetap bisa dilihat walau mouLocked.
+  // (join PO x Orders lewat POID, dihitung di getAgentDashboardConfig backend). Sebelumnya
+  // klik cuma showPage('transactions') polos (semua status ikut tampil, Agent harus filter
+  // manual sendiri) — sekarang pakai goToPOWithStatusFilter_ yang sama dgn panel "Ringkasan
+  // Status PO", supaya begitu Transaksi/PO terbuka langsung terfilter ke status Pending
+  // Payment. Info saja, jadi tetap bisa dilihat walau mouLocked.
   function agentPiutangShortcutHtml_(piutang, locked){
     var count = piutang ? piutang.count : 0;
     var total = piutang ? piutang.total : 0;
-    return '<div class="agent-shortcut-item" onclick="showPage(\'transactions\')" style="position:relative;">'
+    return '<div class="agent-shortcut-item" onclick="goToPOWithStatusFilter_(\'MENUNGGU_PEMBAYARAN\')" style="position:relative;">'
       + (count > 0 ? '<span class="agent-cart-badge">'+count+'</span>' : '')
       + '<div class="agent-shortcut-icon">'+ICONS.reports+'</div>'
       + '<div class="agent-shortcut-label">Tagihan</div>'
