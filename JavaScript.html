@@ -181,6 +181,8 @@
     APP_HISTORY_READY_ = false; // supaya initAppHistory_ pasang baseline baru saat login berikutnya, bukan numpuk di history sesi lama
     PAGE_HTML_CACHE = {};
     sessionStorage_remove(PAGE_CACHE_STORAGE_KEY_); // jangan sampai user berikutnya di tab yg sama lihat cache HTML user lama
+    sessionStorage_remove('ag_dash_cart'); // sama — troli Dashboard Agent jangan sampai kebawa ke akun Agent lain di tab yg sama
+    AGENT_DASH_CART_ = {};
     DASH_DATA_CACHE_ = null;
     DETAIL_MODAL_CACHE_ = {};
     MY_SIGNATURE_STATUS_CACHE_ = null;
@@ -6937,12 +6939,31 @@
   // Troli Dashboard Agent — TERPISAH dari NEWPO_CART_ (yang dipakai modal "Buat PO") supaya
   // nambah produk dari Dashboard TIDAK ke-reset tiap kali newPOForm() dipanggil ulang (mis.
   // saat klik "Buat Order"). Isinya baru "dituangkan" ke NEWPO_CART_ pas Agent klik "Troli".
-  var AGENT_DASH_CART_ = {};
+  //
+  // Sebelumnya variabel ini CUMA hidup di memory JS, jadi begitu Dashboard di-refresh (atau
+  // app ditutup-buka lagi), isinya balik ke {} kosong — kelihatan seperti troli "hilang
+  // sendiri" padahal barangnya belum sempat diproses jadi PO. Sekarang disimpan ke
+  // sessionStorage setiap berubah, dan dipulihkan lagi di awal boot (lihat _agBootInit_/
+  // bootApp), jadi bertahan selama sesi login yang sama persis seperti PAGE_HTML_CACHE.
+  var AGENT_DASH_CART_STORAGE_KEY_ = 'ag_dash_cart';
+  var AGENT_DASH_CART_ = restoreAgentDashCart_();
+
+  function restoreAgentDashCart_(){
+    try{
+      var raw = sessionStorage_get(AGENT_DASH_CART_STORAGE_KEY_);
+      return raw ? (JSON.parse(raw) || {}) : {};
+    }catch(e){ return {}; }
+  }
+
+  function persistAgentDashCart_(){
+    try{ sessionStorage_set(AGENT_DASH_CART_STORAGE_KEY_, JSON.stringify(AGENT_DASH_CART_)); }catch(e){}
+  }
 
   function changeAgentDashCartQty_(productId, delta){
     var q = (AGENT_DASH_CART_[productId] || 0) + delta;
     if(q <= 0) delete AGENT_DASH_CART_[productId];
     else AGENT_DASH_CART_[productId] = q;
+    persistAgentDashCart_();
     if(AGENT_DASH_CFG_CACHE_) paintAgentDashboard_(AGENT_DASH_CFG_CACHE_);
   }
 
