@@ -6578,9 +6578,9 @@
 
     // Banner carousel (kalau Admin belum atur satupun, tampilkan header sapaan polos saja)
     if(banners.length){
-      html += '<div class="agent-dash-banners">';
+      html += '<div class="agent-dash-banners" id="agentBannerTrack" onscroll="onAgentBannerScroll_()">';
       banners.forEach(function(b, i){
-        html += '<div class="agent-banner-card'+(i===0?' is-active':'')+'" '
+        html += '<div class="agent-banner-card" '
           + (b.linkAction ? 'onclick="agentDashBannerClick_(\''+escapeHtml(b.linkAction)+'\')"' : '') + '>'
           + (b.imageUrl ? '<img src="'+escapeHtml(b.imageUrl)+'" alt="">' : '')
           + '<div class="agent-banner-overlay">'
@@ -6590,8 +6590,8 @@
       });
       html += '</div>';
       if(banners.length > 1){
-        html += '<div class="agent-banner-dots">';
-        banners.forEach(function(b, i){ html += '<span class="agent-banner-dot'+(i===0?' is-active':'')+'"></span>'; });
+        html += '<div class="agent-banner-dots" id="agentBannerDots">';
+        banners.forEach(function(b, i){ html += '<span class="agent-banner-dot'+(i===0?' is-active':'')+'" onclick="scrollAgentBannerTo_('+i+')"></span>'; });
         html += '</div>';
       }
     } else {
@@ -6656,11 +6656,42 @@
     if(known.indexOf(linkAction) !== -1) showPage(linkAction);
   }
 
-  // Tombol "+" di produk unggulan mengarahkan ke halaman Buat Order (Transaksi/PO) — memakai
-  // alur pembuatan PO yang SUDAH ADA (tidak menambah logic order baru), supaya tetap konsisten
-  // dengan cara Agent membuat PO saat ini.
+  // Klik dot -> scroll track ke banner ke-i (pakai scrollTo halus, dot aktif diupdate lewat
+  // event scroll di onAgentBannerScroll_ supaya tetap sinkron kalau user geser manual/swipe).
+  function scrollAgentBannerTo_(i){
+    var track = document.getElementById('agentBannerTrack');
+    if(!track) return;
+    track.scrollTo({ left: track.clientWidth * i, behavior: 'smooth' });
+  }
+
+  // Dipanggil tiap track discroll (swipe manual ATAU hasil scrollAgentBannerTo_) supaya dot
+  // aktif selalu mengikuti banner yang SEDANG terlihat.
+  function onAgentBannerScroll_(){
+    var track = document.getElementById('agentBannerTrack');
+    var dotsWrap = document.getElementById('agentBannerDots');
+    if(!track || !dotsWrap) return;
+    var idx = Math.round(track.scrollLeft / track.clientWidth);
+    var dots = dotsWrap.querySelectorAll('.agent-banner-dot');
+    dots.forEach(function(d, i){ d.classList.toggle('is-active', i === idx); });
+  }
+
+  // Tombol "+" di produk unggulan: buka modal "Buat PO" yang SUDAH ADA (bukan bikin alur
+  // order baru) dan langsung masukkan produk ini ke keranjangnya, supaya Agent tidak perlu
+  // cari lagi produknya satu-satu di grid. newPOForm() kadang render sinkron (dari cache)
+  // dan kadang async (fetch pertama kali) — di-poll singkat sampai grid-nya siap sebelum
+  // menambahkan ke cart, supaya tidak coba nambah ke modal yang belum ter-render.
   function agentDashAddToOrder_(productId){
-    showPage('transactions');
+    newPOForm();
+    var tries = 0;
+    var timer = setInterval(function(){
+      tries++;
+      if(document.getElementById('poProductGrid') && NEWPO_PRODUCTS_ && NEWPO_PRODUCTS_.length){
+        clearInterval(timer);
+        addToNewPOCart_(productId);
+      } else if(tries > 40){ // ~4 detik, lalu menyerah diam-diam (modal tetap terbuka)
+        clearInterval(timer);
+      }
+    }, 100);
   }
 
   // =============================================================
