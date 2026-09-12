@@ -2401,24 +2401,25 @@
   .agent-banner-dot{ width:6px; height:6px; border-radius:50%; background:var(--ag-gray-200); }
   .agent-banner-dot.is-active{ background:var(--ag-green); width:16px; border-radius:4px; }
 
-  .agent-shortcut-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
-  .agent-shortcut-item{ display:flex; flex-direction:column; align-items:center; gap:8px;
-    background:var(--ag-surface); border:1px solid var(--ag-gray-200); border-radius:14px; padding:14px 6px; cursor:pointer;
+  .agent-shortcut-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+  .agent-shortcut-item{ display:flex; flex-direction:column; align-items:center; gap:6px;
+    background:var(--ag-surface); border:1px solid var(--ag-gray-200); border-radius:12px; padding:10px 4px; cursor:pointer;
     box-shadow:0 1px 3px rgba(16,24,32,.04); transition:transform .15s ease, box-shadow .15s ease; }
   .agent-shortcut-item:hover{ box-shadow:0 6px 16px rgba(16,24,32,.08); transform:translateY(-1px); }
   .agent-shortcut-item:active{ background:var(--ag-green-soft); transform:translateY(0); }
-  .agent-shortcut-icon{ width:38px; height:38px; border-radius:12px; display:flex; align-items:center; justify-content:center;
+  .agent-shortcut-icon{ width:32px; height:32px; border-radius:10px; display:flex; align-items:center; justify-content:center;
     background:var(--ag-green-soft); color:var(--ag-green); }
-  .agent-shortcut-icon svg{ width:20px; height:20px; }
+  .agent-shortcut-icon svg{ width:17px; height:17px; }
   /* Variasi warna lembut per shortcut supaya tidak monoton satu warna semua, tetap serasi
      dengan palet brand (bukan warna acak/norak). */
   .agent-shortcut-item:nth-child(2) .agent-shortcut-icon{ background:var(--ag-blue-soft); color:var(--ag-blue); }
   .agent-shortcut-item:nth-child(3) .agent-shortcut-icon{ background:var(--ag-orange-soft); color:var(--ag-orange); }
   .agent-shortcut-item:nth-child(4) .agent-shortcut-icon{ background:var(--ag-purple-soft); color:var(--ag-purple); }
-  .agent-shortcut-label{ font-size:11.5px; font-weight:600; text-align:center; color:var(--ag-gray-900); }
+  .agent-shortcut-label{ font-size:10.5px; font-weight:600; text-align:center; color:var(--ag-gray-900); line-height:1.2; }
   /* Sublabel kecil di bawah label utama — dipakai shortcut "Jadwal Ambil" (tanggal) &
      "Piutang" (nominal), supaya card-nya informatif, bukan cuma jalan pintas kosong. */
-  .agent-shortcut-sublabel{ font-size:10px; font-weight:600; text-align:center; color:var(--ag-gray-500); margin-top:-4px; }
+  .agent-shortcut-sublabel{ font-size:9px; font-weight:600; text-align:center; color:var(--ag-gray-500); margin-top:-3px; line-height:1.2;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
   /* State terkunci (MOU belum SIGNED) — card dibuat terlihat non-aktif (abu-abu, dimmed)
      tapi tetap clickable supaya tap-nya bisa memicu toast penjelasan, bukan diam saja
      tanpa feedback sama sekali. */
