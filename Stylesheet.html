@@ -2372,8 +2372,10 @@
   /* ===================== AGENT DASHBOARD (catalog/order-focused) ===================== */
   .agent-dash{ display:flex; flex-direction:column; gap:20px; }
   .agent-dash-greeting{ font-size:16px; font-weight:600; color:var(--ag-text-1, #1f2a24); padding:4px 2px; }
-  .agent-dash-banners{ position:relative; border-radius:16px; overflow:hidden; }
-  .agent-banner-card{ position:relative; width:100%; min-height:150px; border-radius:16px; overflow:hidden;
+  .agent-dash-banners{ position:relative; border-radius:16px; overflow-x:auto; overflow-y:hidden;
+    display:flex; scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+  .agent-dash-banners::-webkit-scrollbar{ display:none; }
+  .agent-banner-card{ position:relative; flex:0 0 100%; scroll-snap-align:start; width:100%; min-height:150px; border-radius:16px; overflow:hidden;
     background:linear-gradient(135deg, var(--ag-green) 0%, #14502F 100%); cursor:pointer; }
   .agent-banner-card img{ width:100%; height:100%; object-fit:cover; display:block; min-height:150px; }
   .agent-banner-overlay{ position:absolute; left:0; bottom:0; right:0; padding:14px 16px;
