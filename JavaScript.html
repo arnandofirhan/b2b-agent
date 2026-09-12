@@ -178,6 +178,7 @@
     sessionStorage_remove('ag_token');
     sessionStorage_remove('ag_user');
     STATE.token = null; STATE.user = null;
+    APP_HISTORY_READY_ = false; // supaya initAppHistory_ pasang baseline baru saat login berikutnya, bukan numpuk di history sesi lama
     PAGE_HTML_CACHE = {};
     sessionStorage_remove(PAGE_CACHE_STORAGE_KEY_); // jangan sampai user berikutnya di tab yg sama lihat cache HTML user lama
     DASH_DATA_CACHE_ = null;
@@ -592,6 +593,8 @@
     if(sigBtn) sigBtn.style.display = (['ADMIN','SUPERVISOR','MANAGER'].indexOf(STATE.user.role) !== -1) ? 'block' : 'none';
     renderSidebar();
     renderBottomNav();
+    initAppHistory_();
+    SKIP_NEXT_HISTORY_PUSH_ = true; // baseline dashboard sudah di-replaceState oleh initAppHistory_, jangan dobel-push
     showPage('dashboard');
     // Tunda mulainya preload background ~1.2 detik supaya tidak langsung tabrakan dengan
     // panggilan Dashboard sendiri yang baru saja ditembak oleh showPage('dashboard') di
@@ -927,8 +930,51 @@
     }catch(e){ /* cache korup/kosong — biarkan boot berjalan normal tanpa cache */ }
   }
 
+  // =============================================================
+  // VIRTUAL HISTORY untuk gesture/tombol back bawaan HP
+  // =============================================================
+  // Tanpa ini, SPA cuma pakai innerHTML swap (tidak ada pindah URL beneran), jadi bagi
+  // browser/WebView, dari awal buka app sampai pindah-pindah menu itu dianggap SATU
+  // halaman. Begitu back ditekan, karena tidak ada "halaman sebelumnya" di riwayat, HP
+  // langsung menutup tab/WebView app-nya (bukan cuma mundur di dalam app) — sessionStorage
+  // ikut hilang, kelihatan seperti logout mendadak begitu app dibuka lagi.
+  //
+  // Fix: setiap showPage() menambah satu entri history.pushState. popstate (dipicu back)
+  // ditangkap dan diarahkan untuk showPage() ke halaman yang tercatat di entri itu, TANPA
+  // push baru lagi (biar tidak dobel). Baseline "dashboard" di-replaceState (bukan push)
+  // sekali di awal boot, supaya back dari Dashboard tetap keluar app seperti wajarnya
+  // (persis kayak behaviour app native: back dari home = keluar).
+  var APP_HISTORY_READY_ = false;
+  var SKIP_NEXT_HISTORY_PUSH_ = false; // di-set true sesaat sebelum showPage dipanggil dari dalam popstate handler
+
+  function initAppHistory_(){
+    if(APP_HISTORY_READY_) return;
+    APP_HISTORY_READY_ = true;
+    try{ history.replaceState({ agPage: 'dashboard' }, '', location.href); }catch(e){}
+    window.addEventListener('popstate', function(e){
+      var page = (e.state && e.state.agPage) ? e.state.agPage : 'dashboard';
+      SKIP_NEXT_HISTORY_PUSH_ = true;
+      showPage(page);
+    });
+  }
+
+  function pushAppHistory_(pageKey){
+    if(!APP_HISTORY_READY_) return; // belum boot penuh (mis. dipanggil sebelum login) — aman diabaikan
+    if(SKIP_NEXT_HISTORY_PUSH_){ SKIP_NEXT_HISTORY_PUSH_ = false; return; }
+    // Hindari numpuk entri kembar kalau menu yang sama diklik berkali-kali beruntun (mis.
+    // tap dobel tak sengaja) — tanpa ini, back gesture jadi harus ditekan berkali-kali
+    // cuma buat "keluar" dari halaman yang sama.
+    if(history.state && history.state.agPage === pageKey) return;
+    try{ history.pushState({ agPage: pageKey }, '', location.href); }catch(e){}
+  }
+
   function showPage(pageKey){
     STATE.currentPage = pageKey;
+    // Catat perpindahan ini ke riwayat browser (lihat initAppHistory_ di bawah) supaya
+    // gesture/tombol back bawaan HP tahu ada "halaman sebelumnya" di DALAM app, dan balik
+    // ke situ dulu — bukan langsung keluar app (yang bikin sessionStorage token hilang dan
+    // kelihatan seperti logout mendadak begitu app dibuka lagi).
+    pushAppHistory_(pageKey);
     // Reset per-page filter state whenever a page is entered normally (sidebar, KPI cards,
     // "Lihat semua", etc.) so a filter set once (e.g. via the Dashboard status shortcut)
     // doesn't stick around on the next visit. goToPOWithStatusFilter_() sets the desired
@@ -7068,7 +7114,8 @@
 
     var body = '';
     if(isProduct){
-      var options = PRODUCTS_CACHE.map(function(p){
+      var sortedProducts = sortByCategoryThenName_(PRODUCTS_CACHE, function(p){ return p; });
+      var options = sortedProducts.map(function(p){
         return '<option value="'+p.ProductID+'" '+((item&&item.ProductID===p.ProductID)?'selected':'')+'>'+escapeHtml(p.ProductName)+'</option>';
       }).join('');
       body += '<div class="form-group"><label>Pilih Produk</label><select id="dcProductId">'+options+'</select></div>'
