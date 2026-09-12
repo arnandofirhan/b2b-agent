@@ -3901,11 +3901,18 @@
     NEWPO_CATEGORY_FILTER_ = categoryFilter || null;
     NEWPO_PRESELECT_PRODUCT_ID_ = presetProductId || null;
 
+    // Kalau bukan mode preserveCart (bukan lanjutan edit PO dsb), keranjang modal SELALU
+    // dimulai dari isi AGENT_DASH_CART_ (barang yang sudah di-"+" Agent dari Dashboard),
+    // bukan dikosongkan total. Ini supaya "+" yang sudah diklik di Dashboard tetap
+    // kebawa MASUK ke modal ini dari jalur MANAPUN modal dibuka — klik "Buat Order",
+    // klik Banner/Kategori, atau klik "Troli" — bukan cuma lewat "Troli" doang seperti
+    // sebelumnya (dua keranjang itu sekarang selalu disinkronkan di titik ini).
+    if(!preserveCart) NEWPO_CART_ = Object.assign({}, AGENT_DASH_CART_);
+
     // If we already have data from a previous open, paint the modal immediately (no spinner
     // wait) and refresh both lists quietly in the background so it stays accurate.
     if(NEWPO_PRODUCTS_CACHE_ && NEWPO_PROMOS_CACHE_){
       NEWPO_PRODUCTS_ = NEWPO_PRODUCTS_CACHE_;
-      if(!preserveCart) NEWPO_CART_ = {};
       renderNewPOForm_(NEWPO_PRODUCTS_CACHE_, NEWPO_PROMOS_CACHE_);
       applyNewPOPreselect_();
     }
