@@ -381,6 +381,41 @@
         <button class="icon-btn sidebar-toggle-topbar" id="sidebarToggleTopbar" onclick="toggleSidebar()" title="Buka/Tutup Sidebar">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="17" height="17"><rect x="3" y="4" width="18" height="16" rx="3"/><line x1="9.5" y1="4" x2="9.5" y2="20"/></svg>
         </button>
+        <!-- FIX UI TOPBAR MOBILE (khusus role AGENT): blok avatar+nama dipindah jadi anak
+             langsung <header class="topbar"> (bukan lagi di dalam .topbar-actions) supaya
+             posisinya bisa digeser ke KIRI topbar via CSS `order` khusus mobile (lihat
+             .topbar.agent-topbar di Stylesheet.html), meniru referensi desain (avatar+nama+
+             ID Agent di kiri, ikon lonceng/tema di kanan). Di DESKTOP tampilan TIDAK berubah
+             sama sekali: `order` default menjaga elemen ini tetap di ujung kanan seperti
+             semula (lihat blok CSS "order" desktop di Stylesheet.html). Class "agent-topbar"
+             pada <header> disetel oleh applyAgentTopbarLayout_() di JavaScript.html
+             berdasarkan role SAJA (bukan lebar layar) — pembatasan "hanya mobile" tetap
+             lewat media query, sama seperti pola is-profile-link/caret yang sudah ada. -->
+        <div class="user-menu" id="userMenu">
+          <button class="user-menu-trigger" id="userMenuTrigger" onclick="handleUserTriggerClick_(event)">
+            <div class="avatar" id="userAvatar">?</div>
+            <div class="user-meta">
+              <div class="user-name" id="userNameLabel">-</div>
+              <div class="user-role" id="userRoleLabel">-</div>
+              <!-- Baris ID Agent: HANYA tampil di topbar mobile role AGENT (lihat
+                   .topbar.agent-topbar .user-agentid di Stylesheet.html). Diisi oleh
+                   bootApp() dari STATE.user.agentId. -->
+              <div class="user-agentid" id="userAgentIdLabel"></div>
+            </div>
+            <svg class="user-menu-caret" id="userMenuCaret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="user-menu-backdrop" id="userMenuBackdrop" onpointerdown="closeUserMenu()"></div>
+          <div class="user-menu-dropdown" id="userMenuDropdown">
+            <button class="user-menu-item" onclick="handleUserMenuAction_(event, openChangePasswordModal)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <span>Ganti Password</span>
+            </button>
+            <button class="user-menu-item danger" onclick="handleUserMenuAction_(event, confirmLogout)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+              <span>Keluar</span>
+            </button>
+          </div>
+        </div>
         <div class="topbar-title-wrap">
           <div class="topbar-title" id="pageTitle">Dashboard</div>
           <div class="topbar-date" id="pageDate"></div>
@@ -421,27 +456,6 @@
             </svg>
           </button>
 
-          <div class="user-menu" id="userMenu">
-            <button class="user-menu-trigger" id="userMenuTrigger" onclick="handleUserTriggerClick_(event)">
-              <div class="avatar" id="userAvatar">?</div>
-              <div class="user-meta">
-                <div class="user-name" id="userNameLabel">-</div>
-                <div class="user-role" id="userRoleLabel">-</div>
-              </div>
-              <svg class="user-menu-caret" id="userMenuCaret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="m6 9 6 6 6-6"/></svg>
-            </button>
-            <div class="user-menu-backdrop" id="userMenuBackdrop" onpointerdown="closeUserMenu()"></div>
-            <div class="user-menu-dropdown" id="userMenuDropdown">
-              <button class="user-menu-item" onclick="handleUserMenuAction_(event, openChangePasswordModal)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                <span>Ganti Password</span>
-              </button>
-              <button class="user-menu-item danger" onclick="handleUserMenuAction_(event, confirmLogout)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
-                <span>Keluar</span>
-              </button>
-            </div>
-          </div>
           <!-- Tombol Keluar berdiri sendiri di topbar — KHUSUS role AGENT (lihat
                applyAgentTopbarLayout_ di JavaScript.html). Untuk role lain tetap
                tersembunyi dan logout tetap lewat dropdown avatar seperti biasa. -->
