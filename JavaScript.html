@@ -281,15 +281,6 @@
       di belakangnya. */
   function handleUserMenuAction_(e, actionFn){
     if(e){ e.preventDefault(); e.stopPropagation(); }
-    // FIX: guard yang sama dgn onNotifClick_ — kalau notif dropdown BARU SAJA ditutup
-    // (tap tombol X-nya, atau tap area kosong/backdrop-nya) tepat sepersekian detik
-    // sebelum tap ini, "sentuhan susulan" itu masih bisa dianggap browser mendarat di
-    // tombol "Ganti Password"/"Keluar" pada user-menu jika keduanya bertumpuk secara
-    // koordinat (mis. dropdown notif versi mobile ditempel penuh-lebar di bawah topbar,
-    // tepat menutupi area avatar/user-menu). Tanpa guard ini, menutup notif dgn tap di
-    // area kosong bisa "menembus" dan otomatis memicu Keluar/Ganti Password padahal user
-    // tidak bermaksud menyentuh tombol itu sama sekali.
-    if(Date.now() - NOTIF_CLOSED_AT_ < 350) return;
     closeUserMenu();
     // requestAnimationFrame (bukan setTimeout(0)) memastikan browser benar2 sudah selesai
     // melepas dropdown/backdrop dari layout & hit-testing sebelum modal mulai dibangun,
@@ -7436,50 +7427,103 @@
   var NOTIF_DROPDOWN_LIMIT_ = 8; // maks notif yang tampil sebelum "Lihat Semua"
   var notifSeeAllExpanded_ = false;
 
-  var NOTIF_CLOSED_AT_ = 0; // guard: cegah re-open seketika krn race pointerdown(backdrop)->click(bell)
+  // =============================================================
+  // NOTIF DROPDOWN — RANCANG ULANG TOTAL (PORTAL PATTERN)
+  // -------------------------------------------------------------
+  // Kenapa dirombak: versi lama menaruh .notif-backdrop + .notif-dropdown sbg markup
+  // statis di dalam .topbar (lihat index.html versi lama), disembunyikan/dimunculkan
+  // lewat classList.add/remove('show'). Elemen yg "cuma disembunyikan" (bukan dihapus)
+  // tetap hidup di DOM dan tetap bisa ambil bagian dlm hit-testing browser selama masa
+  // transisi CSS-nya berjalan, membuat sentuhan yg menutupnya "tembus" ke tombol lain
+  // di baliknya (Ganti Password / Keluar pada user-menu, atau notif-row lain).
+  //
+  // Solusi: notif dropdown sekarang PORTAL — backdrop+panel-nya dibangun dari nol
+  // sbg elemen baru di #notifPortalRoot (akhir <body>, di luar .topbar/.user-menu sama
+  // sekali) SETIAP KALI dibuka, dan DIHAPUS TOTAL (innerHTML='') setiap kali ditutup.
+  // Tidak ada lagi "elemen tersembunyi yg masih ada" — begitu ditutup, portal-nya benar2
+  // kosong, sehingga TIDAK ADA elemen notif apapun yg bisa menerima atau menyalurkan
+  // sentuhan ke mana-mana. Tombol Ganti Password/Keluar/notif-row lain jadi 100% bersih
+  // dari gangguan notif dropdown yg sedang/baru saja ditutup.
+  // =============================================================
+  var NOTIF_DROPDOWN_OPEN_ = false;
+  var NOTIF_TYPE_COLOR_ = { success:'#1E7A4C', danger:'#E24C4C', warning:'#F2994A', orange:'#F2994A', info:'#2F80ED' };
+
   function toggleNotifDropdown_(e){
-    // stopPropagation WAJIB: tanpa ini, klik pada tombol lonceng akan "naik" (bubble)
-    // ke document dan bisa memicu handler klik-luar lain (mis. penutup user-menu) pada
-    // event yang sama, menyebabkan dropdown terbuka-lalu-tertutup seketika di beberapa
-    // browser mobile — inilah sebab "diklik tapi tidak bisa balik/tertutup" sebelumnya.
+    // stopPropagation WAJIB: tanpa ini, klik pada tombol lonceng "naik" (bubble) ke
+    // document dan bisa memicu handler klik-luar lain pada event yg sama.
     if(e) e.stopPropagation();
-    if(Date.now() - NOTIF_CLOSED_AT_ < 300) return; // baru saja ditutup via tap-di-luar, abaikan
-    var dd = document.getElementById('notifDropdown');
-    if(!dd) return;
-    var willOpen = !dd.classList.contains('show');
-    closeUserMenu();
-    if(willOpen){
-      dd.classList.add('show');
-      var bd = document.getElementById('notifBackdrop');
-      if(bd) bd.classList.add('show');
-      notifSeeAllExpanded_ = false;
-      renderNotifDropdownList_();
-    } else {
-      closeNotifDropdown_();
-    }
+    if(NOTIF_DROPDOWN_OPEN_){ closeNotifDropdown_(); return; }
+    openNotifDropdown_();
   }
+
+  /** Bangun backdrop + panel notif dari nol sbg child #notifPortalRoot (bukan di dalam
+      .topbar/.notif-wrap sama sekali), supaya dia selalu jadi elemen paling atas tanpa
+      terjebak stacking-context topbar/sidebar manapun, dan supaya menutupnya semudah
+      mengosongkan satu container (lihat closeNotifDropdown_). */
+  function openNotifDropdown_(){
+    closeUserMenu();
+    var root = document.getElementById('notifPortalRoot');
+    if(!root) return;
+    notifSeeAllExpanded_ = false;
+    root.innerHTML =
+      '<div class="notif-backdrop show" id="notifBackdropPortal"></div>' +
+      '<div class="notif-dropdown show" id="notifDropdownPortal" role="dialog" aria-label="Notifikasi">' +
+        '<div class="notif-dropdown-head">' +
+          '<span>Notifikasi</span>' +
+          '<div class="notif-dropdown-head-actions">' +
+            '<button type="button" class="notif-mark-all" id="notifMarkAllBtn">Tandai semua dibaca</button>' +
+            '<button type="button" class="notif-close-btn" id="notifCloseBtn" title="Tutup" aria-label="Tutup notifikasi">' +
+              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>' +
+            '</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="notif-dropdown-list" id="notifDropdownList"></div>' +
+        '<div class="notif-dropdown-footer" id="notifDropdownFooter" style="display:none;">' +
+          '<button type="button" class="notif-see-all-btn" id="notifSeeAllBtn">Lihat Semua</button>' +
+        '</div>' +
+      '</div>';
+    // Posisikan panel persis di bawah tombol lonceng (desktop). Di mobile, CSS mengambil
+    // alih jadi sheet penuh-lebar (lihat @media max-width:640px di Stylesheet.html), jadi
+    // positioning inline ini otomatis tidak relevan di layar sempit.
+    positionNotifPortal_();
+    // Event handler dipasang lewat JS (addEventListener), BUKAN atribut onclick inline,
+    // supaya tidak ada string HTML yg perlu di-escape utk closure id/poId — lebih aman
+    // dan lebih mudah dipastikan stopPropagation-nya konsisten di semua tombol.
+    var backdrop = document.getElementById('notifBackdropPortal');
+    var closeBtn = document.getElementById('notifCloseBtn');
+    var markAllBtn = document.getElementById('notifMarkAllBtn');
+    var seeAllBtn = document.getElementById('notifSeeAllBtn');
+    if(backdrop) backdrop.addEventListener('click', function(ev){ ev.stopPropagation(); closeNotifDropdown_(); });
+    if(closeBtn) closeBtn.addEventListener('click', function(ev){ ev.stopPropagation(); closeNotifDropdown_(); });
+    if(markAllBtn) markAllBtn.addEventListener('click', function(ev){ ev.stopPropagation(); markAllNotifSeen_(); });
+    if(seeAllBtn) seeAllBtn.addEventListener('click', function(ev){ ev.stopPropagation(); toggleNotifSeeAll_(); });
+    window.addEventListener('resize', positionNotifPortal_);
+    NOTIF_DROPDOWN_OPEN_ = true;
+    renderNotifDropdownList_();
+  }
+
+  function positionNotifPortal_(){
+    var dd = document.getElementById('notifDropdownPortal');
+    var bell = document.getElementById('notifBellBtn');
+    if(!dd || !bell) return;
+    if(window.innerWidth <= 640) return; // mobile: CSS fixed full-width sheet yg berlaku
+    var r = bell.getBoundingClientRect();
+    dd.style.position = 'fixed';
+    dd.style.top = (r.bottom + 8) + 'px';
+    dd.style.right = (window.innerWidth - r.right) + 'px';
+    dd.style.left = 'auto';
+  }
+
+  /** Satu-satunya cara menutup notif dropdown: KOSONGKAN TOTAL #notifPortalRoot. Tidak
+      ada lagi classList.remove('show') / pointer-events hack — begitu fungsi ini
+      dipanggil, backdrop & panelnya LANGSUNG LENYAP dari DOM pada tick yg sama, sehingga
+      mustahil ada sisa elemen yg masih bisa menangkap atau menyalurkan sentuhan
+      berikutnya ke tombol lain (Ganti Password, Keluar, notif-row, dst). */
   function closeNotifDropdown_(){
-    var dd = document.getElementById('notifDropdown');
-    var bd = document.getElementById('notifBackdrop');
-    // FIX: set pointer-events:none SEGERA (bukan cuma classList.remove('show')) supaya
-    // dropdown & backdrop langsung berhenti menerima sentuhan apapun sedetik itu juga,
-    // walau .notif-dropdown masih punya CSS transition opacity/transform berjalan
-    // (display baru benar2 none setelah transition kelar krn class .show dicabut,
-    // tapi elemen tsb secara visual/hit-test bisa "nyangkut" sepersekian detik). Tanpa
-    // ini, sentuhan yang SAMA yang menutup dropdown (tap tombol X / tap di luar) kadang
-    // masih dianggap browser mendarat di salah satu notif-row di baliknya begitu
-    // dropdown menghilang di tengah gesture yang sama, memicu navigasi yang tidak
-    // diinginkan (klik "X" malah dianggap klik notif teratas).
-    if(dd){ dd.classList.remove('show'); dd.style.pointerEvents = 'none'; }
-    if(bd){ bd.classList.remove('show'); bd.style.pointerEvents = 'none'; }
-    NOTIF_CLOSED_AT_ = Date.now();
-    // Lepas kunci pointer-events sedikit setelah dropdown benar2 tidak terlihat (durasi
-    // transition CSS-nya .16s), supaya saat user membuka dropdown lagi nanti dia bisa
-    // ditap normal seperti biasa.
-    setTimeout(function(){
-      if(dd) dd.style.pointerEvents = '';
-      if(bd) bd.style.pointerEvents = '';
-    }, 200);
+    var root = document.getElementById('notifPortalRoot');
+    if(root) root.innerHTML = '';
+    NOTIF_DROPDOWN_OPEN_ = false;
+    window.removeEventListener('resize', positionNotifPortal_);
   }
 
   function toggleNotifSeeAll_(){
@@ -7489,13 +7533,8 @@
 
   // Tombol Esc menutup dropdown notifikasi — pola UX standar untuk overlay/panel.
   document.addEventListener('keydown', function(e){
-    if(e.key === 'Escape'){
-      var dd = document.getElementById('notifDropdown');
-      if(dd && dd.classList.contains('show')) closeNotifDropdown_();
-    }
+    if(e.key === 'Escape' && NOTIF_DROPDOWN_OPEN_) closeNotifDropdown_();
   });
-
-  var NOTIF_TYPE_COLOR_ = { success:'#1E7A4C', danger:'#E24C4C', warning:'#F2994A', orange:'#F2994A', info:'#2F80ED' };
 
   function renderNotifDropdownList_(){
     var box = document.getElementById('notifDropdownList');
@@ -7510,14 +7549,25 @@
     var total = NOTIF_STATE_.items.length;
     var showAll = notifSeeAllExpanded_ || total <= NOTIF_DROPDOWN_LIMIT_;
     var visible = showAll ? NOTIF_STATE_.items : NOTIF_STATE_.items.slice(0, NOTIF_DROPDOWN_LIMIT_);
-    box.innerHTML = visible.map(function(n){
+    box.innerHTML = '';
+    visible.forEach(function(n){
       var color = NOTIF_TYPE_COLOR_[n.type] || '#8A94A6';
       var isUnseen = !NOTIF_STATE_.seen[n.id];
-      return '<div class="notif-row'+(isUnseen?' notif-row-unseen':'')+'" onclick="onNotifClick_(\''+n.id+'\',\''+n.poId+'\')">' +
+      var row = document.createElement('div');
+      row.className = 'notif-row'+(isUnseen?' notif-row-unseen':'');
+      row.innerHTML =
         '<span class="notif-dot" style="background:'+color+';"></span>' +
-        '<div class="notif-row-body"><div class="notif-row-title">'+escapeHtml(n.title)+'</div><div class="notif-row-msg">'+escapeHtml(n.message)+'</div></div>' +
-      '</div>';
-    }).join('');
+        '<div class="notif-row-body"><div class="notif-row-title">'+escapeHtml(n.title)+'</div><div class="notif-row-msg">'+escapeHtml(n.message)+'</div></div>';
+      // addEventListener (bukan onclick inline) dgn closure id/poId asli (bukan string
+      // ter-escape lewat HTML) — lebih aman, dan HANYA terpasang selagi dropdown benar2
+      // terbuka & row ini benar2 ada di DOM (dihapus otomatis oleh closeNotifDropdown_
+      // saat innerHTML root dikosongkan, jadi tidak perlu dilepas manual).
+      row.addEventListener('click', function(ev){
+        ev.stopPropagation();
+        onNotifClick_(n.id, n.poId);
+      });
+      box.appendChild(row);
+    });
     if(footer && seeAllBtn){
       if(total > NOTIF_DROPDOWN_LIMIT_){
         footer.style.display = 'block';
@@ -7528,28 +7578,14 @@
     }
   }
 
-  /** FIX BUG: klik tombol close (X) notifikasi kadang "tembus" jadi terhitung klik pada
-      salah satu notif row di baliknya (biasanya notif teratas), yang otomatis menavigasi
-      ke halaman Transaksi/PO/Order — padahal user cuma bermaksud menutup dropdown-nya.
-      Penyebabnya: tombol X (onclick="closeNotifDropdown_()") dan backdrop
-      (onpointerdown="closeNotifDropdown_()") sama2 duduk tepat DI ATAS elemen lain pada
-      koordinat yang sama selagi dropdown masih dalam proses close (CSS transition opacity/
-      transform .16s pada .notif-dropdown). Browser memproses pointerdown->pointerup->click
-      sbg urutan terpisah: pointerdown pertama sudah men-trigger closeNotifDropdown_() lewat
-      backdrop SEBELUM event click pada tombol X sempat selesai, sehingga saat click akhirnya
-      terjadi, dropdown sudah smemakin invisible/di-remove dari hit-testing, dan sentuhan yg
-      SAMA itu "jatuh tembus" ke elemen apapun yg secara koordinat ada di baliknya (di mobile,
-      itu seringnya notif-row teratas krn dropdown sheet mobile ditempel pas di bawah topbar).
-      Guard ini menolak SEMUA aksi notifikasi (klik row ATAUPUN tandai-semua-dibaca) yang
-      terjadi dalam 350ms setelah closeNotifDropdown_() terakhir dipanggil — window singkat
-      yg cukup meredam ghost-click tsb tanpa terasa oleh user yg sengaja membuka lagi
-      dropdown & mengklik notifnya secara normal. */
+  /** Klik satu notif: tandai dibaca, TUTUP dropdown dulu (mengosongkan portal secara
+      total), baru navigasi. Karena penutupan sekarang instan & absolut (bukan CSS
+      transition), tidak ada lagi jendela waktu di mana sentuhan bisa "nyasar" ke elemen
+      lain — closeNotifDropdown_ dipanggil sinkron sebelum baris navigasi berikutnya. */
   function onNotifClick_(id, poId){
-    if(Date.now() - NOTIF_CLOSED_AT_ < 350) return;
     NOTIF_STATE_.seen[id] = true;
     saveNotifSeen_();
     renderNotifBadge_();
-    renderNotifDropdownList_();
     closeNotifDropdown_();
     if(poId) goToPOWithIdFilter_(poId);
   }
