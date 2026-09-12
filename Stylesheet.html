@@ -1817,9 +1817,17 @@
   .text-field-wrap input{border:none!important;background:transparent!important;box-shadow:none!important;flex:1;min-width:0;}
   /* Varian textarea (mis. Alamat sesuai KTP di Edit Agent) — ikon dinaikkan ke baris atas
      (align-items:flex-start) supaya tidak "mengambang" di tengah kotak multi-baris. */
-  .text-field-wrap.text-field-wrap--textarea{align-items:flex-start;}
-  .text-field-wrap.text-field-wrap--textarea svg{margin-top:11px;}
-  .text-field-wrap textarea{border:none!important;background:transparent!important;box-shadow:none!important;flex:1;min-width:0;resize:vertical;font:inherit;padding:9px 10px 9px 0;}
+  /* Varian textarea (mis. Alamat sesuai KTP di Edit Agent) — ikon dinaikkan ke baris atas
+     (align-items:flex-start) supaya tidak "mengambang" di tengah kotak multi-baris, dan
+     textarea diberi padding+min-height yang cukup lega (bukan cuma sisa dari flex) supaya
+     teks alamat tidak nempel ke tepi atas/bawah/kanan kotak. */
+  .text-field-wrap.text-field-wrap--textarea{align-items:flex-start;padding:10px 0;}
+  .text-field-wrap.text-field-wrap--textarea svg{margin-top:1px;margin-left:12px;}
+  .text-field-wrap textarea{
+    border:none!important;background:transparent!important;box-shadow:none!important;
+    flex:1;min-width:0;resize:vertical;font:inherit;line-height:1.5;
+    padding:0 12px 0 8px;min-height:44px;
+  }
 
   /* ---------- Promo — modern card list (menggantikan tabel supaya tidak ada
      scrollbar horizontal & tidak ada teks terpotong di layar sempit) ---------- */
