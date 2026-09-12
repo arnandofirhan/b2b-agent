@@ -428,6 +428,13 @@
      jadi satu gaya netral "on dark surface" (putih transparan + teks putih penuh),
      terlepas dari warna status aslinya, supaya selalu kontras apa pun statusnya. */
   .profile-hero-badges .badge{background:rgba(255,255,255,.22);color:#fff;}
+  .profile-hero-pw-btn{
+    position:relative;z-index:1;flex-shrink:0;display:flex;align-items:center;gap:7px;
+    background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.32);color:#fff;
+    font-size:12.5px;font-weight:700;padding:9px 14px;border-radius:var(--radius-md);
+    cursor:pointer;transition:background .15s;white-space:nowrap;
+  }
+  .profile-hero-pw-btn:hover{background:rgba(255,255,255,.26);}
 
   /* ---- Transaksi/PO: modern "locked" card, styled consistent with profile-hero ---- */
   .po-lock-card{
@@ -868,6 +875,15 @@
     padding:5px 8px 5px 5px;border-radius:999px;transition:background .12s ease, border-color .12s ease;
   }
   .user-menu-trigger:hover{background:var(--ag-gray-100);border-color:var(--ag-gray-200);}
+  /* Khusus role AGENT: trigger avatar+nama jadi tautan ke "Profil Saya" (bukan dropdown),
+     jadi highlight hover-nya dibuat sedikit lebih terasa "clickable card" ketimbang tombol
+     menu biasa — warna hover pakai tint hijau brand supaya beda kesan dgn dropdown trigger. */
+  .user-menu-trigger.is-profile-link:hover{background:var(--ag-green-soft);border-color:var(--ag-green);}
+  .agent-standalone-logout-btn{color:var(--ag-red);}
+  .agent-standalone-logout-btn:hover{background:#FDECEC;border-color:#F5C2C2;}
+  /* Topbar khusus Agent (avatar->Profil Saya, tombol Keluar berdiri sendiri) HANYA untuk
+     mobile — lihat override "batalkan di desktop" di paling akhir file (dalam blok
+     @media min-width:861px) yang mengembalikan dropdown avatar biasa di layar lebar. */
   .user-menu .user-meta{display:flex;flex-direction:column;align-items:flex-start;line-height:1.25;}
   .user-menu-caret{color:var(--ag-gray-500);transition:transform .15s ease;flex-shrink:0;}
   .user-menu.open .user-menu-caret{transform:rotate(180deg);}
@@ -2542,5 +2558,22 @@
     /* Rasio 16:9 tetap dipakai di desktop (di-cap max-width 900px lewat container di atas)
        supaya proporsinya SAMA dengan mobile, bukan rasio berbeda yang bikin crop tidak konsisten. */
     .agent-product-grid{ grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); }
+  }
+
+  /* =====================================================================
+     BATALKAN TOPBAR AGENT DI DESKTOP — perubahan "avatar->Profil Saya" dan
+     tombol Keluar berdiri sendiri hanya dimaksudkan untuk mobile. Di layar
+     >860px, paksa kembali ke perilaku dropdown avatar original (Ganti
+     Password + Keluar di dalam dropdown) untuk SEMUA role termasuk Agent —
+     applyAgentTopbarLayout_() di JavaScript.html tetap menyalakan flag
+     is-profile-link/tombol standalone berdasar role saja (tanpa cek lebar
+     layar), jadi pembatasannya sengaja dilakukan di sini lewat CSS supaya
+     kalau user resize/rotate, tampilan otomatis menyesuaikan tanpa perlu
+     event listener resize tambahan di JS.
+     ===================================================================== */
+  @media (min-width:861px){
+    .agent-standalone-logout-btn{ display:none !important; }
+    .user-menu-caret{ display:inline-flex !important; }
+    .user-menu-trigger.is-profile-link{ cursor:pointer; }
   }
 </style>
