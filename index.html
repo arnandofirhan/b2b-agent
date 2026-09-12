@@ -82,8 +82,17 @@
     // membuang pembungkusnya, lalu menyuntikkannya ke halaman — supaya KEDUA file itu
      // tetap satu-satunya sumber (tidak perlu disalin/diduplikasi) baik untuk versi statis
     // (GitHub Pages) ini maupun versi Apps Script (doGet + include()).
+    // Cache-buster global: satu token dipakai di KEDUA include (Stylesheet.html &
+    // JavaScript.html) di bawah, supaya browser/CDN GitHub Pages/Service Worker tidak
+    // pernah menyajikan versi lama file-file ini dari cache setelah di-deploy ulang.
+    // Diganti nilainya (mis. ke tanggal rilis) setiap kali Stylesheet.html atau
+    // JavaScript.html diubah dan di-push — lihat juga CACHE_VERSION_ di service-worker.js
+    // yang harus dinaikkan bersamaan supaya precache SW-nya juga ikut refresh.
+    var ASSET_CACHE_BUSTER_ = '20260912-1';
+
     function loadWrappedInclude_(url, tagName, insertTarget){
-      return fetch(url).then(function(res){
+      var bustedUrl = url + (url.indexOf('?') === -1 ? '?' : '&') + 'v=' + ASSET_CACHE_BUSTER_;
+      return fetch(bustedUrl, { cache: 'no-store' }).then(function(res){
         if(!res.ok) throw new Error('Gagal memuat ' + url + ' (HTTP ' + res.status + ')');
         return res.text();
       }).then(function(text){
@@ -102,7 +111,12 @@
     (function loadStylesheetSync_(){
       try{
         var xhr = new XMLHttpRequest();
-        xhr.open('GET', 'Stylesheet.html', false); // false = synchronous
+        var bustedUrl = 'Stylesheet.html?v=' + ASSET_CACHE_BUSTER_;
+        xhr.open('GET', bustedUrl, false); // false = synchronous
+        // Paksa skip HTTP cache — tanpa ini beberapa browser tetap bisa menyajikan
+        // response lama dari disk cache walau query string berubah (jarang, tapi terjadi
+        // di sebagian WebView Android lama).
+        xhr.setRequestHeader('Cache-Control', 'no-cache');
         xhr.send(null);
         var inner = xhr.responseText.replace(/^\s*<style[^>]*>/i, '').replace(/<\/style>\s*$/i, '');
         document.write('<style>' + inner + '<\/style>');
