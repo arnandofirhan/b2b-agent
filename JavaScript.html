@@ -1386,7 +1386,14 @@
     var searchHtml =
       '<div class="filter-search'+(state.q?' has-value':'')+'">' +
         '<span class="filter-search-icon">'+FILTER_ICON_SEARCH_+'</span>' +
-        '<input type="text" id="filterSearchInput" value="'+escapeHtml(state.q||'')+'" placeholder="'+escapeHtml(searchPlaceholder||'Cari...')+'" ' +
+        /* FIX: browser (terutama Chrome desktop) suka "membantu" mengisi otomatis field
+           <input type="text"> dengan histori isian form lain (mis. email login) kalau
+           field itu tidak punya penanda autocomplete yang jelas — inilah sebab search box
+           ini kadang kelihatan "kemasukan" email/username padahal user tidak mengetik apa2
+           di situ. autocomplete="off" + name unik acak + atribut anti-autofill Chrome
+           (data-lpignore, data-form-type) memberi sinyal kuat ke browser utk TIDAK
+           menyarankan/mengisi otomatis field pencarian ini dengan data form lain. */
+        '<input type="text" id="filterSearchInput" name="filterSearchQuery_'+Math.random().toString(36).slice(2)+'" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-form-type="other" value="'+escapeHtml(state.q||'')+'" placeholder="'+escapeHtml(searchPlaceholder||'Cari...')+'" ' +
           'oninput="'+onChangeFn+'(\'q\', this.value)">' +
         '<span class="filter-search-clear" onclick="'+onChangeFn+'(\'q\', \'\')">'+FILTER_ICON_CLOSE_+'</span>' +
       '</div>';
@@ -5530,12 +5537,12 @@
         '</select></div>'
       : '';
     var body =
-      formField_('uName','Nama',user.Name,'text','',true) + formField_('uEmail','Email',user.Email,'text','',true) +
+      formField_('uName','Nama',user.Name,'text','',true,ICONS.agent) + formField_('uEmail','Email',user.Email,'text','',true,ICONS.mail) +
       '<div class="form-group"><label>Role</label><select id="uRole">'+roleOptions+'</select></div>' +
       statusField +
       // Password cuma wajib (tanda * merah + blokir Simpan) pas TAMBAH user baru — pas Edit,
       // password sengaja tidak wajib karena tidak selalu diganti (kosongkan = tetap password lama).
-      formField_('uPassword', user.UserID ? 'Password Baru (kosongkan jika tidak diganti)' : 'Password', '', 'text', '', !userId);
+      formField_('uPassword', user.UserID ? 'Password Baru (kosongkan jika tidak diganti)' : 'Password', '', 'text', '', !userId, ICONS.lock);
     openFormModal(userId ? 'Edit User' : 'Tambah User', body, function(){ saveUserForm(userId); });
   }
 
