@@ -6682,7 +6682,7 @@
     // di "Dashboard Settings" > Kategori Produk.
     if(categories.length){
       html += '<div class="agent-section-head"><span>Kategori Produk</span></div>';
-      html += '<div class="agent-category-row">';
+      html += '<div class="agent-category-row-wrap" id="agentCategoryRowWrap"><div class="agent-category-row" id="agentCategoryRow" onscroll="onAgentCategoryRowScroll_()">';
       categories.forEach(function(c){
         html += '<div class="agent-category-item" '
           + (c.linkAction ? 'onclick="agentDashBannerClick_(\''+escapeHtml(c.linkAction)+'\')"' : '') + '>'
@@ -6690,7 +6690,7 @@
           + '<div class="agent-category-label">'+escapeHtml(c.title)+'</div>'
           + '</div>';
       });
-      html += '</div>';
+      html += '</div></div>';
     }
 
     // Produk unggulan — tombol "+" berubah jadi stepper qty (-, angka, +) begitu produk itu
@@ -6723,6 +6723,17 @@
     content.innerHTML = html;
     PAGE_HTML_CACHE['dashboard'] = html;
     if(banners.length > 1) startAgentBannerAutoplay_(banners.length);
+    onAgentCategoryRowScroll_(); // cek sekali di awal — kalau kategori dikit & muat tanpa scroll, fade langsung disembunyikan
+  }
+
+  // Sembunyikan fade "masih bisa digeser" di kanan begitu track sudah discroll mentok ujung
+  // (atau memang tidak overflow sama sekali karena kategorinya sedikit).
+  function onAgentCategoryRowScroll_(){
+    var row = document.getElementById('agentCategoryRow');
+    var wrap = document.getElementById('agentCategoryRowWrap');
+    if(!row || !wrap) return;
+    var atEnd = (row.scrollLeft + row.clientWidth) >= (row.scrollWidth - 2);
+    wrap.classList.toggle('is-at-end', atEnd);
   }
 
   // Auto-slide banner atas — geser otomatis tiap 4.5 detik (tidak terlalu cepat), dan
