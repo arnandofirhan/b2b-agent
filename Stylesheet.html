@@ -2430,7 +2430,12 @@
   .dash-config-row-order{ font-size:12px; white-space:nowrap; }
 
   @media (min-width:769px){
-    .agent-shortcut-grid{ grid-template-columns:repeat(4,140px); }
+    /* Sebelumnya kolom shortcut dipatok 140px tetap sementara container di-cap 900px — jadi
+       4 kartu itu cuma mengisi ~560px dari 900px lebar container, nyisa jarak kosong ganjil
+       di kanan (kelihatan "gak proper"). Diganti proporsional (1fr rata 4 kolom) supaya
+       shortcut selalu mengisi PAS selebar banner/container di atasnya, di ukuran layar
+       desktop berapapun. (Tidak menyentuh tampilan mobile — blok ini hanya aktif >=769px.) */
+    .agent-shortcut-grid{ grid-template-columns:repeat(4,1fr); }
     .agent-category-row{ overflow-x:visible; flex-wrap:wrap; }
     /* Di desktop, layar jauh lebih lebar dari mobile — tanpa batasan ini banner ikut
        melebar penuh & jadi sangat tinggi (rasio gambar tetap terjaga tapi ukurannya
