@@ -6986,17 +6986,24 @@
     // (pilih produk + label badge sendiri, mis. "BEST SELLER"/"HOT"/"REKOMENDASI"), BUKAN
     // dihitung otomatis dari data transaksi — supaya Admin punya kendali penuh atas section
     // ini, sama seperti "Produk Unggulan" di bawah (hanya beda ItemType: TRENDING vs PRODUCT).
+    //
+    // SENGAJA dibuat GESER SAMPING (horizontal scroll, kartu lebih lebar+gambar landscape),
+    // BUKAN grid ke bawah seperti "Produk Unggulan" — supaya dua section berturut-turut ini
+    // tidak kelihatan monoton/kembar (grid dobel numpuk ke bawah bikin capek scroll & mata
+    // cepat bosan). Pola "trending = geser samping, katalog utama = grid ke bawah" ini juga
+    // konsisten dengan kebiasaan UX e-commerce pada umumnya (Shopee/Tokopedia dst: rak
+    // "lagi rame" selalu geser samping, katalog utama tetap grid).
     if(trending.length){
       html += '<div class="agent-section-head"><div class="agent-section-head-text">'
         + '<span>\ud83d\udd25 Sedang Banyak Dipesan</span>'
         + '<div class="agent-section-subtitle">Produk yang paling diminati Agent lainnya</div>'
         + '</div></div>';
-      html += '<div class="agent-product-grid">';
+      html += '<div class="agent-trend-row-wrap" id="agentTrendRowWrap"><div class="agent-trend-row" id="agentTrendRow" onscroll="onAgentTrendRowScroll_()">';
       trending.forEach(function(p){
         var qty = AGENT_DASH_CART_[p.productId] || 0;
-        html += '<div class="agent-product-card">'
+        html += '<div class="agent-trend-card">'
           + (p.badge ? '<div class="agent-product-badge">'+escapeHtml(p.badge)+'</div>' : '')
-          + '<div class="agent-product-img">'+(p.imageUrl ? '<img src="'+escapeHtml(p.imageUrl)+'" alt="">' : '')+'</div>'
+          + '<div class="agent-trend-img">'+(p.imageUrl ? '<img src="'+escapeHtml(p.imageUrl)+'" alt="">' : '')+'</div>'
           + '<div class="agent-product-name">'+escapeHtml(p.name)+'</div>'
           + '<div class="agent-product-price-row">'
           + '<span class="agent-product-price">'+formatRupiah(p.price)+'</span>'
@@ -7009,12 +7016,13 @@
               : '<button class="agent-product-add-btn" title="Tambah ke Troli" onclick="changeAgentDashCartQty_(\''+escapeHtml(p.productId)+'\',1)">+</button>')
           + '</div></div>';
       });
-      html += '</div>';
+      html += '</div></div>';
     }
 
-    // Produk unggulan — tombol "+" berubah jadi stepper qty (-, angka, +) begitu produk itu
-    // sudah ada di troli, supaya Agent langsung lihat berapa banyak yang sudah ditambahkan
-    // tanpa perlu buka Troli dulu.
+    // Produk unggulan — GRID KE BAWAH (bukan geser samping) supaya jadi kontras dengan
+    // "Sedang Banyak Dipesan" di atas (lihat catatan di blok trending). Tombol "+" berubah
+    // jadi stepper qty (-, angka, +) begitu produk itu sudah ada di troli, supaya Agent
+    // langsung lihat berapa banyak yang sudah ditambahkan tanpa perlu buka Troli dulu.
     if(featured.length){
       html += '<div class="agent-section-head"><span>\u2b50 Produk Unggulan</span></div>';
       html += '<div class="agent-product-grid">';
@@ -7043,6 +7051,7 @@
     PAGE_HTML_CACHE['dashboard'] = html;
     if(banners.length > 1) startAgentBannerAutoplay_(banners.length);
     onAgentCategoryRowScroll_(); // cek sekali di awal — kalau kategori dikit & muat tanpa scroll, fade langsung disembunyikan
+    onAgentTrendRowScroll_(); // sama, untuk row "Sedang Banyak Dipesan"
   }
 
   // Sembunyikan fade "masih bisa digeser" di kanan begitu track sudah discroll mentok ujung
@@ -7050,6 +7059,18 @@
   function onAgentCategoryRowScroll_(){
     var row = document.getElementById('agentCategoryRow');
     var wrap = document.getElementById('agentCategoryRowWrap');
+    if(!row || !wrap) return;
+    var atEnd = (row.scrollLeft + row.clientWidth) >= (row.scrollWidth - 2);
+    var atStart = row.scrollLeft <= 2;
+    wrap.classList.toggle('is-at-end', atEnd);
+    wrap.classList.toggle('is-at-start', atStart);
+  }
+
+  // Sama seperti onAgentCategoryRowScroll_ di atas, tapi untuk row "Sedang Banyak Dipesan"
+  // (geser samping) — dipisah fungsi karena id elemennya beda (agentTrendRow/Wrap).
+  function onAgentTrendRowScroll_(){
+    var row = document.getElementById('agentTrendRow');
+    var wrap = document.getElementById('agentTrendRowWrap');
     if(!row || !wrap) return;
     var atEnd = (row.scrollLeft + row.clientWidth) >= (row.scrollWidth - 2);
     var atStart = row.scrollLeft <= 2;
