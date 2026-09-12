@@ -79,7 +79,7 @@
     { key: 'dashboard',   icon: ICONS.dashboard, label: 'Dashboard',        roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
     { key: 'agents',      icon: ICONS.agent,     label: 'Agent',            roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
     { key: 'products',    icon: ICONS.products,  label: 'Master Item Product', roles: ['ADMIN','MANAGER'] },
-    { key: 'promo',       icon: ICONS.promo,     label: 'Promo',            roles: ['ADMIN','SUPERVISOR','MANAGER'] },
+    { key: 'promo',       icon: ICONS.promo,     label: 'Promo',            roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
     { key: 'transactions',icon: ICONS.transactions, label: 'Transaksi / PO',roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
     { key: 'orders',      icon: ICONS.orders,    label: 'Order',            roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
     { key: 'commission',  icon: ICONS.commission,label: 'Commission',       roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
@@ -89,6 +89,7 @@
     { key: 'calendar',    icon: ICONS.calendar,  label: 'Kalender Pengambilan', roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
     { key: 'users',       icon: ICONS.users,     label: 'Kelola User',      roles: ['ADMIN'] },
     { key: 'settings',    icon: ICONS.settings,  label: 'Pengaturan',       roles: ['ADMIN'] },
+    { key: 'dashboard-settings', icon: ICONS.dashboard, label: 'Dashboard Settings', roles: ['ADMIN'] },
     { key: 'audit-log',   icon: ICONS.audit,     label: 'Audit Log',        roles: ['ADMIN','MANAGER'] }
   ];
 
@@ -99,7 +100,7 @@
     { key: 'transaksi', label: 'Transaksi',         items: ['promo','transactions','orders','commission','commission-scheme'] },
     { key: 'master',    label: 'Master Data',       items: ['agents','products','stores'] },
     { key: 'laporan',   label: 'Laporan & Jadwal',  items: ['reports','calendar'] },
-    { key: 'sistem',    label: 'Sistem',            items: ['users','settings','audit-log'] }
+    { key: 'sistem',    label: 'Sistem',            items: ['users','settings','dashboard-settings','audit-log'] }
   ];
   // Which groups start expanded by default (persisted in-session via SIDEBAR_GROUP_STATE_ below).
   var SIDEBAR_GROUP_STATE_ = { transaksi: true, master: true, laporan: true, sistem: true };
@@ -109,6 +110,7 @@
     promo: 'Promo', transactions: 'Transaksi / PO', orders: 'Order',
     commission: 'Commission', 'commission-scheme': 'Skema Komisi',
     stores: 'Store Management', users: 'Kelola User', settings: 'Pengaturan',
+    'dashboard-settings': 'Dashboard Settings',
     'audit-log': 'Audit Log', reports: 'Laporan', calendar: 'Kalender Pengambilan'
   };
 
@@ -988,6 +990,7 @@
         case 'users': return renderUsers();
         case 'audit-log': return renderAuditLog();
         case 'settings': return renderSettings();
+        case 'dashboard-settings': return renderDashboardSettings();
         case 'reports': return renderReports();
         case 'calendar': return renderCalendarPage();
         default:
@@ -6486,6 +6489,9 @@
                                 // revisit while a fresh fetch happens quietly in the background.
 
   function renderDashboard(){
+    if(STATE.user && STATE.user.role === 'AGENT'){
+      return renderAgentDashboard();
+    }
     if(DASH_DATA_CACHE_){
       // Instant paint from what we already have — feels immediate, no spinner flash.
       paintDashboardKpis_(DASH_DATA_CACHE_.kpiData);
@@ -6531,7 +6537,337 @@
       .getDashboardData(STATE.token);
   }
 
+  // =============================================================
+  // AGENT DASHBOARD — Catalog & Order-focused (beda dari Dashboard Admin/Supervisor/Manager).
+  // Semua konten (banner, kategori, produk unggulan) diambil dari getAgentDashboardConfig()
+  // yang datanya diatur Admin lewat menu "Dashboard Settings" — TIDAK ADA yang di-hardcode
+  // di sini, jadi Admin bisa ubah tanpa perlu edit kode/deploy ulang.
+  // =============================================================
+  function renderAgentDashboard(){
+    var content = document.getElementById('content');
+    content.innerHTML = '<div class="spinner"></div>';
+    google.script.run
+      .withSuccessHandler(function(cfg){
+        if(STATE.currentPage !== 'dashboard') return;
+        paintAgentDashboard_(cfg);
+      })
+      .withFailureHandler(function(err){ handleBackendError(err, document.getElementById('content')); })
+      .getAgentDashboardConfig(STATE.token);
+  }
+
+  function paintAgentDashboard_(cfg){
+    var content = document.getElementById('content');
+    var name = (STATE.user && STATE.user.name) ? STATE.user.name : '';
+    var banners = cfg.banners || [];
+    var categories = cfg.categories || [];
+    var featured = cfg.featuredProducts || [];
+
+    var html = '<div class="agent-dash">';
+
+    // Banner carousel (kalau Admin belum atur satupun, tampilkan header sapaan polos saja)
+    if(banners.length){
+      html += '<div class="agent-dash-banners">';
+      banners.forEach(function(b, i){
+        html += '<div class="agent-banner-card'+(i===0?' is-active':'')+'" '
+          + (b.linkAction ? 'onclick="agentDashBannerClick_(\''+escapeHtml(b.linkAction)+'\')"' : '') + '>'
+          + (b.imageUrl ? '<img src="'+escapeHtml(b.imageUrl)+'" alt="">' : '')
+          + '<div class="agent-banner-overlay">'
+          + (b.title ? '<div class="agent-banner-title">'+escapeHtml(b.title)+'</div>' : '')
+          + (b.subtitle ? '<div class="agent-banner-subtitle">'+escapeHtml(b.subtitle)+'</div>' : '')
+          + '</div></div>';
+      });
+      html += '</div>';
+      if(banners.length > 1){
+        html += '<div class="agent-banner-dots">';
+        banners.forEach(function(b, i){ html += '<span class="agent-banner-dot'+(i===0?' is-active':'')+'"></span>'; });
+        html += '</div>';
+      }
+    } else {
+      html += '<div class="agent-dash-greeting">Selamat datang, <strong>'+escapeHtml(name)+'</strong></div>';
+    }
+
+    // Shortcut utama
+    html += '<div class="agent-shortcut-grid">'
+      + agentShortcut_('products', 'Katalog', 'transactions')
+      + agentShortcut_('transactions', 'Buat Order', 'transactions')
+      + agentShortcut_('orders', 'Riwayat Order', 'orders')
+      + agentShortcut_('promo', 'Promo', 'promo')
+      + '</div>';
+
+    // Kategori produk
+    if(categories.length){
+      html += '<div class="agent-section-head"><span>Kategori Produk</span></div>';
+      html += '<div class="agent-category-row">';
+      categories.forEach(function(c){
+        html += '<div class="agent-category-item" '
+          + (c.linkAction ? 'onclick="agentDashBannerClick_(\''+escapeHtml(c.linkAction)+'\')"' : '') + '>'
+          + '<div class="agent-category-thumb">'+(c.imageUrl ? '<img src="'+escapeHtml(c.imageUrl)+'" alt="">' : '')+'</div>'
+          + '<div class="agent-category-label">'+escapeHtml(c.title)+'</div>'
+          + '</div>';
+      });
+      html += '</div>';
+    }
+
+    // Produk unggulan
+    if(featured.length){
+      html += '<div class="agent-section-head"><span>Produk Unggulan</span></div>';
+      html += '<div class="agent-product-grid">';
+      featured.forEach(function(p){
+        html += '<div class="agent-product-card">'
+          + (p.badge ? '<div class="agent-product-badge">'+escapeHtml(p.badge)+'</div>' : '')
+          + '<div class="agent-product-img">'+(p.imageUrl ? '<img src="'+escapeHtml(p.imageUrl)+'" alt="">' : '')+'</div>'
+          + '<div class="agent-product-name">'+escapeHtml(p.name)+'</div>'
+          + '<div class="agent-product-price-row">'
+          + '<span class="agent-product-price">'+formatRupiah(p.price)+'</span>'
+          + '<button class="agent-product-add-btn" title="Tambah ke Order" onclick="agentDashAddToOrder_(\''+escapeHtml(p.productId)+'\')">+</button>'
+          + '</div></div>';
+      });
+      html += '</div>';
+    }
+
+    html += '</div>';
+    content.innerHTML = html;
+    PAGE_HTML_CACHE['dashboard'] = html;
+  }
+
+  function agentShortcut_(iconKey, label, pageKey){
+    return '<div class="agent-shortcut-item" onclick="showPage(\''+pageKey+'\')">'
+      + '<div class="agent-shortcut-icon">'+(ICONS[iconKey]||'')+'</div>'
+      + '<div class="agent-shortcut-label">'+escapeHtml(label)+'</div></div>';
+  }
+
+  // linkAction sederhana: nama halaman ('transactions','orders','promo', dst). Kalau Admin
+  // isi nilai lain/kosong, tidak melakukan apa-apa (aman, tidak error).
+  function agentDashBannerClick_(linkAction){
+    if(!linkAction) return;
+    var known = ['dashboard','transactions','orders','promo','commission','calendar'];
+    if(known.indexOf(linkAction) !== -1) showPage(linkAction);
+  }
+
+  // Tombol "+" di produk unggulan mengarahkan ke halaman Buat Order (Transaksi/PO) — memakai
+  // alur pembuatan PO yang SUDAH ADA (tidak menambah logic order baru), supaya tetap konsisten
+  // dengan cara Agent membuat PO saat ini.
+  function agentDashAddToOrder_(productId){
+    showPage('transactions');
+  }
+
+  // =============================================================
+  // ADMIN — "Dashboard Settings" (mengatur konten Dashboard Agent: banner, kategori, produk
+  // unggulan). Data disimpan di sheet DASHBOARD_CONFIG lewat getDashboardConfigAdmin /
+  // saveDashboardConfigItem / deleteDashboardConfigItem / uploadDashboardConfigImage.
+  // =============================================================
+  var DASHBOARD_CONFIG_CACHE_ = [];
+  var DASH_IMAGE_STATE_ = { fileObj: null, url: null };
+
+  function renderDashboardSettings(){
+    google.script.run
+      .withSuccessHandler(function(rows){
+        DASHBOARD_CONFIG_CACHE_ = rows;
+        paintPage_('dashboard-settings', dashboardSettingsPageHtml_());
+      })
+      .withFailureHandler(function(e){ handleBackendError(e, pageErrorEl_('dashboard-settings')); })
+      .getDashboardConfigAdmin(STATE.token);
+  }
+
+  function dashboardSettingsPageHtml_(){
+    var groups = [
+      { type:'BANNER', label:'Banner Atas' },
+      { type:'CATEGORY', label:'Kategori Produk' },
+      { type:'PRODUCT', label:'Produk Unggulan' }
+    ];
+    var html = '<div class="dash-settings-intro">Atur konten Dashboard Agent (mobile & desktop) di sini. '
+      + 'Perubahan langsung berlaku ke semua Agent begitu disimpan.</div>';
+    groups.forEach(function(g){
+      var rows = DASHBOARD_CONFIG_CACHE_.filter(function(r){ return r.ItemType === g.type; });
+      html += '<div class="card" style="margin-bottom:16px;">'
+        + '<div class="table-toolbar"><span class="card-title">'+g.label+'</span>'
+        + '<button class="btn btn-primary btn-sm" onclick="openDashboardConfigModal_(\''+g.type+'\', null)">'+ICONS.plus+' Tambah</button>'
+        + '</div>'
+        + (rows.length ? dashboardConfigRowsHtml_(rows, g.type) : '<div class="empty-state">Belum ada item. Klik "Tambah" untuk menambahkan.</div>')
+        + '</div>';
+    });
+    return html;
+  }
+
+  function dashboardConfigRowsHtml_(rows, type){
+    rows.sort(function(a,b){ return (Number(a.SortOrder)||0) - (Number(b.SortOrder)||0); });
+    var out = '<div class="dash-config-list">';
+    rows.forEach(function(r){
+      var isActive = (r.IsActive === true || r.IsActive === 'TRUE');
+      var thumb = r.ImageURL
+        ? '<img src="'+escapeHtml(r.ImageURL)+'" style="width:44px;height:44px;object-fit:cover;border-radius:8px;">'
+        : '<div style="width:44px;height:44px;border-radius:8px;background:var(--ag-gray-100);"></div>';
+      var titleText = type === 'PRODUCT'
+        ? ('Produk: '+escapeHtml(productNameById_(r.ProductID)))
+        : escapeHtml(r.Title || '(tanpa judul)');
+      out += '<div class="dash-config-row">'
+        + thumb
+        + '<div class="dash-config-row-info">'
+          + '<div class="dash-config-row-title">'+titleText+'</div>'
+          + (r.Subtitle ? '<div class="dash-config-row-sub">'+escapeHtml(r.Subtitle)+'</div>' : '')
+        + '</div>'
+        + '<div class="dash-config-row-order">Urutan: <input type="number" style="width:56px;" value="'+(r.SortOrder||0)+'" onchange="updateDashboardConfigSort_(\''+r.ConfigID+'\', this.value)"></div>'
+        + '<label class="switch"><input type="checkbox" '+(isActive?'checked':'')+' onchange="toggleDashboardConfigActive_(\''+r.ConfigID+'\', this.checked)"><span class="slider"></span></label>'
+        + rowActionButtons(null, 'openDashboardConfigModal_(\''+type+'\',\''+r.ConfigID+'\')', 'deleteDashboardConfigConfirm_(\''+r.ConfigID+'\')')
+        + '</div>';
+    });
+    out += '</div>';
+    return out;
+  }
+
+  function productNameById_(productId){
+    var p = findProduct_(productId);
+    return p ? p.ProductName : productId;
+  }
+
+  function findDashboardConfigItem_(configId){
+    for(var i=0;i<DASHBOARD_CONFIG_CACHE_.length;i++){ if(DASHBOARD_CONFIG_CACHE_[i].ConfigID === configId) return DASHBOARD_CONFIG_CACHE_[i]; }
+    return null;
+  }
+
+  function updateDashboardConfigSort_(configId, val){
+    var item = findDashboardConfigItem_(configId);
+    if(!item) return;
+    item.SortOrder = Number(val)||0;
+    google.script.run.withFailureHandler(handleBackendError).saveDashboardConfigItem(STATE.token, item);
+  }
+
+  function toggleDashboardConfigActive_(configId, checked){
+    var item = findDashboardConfigItem_(configId);
+    if(!item) return;
+    item.IsActive = checked;
+    google.script.run.withFailureHandler(handleBackendError).saveDashboardConfigItem(STATE.token, item);
+  }
+
+  function deleteDashboardConfigConfirm_(configId){
+    openConfirmModal({
+      title: 'Hapus item ini?',
+      message: 'Item ini akan hilang dari Dashboard Agent.',
+      confirmLabel: 'Ya, Hapus',
+      onConfirm: function(){
+        setPageLoading_(true, 'Menghapus');
+        google.script.run.withSuccessHandler(function(){
+          setPageLoading_(false); showToast('Item dihapus.','success'); renderDashboardSettings();
+        }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).deleteDashboardConfigItem(STATE.token, configId);
+      }
+    });
+  }
+
+  // linkAction untuk banner/kategori: nama halaman tujuan saat diklik Agent (opsional).
+  var DASH_CONFIG_LINK_OPTIONS_ = [
+    {v:'', label:'(Tidak ada, hanya tampilan)'},
+    {v:'transactions', label:'Transaksi / PO (Buat Order)'},
+    {v:'orders', label:'Riwayat Order'},
+    {v:'promo', label:'Promo'},
+    {v:'calendar', label:'Kalender Pengambilan'}
+  ];
+
+  function openDashboardConfigModal_(type, configId){
+    var item = configId ? findDashboardConfigItem_(configId) : null;
+    DASH_IMAGE_STATE_ = { fileObj: null, url: item ? item.ImageURL : null };
+    var isProduct = type === 'PRODUCT';
+    var title = (configId ? 'Edit ' : 'Tambah ') + (type==='BANNER'?'Banner':type==='CATEGORY'?'Kategori':'Produk Unggulan');
+
+    var body = '';
+    if(isProduct){
+      var options = PRODUCTS_CACHE.map(function(p){
+        return '<option value="'+p.ProductID+'" '+((item&&item.ProductID===p.ProductID)?'selected':'')+'>'+escapeHtml(p.ProductName)+'</option>';
+      }).join('');
+      body += '<div class="form-group"><label>Pilih Produk</label><select id="dcProductId">'+options+'</select></div>'
+        + '<div class="form-group"><label>Label Badge (opsional, mis. "Best Seller")</label><input type="text" id="dcTitle" value="'+escapeHtml(item?item.Title:'')+'"></div>';
+    } else {
+      body += '<div class="form-group"><label>Judul</label><input type="text" id="dcTitle" value="'+escapeHtml(item?item.Title:'')+'"></div>';
+      if(type === 'BANNER'){
+        body += '<div class="form-group"><label>Subjudul</label><input type="text" id="dcSubtitle" value="'+escapeHtml(item?item.Subtitle:'')+'"></div>';
+      }
+      body += '<div class="form-group"><label>Gambar</label>'+imageUploadWidgetHtml_(item?item.ImageURL:null)+'</div>'
+        + '<div class="form-group"><label>Aksi saat diklik (opsional)</label><select id="dcLinkAction">'
+        + DASH_CONFIG_LINK_OPTIONS_.map(function(o){ return '<option value="'+o.v+'" '+((item&&item.LinkAction===o.v)?'selected':'')+'>'+o.label+'</option>'; }).join('')
+        + '</select></div>';
+    }
+    body += '<div class="form-group"><label>Urutan Tampil</label><input type="number" id="dcSortOrder" value="'+(item?item.SortOrder:(DASHBOARD_CONFIG_CACHE_.filter(function(r){return r.ItemType===type;}).length))+'"></div>';
+
+    openModal(
+      '<div class="modal-header"><h3>'+title+'</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>'
+      + '<div class="modal-body">'+body+'</div>'
+      + '<div class="modal-footer"><button class="btn btn-secondary" onclick="closeModal()">Batal</button>'
+      + '<button class="btn btn-primary" id="modalSaveBtn" onclick="saveDashboardConfigForm_(\''+type+'\',\''+(configId||'')+'\')">Simpan</button></div>'
+    );
+    if(!isProduct) wireDashImageUploadWidget_();
+  }
+
+  // Sama seperti wireImageUploadWidget_ tapi menulis ke DASH_IMAGE_STATE_ (bukan
+  // PRODUCT_IMAGE_STATE) — dipanggil SETELAH wireImageUploadWidget_ supaya onchange file
+  // input di-override untuk pakai state yang benar (form ini bukan form produk).
+  function wireDashImageUploadWidget_(){
+    var fileInput = document.getElementById('pImageFile');
+    var preview = document.getElementById('imgUploadPreview');
+    var placeholder = document.getElementById('imgUploadPlaceholder');
+    var removeBtn = document.getElementById('imgUploadRemove');
+    if(!fileInput) return;
+    fileInput.onchange = function(){
+      if(!fileInput.files.length) return;
+      var file = fileInput.files[0];
+      fileToBase64_(file, function(fileObj){
+        DASH_IMAGE_STATE_.fileObj = fileObj;
+        DASH_IMAGE_STATE_.url = null;
+        if(preview){ preview.src = fileObj.data; preview.style.display = 'block'; }
+        if(placeholder) placeholder.style.display = 'none';
+        if(removeBtn) removeBtn.style.display = 'inline-block';
+      });
+    };
+    if(removeBtn){
+      removeBtn.onclick = function(e){
+        e.stopPropagation();
+        DASH_IMAGE_STATE_ = { fileObj: null, url: null };
+        fileInput.value = '';
+        if(preview){ preview.src=''; preview.style.display='none'; }
+        if(placeholder) placeholder.style.display = 'flex';
+        removeBtn.style.display = 'none';
+      };
+    }
+  }
+
+  function saveDashboardConfigForm_(type, configId){
+    var payload = {
+      ConfigID: configId || null,
+      ItemType: type,
+      SortOrder: Number(val_('dcSortOrder')) || 0,
+      IsActive: true
+    };
+    if(type === 'PRODUCT'){
+      payload.ProductID = val_('dcProductId');
+      payload.Title = val_('dcTitle');
+      if(!payload.ProductID){ showToast('Pilih produk terlebih dahulu.','error'); return; }
+    } else {
+      payload.Title = val_('dcTitle');
+      if(type === 'BANNER') payload.Subtitle = val_('dcSubtitle');
+      payload.LinkAction = val_('dcLinkAction');
+    }
+
+    function doSave(imageUrl){
+      if(type !== 'PRODUCT') payload.ImageURL = imageUrl || '';
+      setPageLoading_(true, 'Menyimpan');
+      google.script.run.withSuccessHandler(function(res){
+        setPageLoading_(false);
+        if(res.success){ closeModal(); showToast('Tersimpan.','success'); renderDashboardSettings(); }
+        else showToast(res.message||'Gagal menyimpan.','error');
+      }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).saveDashboardConfigItem(STATE.token, payload);
+    }
+
+    if(type !== 'PRODUCT' && DASH_IMAGE_STATE_.fileObj){
+      setPageLoading_(true, 'Mengupload gambar');
+      google.script.run.withSuccessHandler(function(res){
+        if(res && res.success) doSave(res.url);
+        else { setPageLoading_(false); showToast('Gagal upload gambar.','error'); }
+      }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).uploadDashboardConfigImage(STATE.token, DASH_IMAGE_STATE_.fileObj);
+    } else {
+      doSave(type !== 'PRODUCT' ? DASH_IMAGE_STATE_.url : null);
+    }
+  }
+
   function paintDashboardKpis_(data){
+
     if(STATE.currentPage !== 'dashboard') return;
     var isAgent = data.role === 'AGENT';
     var kpis = isAgent
