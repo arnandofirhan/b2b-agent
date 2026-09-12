@@ -2419,7 +2419,17 @@
 
   .agent-section-head{ display:flex; align-items:center; justify-content:space-between; font-size:15.5px; font-weight:700; margin-top:4px; }
 
-  .agent-category-row{ display:flex; gap:16px; overflow-x:auto; padding-bottom:4px; }
+  .agent-category-row-wrap{ position:relative; }
+  .agent-category-row{ display:flex; gap:16px; overflow-x:auto; padding-bottom:4px; scrollbar-width:none; -ms-overflow-style:none; }
+  .agent-category-row::-webkit-scrollbar{ display:none; height:0; }
+  /* Fade halus di kanan sebagai sinyal "masih bisa digeser" — modern & tidak mengandalkan
+     scrollbar bawaan browser yang tampilannya beda-beda tiap device/OS. Disembunyikan
+     otomatis begitu user sudah scroll ke ujung kanan lewat class .is-at-end. */
+  .agent-category-row-wrap::after{
+    content:''; position:absolute; top:0; right:0; bottom:4px; width:28px; pointer-events:none;
+    background:linear-gradient(90deg, transparent 0%, var(--ag-gray-50) 100%); opacity:1; transition:opacity .2s ease;
+  }
+  .agent-category-row-wrap.is-at-end::after{ opacity:0; }
   .agent-category-item{ flex:0 0 auto; display:flex; flex-direction:column; align-items:center; gap:7px; width:66px; cursor:pointer; }
   .agent-category-thumb{ width:58px; height:58px; border-radius:50%; overflow:hidden;
     background:linear-gradient(135deg, var(--ag-green-soft) 0%, var(--ag-orange-soft) 100%);
@@ -2477,6 +2487,7 @@
        desktop berapapun. (Tidak menyentuh tampilan mobile — blok ini hanya aktif >=769px.) */
     .agent-shortcut-grid{ grid-template-columns:repeat(4,1fr); }
     .agent-category-row{ overflow-x:visible; flex-wrap:wrap; }
+    .agent-category-row-wrap::after{ display:none; } /* tidak scroll horizontal lagi di desktop (sudah wrap) */
     /* Di desktop, layar jauh lebih lebar dari mobile — tanpa batasan ini banner ikut
        melebar penuh & jadi sangat tinggi (rasio gambar tetap terjaga tapi ukurannya
        jadi tidak proporsional dibanding sisa konten). Dibatasi lebar maksimal + tinggi
