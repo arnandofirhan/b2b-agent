@@ -6545,13 +6545,25 @@
   // =============================================================
   function renderAgentDashboard(){
     var content = document.getElementById('content');
-    content.innerHTML = '<div class="spinner"></div>';
+    // Sama seperti halaman lain: kalau sudah pernah dibuka sebelumnya, tampilkan versi
+    // cache-nya SECARA INSTAN dulu (tidak ada spinner/flash), baru refresh data terbaru
+    // diam-diam di background. Tanpa ini, tiap kali pindah menu lalu balik ke Dashboard
+    // selalu kelihatan loading ulang dari nol walau datanya belum tentu berubah.
+    if(PAGE_HTML_CACHE['dashboard']){
+      content.innerHTML = PAGE_HTML_CACHE['dashboard'];
+    } else {
+      content.innerHTML = '<div class="spinner"></div>';
+    }
     google.script.run
       .withSuccessHandler(function(cfg){
         if(STATE.currentPage !== 'dashboard') return;
         paintAgentDashboard_(cfg);
       })
-      .withFailureHandler(function(err){ handleBackendError(err, document.getElementById('content')); })
+      .withFailureHandler(function(err){
+        if(!PAGE_HTML_CACHE['dashboard']) handleBackendError(err, document.getElementById('content'));
+        // Kalau sudah sempat tampil dari cache, gagal refresh cukup diam saja — data lama
+        // tetap kelihatan & masih relevan.
+      })
       .getAgentDashboardConfig(STATE.token);
   }
 
