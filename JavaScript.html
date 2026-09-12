@@ -195,7 +195,26 @@
         '</button>' +
       '</div></div>';
     }
+    // FIX: browser (Chrome/Edge dkk) SELALU memasangkan form password dengan sebuah field
+    // "username" untuk credential-pair autofill (ini standar heuristik browser, bukan bug
+    // di app ini). Modal Ganti Password ini TIDAK PUNYA field username/email sama sekali,
+    // jadi begitu field Password Lama di-autofill, browser mencari input <text/email> LAIN
+    // yang ada di DOM utk ditaruhi username-nya — dan yang ditemukannya adalah kolom search
+    // (#filterSearchInput) di halaman #content di BALIK modal (modal cuma overlay, #content
+    // aslinya masih ada persis di DOM). Solusinya: sediakan "umpan" input username tersembunyi
+    // TEPAT di dalam modal ini, dengan autocomplete="username" yang benar — begitu ada field
+    // sah bertanda username di dalam form yg sama, browser akan menaruh autofill username ke
+    // situ, BUKAN nyasar ke kolom search manapun di halaman belakang.
+    // - position:absolute + opacity:0 + height/width kecil (BUKAN display:none/visibility:hidden)
+    //   karena banyak browser SENGAJA mengabaikan field yg display:none/visibility:hidden saat
+    //   autofill (dianggap "tidak nyata"/honeypot anti-bot) — field ini harus tetap dianggap
+    //   "visible" secara teknis oleh browser, hanya tidak terlihat mata & tidak bisa di-tab ke situ.
+    var usernameDecoy =
+      '<input type="text" id="cpUsernameDecoy" name="username" autocomplete="username" ' +
+        'value="'+escapeHtml((STATE.user && STATE.user.email) || '')+'" tabindex="-1" aria-hidden="true" ' +
+        'style="position:absolute;opacity:0;height:1px;width:1px;padding:0;border:0;overflow:hidden;pointer-events:none;">';
     var body =
+      usernameDecoy +
       '<p style="font-size:12.5px;color:var(--ag-gray-600);margin:0 0 16px;">Gunakan password lama Anda (misalnya password sementara dari email) untuk mengatur password baru.</p>' +
       pwField_('cpOldPassword', 'Password Lama', 'current-password') +
       pwField_('cpNewPassword', 'Password Baru', 'new-password', 'Minimal 6 karakter') +
