@@ -71,7 +71,8 @@
     chevronDown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
     moreHoriz: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
     power: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><path d="M12 2v10"/></svg>',
-    location: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>'
+    location: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>',
+    cart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1.6"/><circle cx="19" cy="21" r="1.6"/><path d="M2.5 3h2.4l2.2 12.1a2 2 0 0 0 2 1.65h8.1a2 2 0 0 0 2-1.6L21 8H6"/></svg>'
   };
 
   // ---------- Menu definition per role ----------
@@ -3891,9 +3892,12 @@
   // preserveCart=true dipakai saat dibuka dari "Troli" Dashboard Agent, supaya isi NEWPO_CART_
   // yang sudah disiapkan sebelum memanggil fungsi ini TIDAK direset ke {} (perilaku default
   // untuk "Buat PO" biasa tetap reset, karena itu memang dimaksudkan sebagai PO baru yang kosong).
-  function newPOForm(preserveCart){
+  var NEWPO_CATEGORY_FILTER_ = null; // diisi kalau modal dibuka dari klik "Kategori Produk" di Dashboard
+
+  function newPOForm(preserveCart, categoryFilter){
     NEWPO_RESUBMIT_ID_ = null;
     NEWPO_EDIT_APPROVED_ID_ = null;
+    NEWPO_CATEGORY_FILTER_ = categoryFilter || null;
 
     // If we already have data from a previous open, paint the modal immediately (no spinner
     // wait) and refresh both lists quietly in the background so it stays accurate.
@@ -3936,6 +3940,10 @@
       var searchIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>';
       var body =
         '<div class="po-search-wrap">'+searchIcon+'<input type="text" class="po-product-search" id="poProductSearch" placeholder="Cari produk..." oninput="renderNewPOProductGrid_()"></div>' +
+        (NEWPO_CATEGORY_FILTER_
+          ? '<div class="po-category-chip" id="poCategoryChip">Kategori: <strong>'+escapeHtml(NEWPO_CATEGORY_FILTER_)+'</strong>'
+            + '<span onclick="clearNewPOCategoryFilter_()" title="Hapus filter">&times;</span></div>'
+          : '') +
         '<div class="po-product-grid" id="poProductGrid"></div>' +
         '<div class="po-cart-section">' +
           '<div class="po-cart-title">Keranjang <span class="po-cart-count" id="poCartCount">0</span></div>' +
@@ -3980,7 +3988,8 @@
     var list = NEWPO_PRODUCTS_.filter(function(p){
       var visible = p.Status !== 'INACTIVE' || !!NEWPO_CART_[p.ProductID];
       var matchesQuery = !q || (p.ProductName||'').toLowerCase().indexOf(q) !== -1;
-      return visible && matchesQuery;
+      var matchesCategory = !NEWPO_CATEGORY_FILTER_ || (String(p.Category||'').toUpperCase() === NEWPO_CATEGORY_FILTER_.toUpperCase());
+      return visible && matchesQuery && matchesCategory;
     });
     // Diurutkan per Category (A-Z) lalu nama produk, supaya Agent gampang menyusuri
     // produk yang berdekatan kategorinya alih-alih urutan acak dari Master Item Product.
@@ -3999,6 +4008,13 @@
         '</div>' +
       '</div>';
     }).join('');
+  }
+
+  function clearNewPOCategoryFilter_(){
+    NEWPO_CATEGORY_FILTER_ = null;
+    var chip = document.getElementById('poCategoryChip');
+    if(chip) chip.remove();
+    renderNewPOProductGrid_();
   }
 
   function addToNewPOCart_(productId){
@@ -6582,6 +6598,10 @@
 
     var html = '<div class="agent-dash">';
 
+    // Hentikan autoplay lama dulu (kalau ada) sebelum dashboard dicat ulang, supaya tidak
+    // ada interval "nyangkut" dobel yang bikin slide loncat lebih cepat dari seharusnya.
+    stopAgentBannerAutoplay_();
+
     // Banner carousel (kalau Admin belum atur satupun, tampilkan header sapaan polos saja)
     if(banners.length){
       html += '<div class="agent-dash-banners" id="agentBannerTrack" onscroll="onAgentBannerScroll_()">';
@@ -6659,7 +6679,31 @@
     html += '</div>';
     content.innerHTML = html;
     PAGE_HTML_CACHE['dashboard'] = html;
+    if(banners.length > 1) startAgentBannerAutoplay_(banners.length);
   }
+
+  // Auto-slide banner atas — geser otomatis tiap 4.5 detik (tidak terlalu cepat), dan
+  // dihentikan sementara begitu Agent geser manual supaya tidak "berebut" arah dengan swipe
+  // user, lalu jalan lagi otomatis setelah beberapa saat.
+  var AGENT_BANNER_AUTOPLAY_TIMER_ = null;
+  var AGENT_BANNER_RESUME_TIMER_ = null;
+  function startAgentBannerAutoplay_(count){
+    stopAgentBannerAutoplay_();
+    AGENT_BANNER_AUTOPLAY_TIMER_ = setInterval(function(){
+      var track = document.getElementById('agentBannerTrack');
+      if(!track || !track.clientWidth) return;
+      var idx = Math.round(track.scrollLeft / track.clientWidth);
+      var next = (idx + 1) % count;
+      scrollAgentBannerTo_(next);
+    }, 4500);
+  }
+  function stopAgentBannerAutoplay_(){
+    if(AGENT_BANNER_AUTOPLAY_TIMER_){ clearInterval(AGENT_BANNER_AUTOPLAY_TIMER_); AGENT_BANNER_AUTOPLAY_TIMER_ = null; }
+    if(AGENT_BANNER_RESUME_TIMER_){ clearTimeout(AGENT_BANNER_RESUME_TIMER_); AGENT_BANNER_RESUME_TIMER_ = null; }
+  }
+  // CATATAN: autoplay sengaja SELALU membaca posisi scroll TERKINI tiap tick (bukan simpan
+  // index terpisah), jadi kalau Agent geser manual di antara tick, autoplay otomatis
+  // melanjutkan dari posisi manual itu tanpa "berebut" arah dengan swipe user.
 
   function agentShortcut_(iconKey, label, pageKey){
     return '<div class="agent-shortcut-item" onclick="showPage(\''+pageKey+'\')">'
@@ -6674,14 +6718,21 @@
     var count = Object.keys(AGENT_DASH_CART_).reduce(function(sum,pid){ return sum + AGENT_DASH_CART_[pid]; }, 0);
     return '<div class="agent-shortcut-item" onclick="openAgentCart_()" style="position:relative;">'
       + (count > 0 ? '<span class="agent-cart-badge">'+count+'</span>' : '')
-      + '<div class="agent-shortcut-icon">'+ICONS.transactions+'</div>'
+      + '<div class="agent-shortcut-icon">'+ICONS.cart+'</div>'
       + '<div class="agent-shortcut-label">Troli</div></div>';
   }
 
-  // linkAction sederhana: nama halaman ('transactions','orders','promo', dst). Kalau Admin
-  // isi nilai lain/kosong, tidak melakukan apa-apa (aman, tidak error).
+  // linkAction sederhana: nama halaman ('transactions','orders','promo', dst), ATAU
+  // 'category:KODE' (mis. 'category:BKT') untuk langsung buka modal "Buat PO" dengan
+  // produk yang sudah difilter ke kategori tsb. Kalau Admin isi nilai lain/kosong,
+  // tidak melakukan apa-apa (aman, tidak error).
   function agentDashBannerClick_(linkAction){
     if(!linkAction) return;
+    if(linkAction.indexOf('category:') === 0){
+      var cat = linkAction.slice('category:'.length);
+      newPOForm(false, cat);
+      return;
+    }
     var known = ['dashboard','transactions','orders','promo','commission','calendar'];
     if(known.indexOf(linkAction) !== -1) showPage(linkAction);
   }
@@ -6745,6 +6796,13 @@
       })
       .withFailureHandler(function(e){ handleBackendError(e, pageErrorEl_('dashboard-settings')); })
       .getDashboardConfigAdmin(STATE.token);
+    // Dipakai untuk dropdown "Pilih Produk" (Produk Unggulan) & daftar Kategori Produk
+    // (untuk opsi "Aksi saat diklik"). Di-refresh tiap buka halaman ini supaya kategori/
+    // produk terbaru dari Master Item Product selalu ikut muncul.
+    google.script.run
+      .withSuccessHandler(function(rows){ PRODUCTS_CACHE = rows; })
+      .withFailureHandler(function(){})
+      .listProducts(STATE.token);
   }
 
   function dashboardSettingsPageHtml_(){
@@ -6784,7 +6842,7 @@
           + '<div class="dash-config-row-title">'+titleText+'</div>'
           + (r.Subtitle ? '<div class="dash-config-row-sub">'+escapeHtml(r.Subtitle)+'</div>' : '')
         + '</div>'
-        + '<div class="dash-config-row-order">Urutan: <input type="number" style="width:56px;" value="'+(r.SortOrder||0)+'" onchange="updateDashboardConfigSort_(\''+r.ConfigID+'\', this.value)"></div>'
+        + '<div class="dash-config-row-order">Urutan: <input type="number" class="dash-sort-input" style="width:56px;" value="'+(r.SortOrder||0)+'" onchange="updateDashboardConfigSort_(\''+r.ConfigID+'\', this.value)"></div>'
         + '<label class="switch"><input type="checkbox" '+(isActive?'checked':'')+' onchange="toggleDashboardConfigActive_(\''+r.ConfigID+'\', this.checked)"><span class="slider"></span></label>'
         + rowActionButtons(null, 'openDashboardConfigModal_(\''+type+'\',\''+r.ConfigID+'\')', 'deleteDashboardConfigConfirm_(\''+r.ConfigID+'\')')
         + '</div>';
@@ -6831,14 +6889,28 @@
     });
   }
 
-  // linkAction untuk banner/kategori: nama halaman tujuan saat diklik Agent (opsional).
-  var DASH_CONFIG_LINK_OPTIONS_ = [
+  // linkAction untuk banner/kategori: nama halaman tujuan saat diklik Agent (opsional),
+  // ATAU 'category:KODE' supaya langsung buka "Buat PO" dengan produk terfilter ke
+  // kategori itu (dipakai terutama untuk item "Kategori Produk", tapi tersedia juga untuk
+  // Banner kalau Admin mau banner tertentu langsung menjurus ke satu kategori).
+  var DASH_CONFIG_LINK_OPTIONS_BASE_ = [
     {v:'', label:'(Tidak ada, hanya tampilan)'},
     {v:'transactions', label:'Transaksi / PO (Buat Order)'},
     {v:'orders', label:'Riwayat Order'},
     {v:'promo', label:'Promo'},
     {v:'calendar', label:'Kalender Pengambilan'}
   ];
+  function dashConfigLinkOptions_(){
+    var opts = DASH_CONFIG_LINK_OPTIONS_BASE_.slice();
+    var cats = [];
+    (PRODUCTS_CACHE||[]).forEach(function(p){
+      var c = String(p.Category||'').trim();
+      if(c && cats.indexOf(c) === -1) cats.push(c);
+    });
+    cats.sort();
+    cats.forEach(function(c){ opts.push({ v:'category:'+c, label:'Kategori Produk: '+c }); });
+    return opts;
+  }
 
   function openDashboardConfigModal_(type, configId){
     var item = configId ? findDashboardConfigItem_(configId) : null;
@@ -6860,7 +6932,7 @@
       }
       body += '<div class="form-group"><label>Gambar</label>'+imageUploadWidgetHtml_(item?item.ImageURL:null)+'</div>'
         + '<div class="form-group"><label>Aksi saat diklik (opsional)</label><select id="dcLinkAction">'
-        + DASH_CONFIG_LINK_OPTIONS_.map(function(o){ return '<option value="'+o.v+'" '+((item&&item.LinkAction===o.v)?'selected':'')+'>'+o.label+'</option>'; }).join('')
+        + dashConfigLinkOptions_().map(function(o){ return '<option value="'+o.v+'" '+((item&&item.LinkAction===o.v)?'selected':'')+'>'+o.label+'</option>'; }).join('')
         + '</select></div>';
     }
     body += '<div class="form-group"><label>Urutan Tampil</label><input type="number" id="dcSortOrder" value="'+(item?item.SortOrder:(DASHBOARD_CONFIG_CACHE_.filter(function(r){return r.ItemType===type;}).length))+'"></div>';
