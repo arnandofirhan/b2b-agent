@@ -908,11 +908,17 @@
      top/right di sini cuma fallback awal sebelum JS itu jalan. z-index:1100 memastikan
      panel ini SELALU di atas elemen fixed lain manapun di halaman (topbar, sidebar,
      bottom nav mobile, user-menu, dst) — tidak ada lagi ambiguitas stacking context. */
+  /* FIX: batasi tinggi PANEL SECARA KESELURUHAN (bukan cuma .notif-dropdown-list di
+     tengahnya) supaya perilakunya konsisten & predictable di semua ukuran layar — panel
+     tidak akan pernah memanjang melebihi ini, dan scrollbar SELALU muncul di dalam
+     .notif-dropdown-list begitu notif melebihi ruang yg tersisa (bukan cuma pas notif
+     sangat banyak). max-height di sini sudah memperhitungkan ruang utk header+footer. */
   .notif-dropdown{
     display:none;position:fixed;top:70px;right:24px;width:340px;max-width:calc(100vw - 24px);background:var(--ag-surface);
     border:1px solid var(--ag-gray-200);border-radius:var(--radius-md);box-shadow:0 12px 28px rgba(16,24,32,.14);
     z-index:1100;overflow:hidden;flex-direction:column;
     isolation:isolate;
+    max-height:min(480px,70vh);
   }
   .notif-dropdown.show{display:flex;}
   .notif-dropdown-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--ag-gray-100);font-size:13px;font-weight:700;color:var(--ag-gray-900);flex-shrink:0;gap:10px;}
@@ -925,7 +931,7 @@
   }
   .notif-close-btn svg{width:13px;height:13px;}
   .notif-close-btn:hover{background:var(--ag-gray-200);color:var(--ag-gray-900);}
-  .notif-dropdown-list{max-height:min(360px,60vh);overflow-y:auto;}
+  .notif-dropdown-list{max-height:min(280px,50vh);overflow-y:auto;}
   .notif-row{
     display:flex;align-items:flex-start;gap:10px;padding:11px 14px;cursor:pointer;
     border-bottom:1px solid var(--ag-gray-100);border-left:2px solid transparent;
@@ -952,9 +958,9 @@
   @media (max-width:640px){
     .notif-dropdown{
       top:calc(var(--topbar-height,65px) + 6px) !important;left:12px !important;right:12px !important;width:auto;max-width:none;
-      max-height:calc(100vh - var(--topbar-height,65px) - 24px);
+      max-height:min(420px,calc(100vh - var(--topbar-height,65px) - 24px));
     }
-    .notif-dropdown-list{max-height:calc(100vh - var(--topbar-height,65px) - 120px);}
+    .notif-dropdown-list{max-height:min(280px,calc(100vh - var(--topbar-height,65px) - 140px));}
   }
 
   /* ---------- Kalender Pengambilan (compact, ala kalender kontrak) ---------- */
