@@ -6975,10 +6975,23 @@
       .withFailureHandler(function(e){ handleBackendError(e, pageErrorEl_('dashboard-settings')); })
       .getDashboardConfigAdmin(STATE.token);
     // Dipakai untuk dropdown "Pilih Produk" (Produk Unggulan) & daftar Kategori Produk
-    // (untuk opsi "Aksi saat diklik"). Di-refresh tiap buka halaman ini supaya kategori/
-    // produk terbaru dari Master Item Product selalu ikut muncul.
+    // (untuk opsi "Aksi saat diklik"), DAN untuk menampilkan nama+gambar produk yang benar
+    // di baris "Produk Unggulan" (bukan cuma ProductID mentah). Di-refresh tiap buka
+    // halaman ini supaya kategori/produk terbaru dari Master Item Product selalu ikut muncul.
+    //
+    // CATATAN: panggilan ini berjalan PARALEL dengan getDashboardConfigAdmin di atas, jadi
+    // kadang baru selesai SETELAH render pertama — kalau render pertama sudah kepalang
+    // jalan duluan dengan PRODUCTS_CACHE lama/kosong, baris "Produk Unggulan" akan sempat
+    // menampilkan ProductID mentah ("Produk: PRD-000010") & thumbnail kosong, alih-alih
+    // nama & gambar produknya. Makanya di sini render diulang lagi setelah PRODUCTS_CACHE
+    // ter-update (hanya kalau Admin masih di halaman ini) supaya otomatis terkoreksi.
     google.script.run
-      .withSuccessHandler(function(rows){ PRODUCTS_CACHE = rows; })
+      .withSuccessHandler(function(rows){
+        PRODUCTS_CACHE = rows;
+        if(STATE.currentPage === 'dashboard-settings' && DASHBOARD_CONFIG_CACHE_){
+          paintPage_('dashboard-settings', dashboardSettingsPageHtml_());
+        }
+      })
       .withFailureHandler(function(){})
       .listProducts(STATE.token);
   }
@@ -7008,11 +7021,17 @@
     var out = '<div class="dash-config-list">';
     rows.forEach(function(r){
       var isActive = (r.IsActive === true || r.IsActive === 'TRUE');
-      var thumb = r.ImageURL
-        ? '<img src="'+escapeHtml(r.ImageURL)+'" style="width:44px;height:44px;object-fit:cover;border-radius:8px;">'
+      // Untuk tipe PRODUCT, baris config TIDAK pernah punya ImageURL sendiri (cuma
+      // menyimpan ProductID) — sebelumnya kode ini langsung pakai r.ImageURL yang memang
+      // kosong, makanya thumbnail selalu tampil kotak abu-abu polos. Sekarang ambil gambar
+      // dari master produknya lewat findProduct_.
+      var product = type === 'PRODUCT' ? findProduct_(r.ProductID) : null;
+      var thumbImageUrl = type === 'PRODUCT' ? (product ? product.ImageURL : '') : r.ImageURL;
+      var thumb = thumbImageUrl
+        ? '<img src="'+escapeHtml(thumbImageUrl)+'" style="width:44px;height:44px;object-fit:cover;border-radius:8px;">'
         : '<div style="width:44px;height:44px;border-radius:8px;background:var(--ag-gray-100);"></div>';
       var titleText = type === 'PRODUCT'
-        ? ('Produk: '+escapeHtml(productNameById_(r.ProductID)))
+        ? ('Produk: '+escapeHtml(product ? product.ProductName : r.ProductID))
         : escapeHtml(r.Title || '(tanpa judul)');
       out += '<div class="dash-config-row">'
         + thumb
