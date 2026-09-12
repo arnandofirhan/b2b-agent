@@ -704,6 +704,14 @@
     color:var(--ag-gray-400);pointer-events:none;z-index:1;
   }
   .input-with-icon input{padding-left:36px !important;}
+  /* Dashboard Settings (Banner/Kategori/Produk Unggulan) popup: field-icon juga dipakai
+     di depan <select> ("Pilih Produk", "Aksi saat diklik") & <svg> polos tanpa class (dari
+     dcInputWithIcon_), bukan cuma di <input> seperti popup Ganti Password. */
+  .input-with-icon > svg{
+    position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;
+    color:var(--ag-gray-400);pointer-events:none;z-index:1;
+  }
+  .input-with-icon select{padding-left:36px !important;}
   .input-with-icon input[type="password"],
   .input-with-icon input[data-pw-visible]{padding-right:38px !important;}
   .pw-toggle-btn{
@@ -753,6 +761,20 @@
        background .login-screen KHUSUS di breakpoint mobile ini saja — desktop tidak
        kesentuh sama sekali karena override ini di dalam media query max-width:860px. */
     .login-screen{background:linear-gradient(175deg,#0B3D2E 0%,#155940 55%,#1E7A4C 100%);}
+    /* Dashboard Settings (Banner/Kategori/Produk Unggulan Agent) — rapikan tiap baris item
+       di layar sempit: baris 1 tetap thumbnail+judul/subjudul berdampingan, baris 2 (Urutan,
+       toggle aktif, edit/hapus) dilepas jadi barisnya sendiri, rata kiri-kanan & full-width,
+       supaya tidak numpuk berantakan seperti sebelumnya. */
+    .dash-config-row{ padding:10px; gap:10px 12px; }
+    .dash-config-row-controls{
+      flex-basis:100%; justify-content:space-between; padding-top:8px; margin-top:2px;
+      border-top:1px solid var(--ag-gray-100);
+    }
+    /* Toolbar tiap grup (Banner Atas / Kategori Produk / Produk Unggulan) + tombol "Tambah":
+       di layar sempit judul & tombol gampang mepet/tabrakan, jadi dikasih wrap yg rapi. */
+    .dash-settings-intro{ font-size:12.5px; }
+    .card .table-toolbar .card-title{ font-size:14px; }
+    .table-toolbar .btn-sm{ padding:6px 12px; font-size:12.5px; }
   }
   @media (max-width:420px){
     .login-form-side{padding:16px;}
@@ -1370,6 +1392,13 @@
     flex-shrink:0;margin:-2px 0;
   }
   .modal-title{font-size:16.5px;font-weight:700;color:var(--ag-gray-900);letter-spacing:-.01em;font-family:'Fraunces','Georgia',serif;}
+  /* Icon di depan judul popup Tambah/Edit Banner-Kategori-Produk Dashboard Settings */
+  .dc-modal-title{display:flex;align-items:center;gap:10px;}
+  .dc-modal-title>svg{width:19px;height:19px;color:var(--ag-green);flex-shrink:0;}
+  /* Label field bericon (JUDUL / SUBJUDUL / GAMBAR / AKSI SAAT DIKLIK / URUTAN TAMPIL)
+     di popup Tambah/Edit Banner-Kategori-Produk Dashboard Settings */
+  .dc-field-label{display:flex !important;align-items:center;gap:6px;}
+  .dc-field-label>svg{width:13px;height:13px;color:var(--ag-gray-400);flex-shrink:0;}
   .modal-close{
     margin-left:auto;background:var(--ag-gray-100);border:none;font-size:16px;line-height:1;
     color:var(--ag-gray-600);cursor:pointer;width:30px;height:30px;border-radius:50%;
@@ -2552,17 +2581,27 @@
     font-weight:700; min-width:16px; height:16px; border-radius:8px; display:flex; align-items:center; justify-content:center; padding:0 4px; }
 
   /* ===================== ADMIN — Dashboard Settings ===================== */
-  .dash-settings-intro{ font-size:13px; color:var(--ag-gray-400); margin-bottom:12px; }
+  .dash-settings-intro{ font-size:13px; color:var(--ag-gray-400); margin-bottom:12px; line-height:1.5; }
   .dash-config-list{ display:flex; flex-direction:column; gap:8px; }
-  .dash-config-row{ display:flex; align-items:center; gap:12px; padding:8px; border:1px solid var(--ag-gray-200); border-radius:10px; }
-  .dash-config-row-info{ flex:1; min-width:0; }
-  .dash-config-row-title{ font-size:13.5px; font-weight:600; }
-  .dash-config-row-sub{ font-size:12px; color:var(--ag-gray-400); }
+  .dash-config-row{ display:flex; align-items:center; gap:12px; padding:8px; border:1px solid var(--ag-gray-200); border-radius:10px; flex-wrap:wrap; }
+  .dash-config-row-info{ flex:1 1 140px; min-width:0; }
+  .dash-config-row-title{
+    font-size:13.5px; font-weight:600; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+    overflow:hidden; line-height:1.35;
+  }
+  .dash-config-row-sub{
+    font-size:12px; color:var(--ag-gray-400); margin-top:2px; display:-webkit-box; -webkit-line-clamp:1;
+    -webkit-box-orient:vertical; overflow:hidden;
+  }
   .dash-config-row-order{ font-size:12px; white-space:nowrap; }
   .dash-config-row-order input{
     background:var(--ag-surface); color:var(--ag-gray-900);
     border:1px solid var(--ag-gray-200); border-radius:6px; padding:4px 6px; font-weight:600;
   }
+  /* Bungkus Urutan + toggle aktif + tombol edit/hapus jadi satu grup, supaya di layar
+     sempit bisa "dilepas" ke barisnya sendiri yang rapi (lihat @media max-width:860px
+     di bawah) alih-alih ikut-ikutan wrap acak bareng judul/gambar seperti sebelumnya. */
+  .dash-config-row-controls{ display:flex; align-items:center; gap:10px; flex-shrink:0; }
 
   @media (min-width:769px){
     /* Sebelumnya kolom shortcut dipatok 140px tetap sementara container di-cap 900px — jadi
