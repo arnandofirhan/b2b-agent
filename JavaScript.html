@@ -278,6 +278,38 @@
     if(menu) menu.classList.remove('open');
     USER_MENU_CLOSED_AT_ = Date.now();
   }
+
+  // Klik area avatar+nama di topbar: KHUSUS mobile (<=860px, breakpoint yang sama dipakai
+  // bottom nav) dan role AGENT, langsung buka "Profil Saya" (showPage('agents'), sudah
+  // berisi Data Diri + tombol Ganti Password sendiri — lihat renderAgentSelfCard), TANPA
+  // membuka dropdown. Di desktop (>860px) SELALU pakai dropdown lama apa pun rolenya —
+  // layar desktop tidak diminta berubah sama sekali.
+  function handleUserTriggerClick_(e){
+    var isMobileViewport = window.matchMedia('(max-width:860px)').matches;
+    if(isMobileViewport && STATE.user && STATE.user.role === 'AGENT'){
+      if(e) e.stopPropagation();
+      showPage('agents');
+      return;
+    }
+    toggleUserMenu(e);
+  }
+
+  // Susun ulang topbar KHUSUS role AGENT DAN KHUSUS mobile: dropdown avatar (Ganti
+  // Password/Keluar) dimatikan (caret disembunyikan, kedua aksi itu pindah ke halaman
+  // Profil Saya + tombol Keluar berdiri sendiri). Flag ini disetel berdasarkan role SAJA;
+  // pembatasan "hanya mobile" dilakukan lewat CSS (@media min-width:861px di akhir
+  // Stylesheet.html memaksa kembali ke tampilan dropdown desktop) supaya resize/rotate
+  // layar langsung menyesuaikan tanpa perlu listener resize tambahan di sini. Dipanggil
+  // sekali dari bootApp() setelah role diketahui.
+  function applyAgentTopbarLayout_(){
+    var isAgent = STATE.user && STATE.user.role === 'AGENT';
+    var caret = document.getElementById('userMenuCaret');
+    var logoutBtn = document.getElementById('agentStandaloneLogoutBtn');
+    var trigger = document.getElementById('userMenuTrigger');
+    if(caret) caret.style.display = isAgent ? 'none' : '';
+    if(logoutBtn) logoutBtn.style.display = isAgent ? 'flex' : 'none';
+    if(trigger) trigger.classList.toggle('is-profile-link', isAgent);
+  }
   /** Dipakai oleh item2 dropdown user-menu (Ganti Password / Keluar) alih2 langsung
       "closeUserMenu();aksiNya()" di onclick. FIX bug: menutup dropdown (mengubah
       display tombol yang sedang di-tap jadi none) SECARA SINKRON di tengah event
@@ -591,6 +623,7 @@
     document.getElementById('userNameLabel').textContent = STATE.user.name;
     document.getElementById('userRoleLabel').textContent = STATE.user.role;
     document.getElementById('userAvatar').textContent = (STATE.user.name || '?').charAt(0).toUpperCase();
+    applyAgentTopbarLayout_();
     var pageDateEl = document.getElementById('pageDate');
     if(pageDateEl) pageDateEl.textContent = formatTanggalHariIni_();
     var sigBtn = document.getElementById('mySignatureBtn');
@@ -1756,7 +1789,9 @@
     if(!agent) return '<div class="empty-state">Data agent tidak ditemukan.</div>';
     var initials = (agent.FullName||'?').trim().split(/\s+/).slice(0,2).map(function(w){return w.charAt(0).toUpperCase();}).join('') || '?';
 
-    // ---- Hero header: avatar, name, id, status pills ----
+    // ---- Hero header: avatar, name, id, status pills, + tombol Ganti Password (khusus
+    // self-view Agent — supaya Agent tidak perlu buka dropdown user-menu terpisah lagi
+    // untuk ganti password, semua ada di satu tempat "Profil Saya"). ----
     var html = '<div class="profile-hero">' +
       '<div class="profile-hero-avatar">'+escapeHtml(initials)+'</div>' +
       '<div class="profile-hero-info">' +
@@ -1766,6 +1801,10 @@
           statusBadge(agent.RegistrationStatus) + statusBadge(agent.MOUStatus) + statusBadge(agent.AgentStatus) +
         '</div>' +
       '</div>' +
+      '<button type="button" class="profile-hero-pw-btn" onclick="openChangePasswordModal()">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>' +
+        '<span>Ganti Password</span>' +
+      '</button>' +
     '</div>';
 
     // ---- Data diri card ----
