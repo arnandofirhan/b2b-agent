@@ -797,7 +797,9 @@
   var BOTTOM_NAV_PRIMARY_MAX_ = 4;
 
   function buildBottomNavItemEl_(item, counts){
-    var label = (item.key === 'agents' && STATE.user.role === 'AGENT') ? 'Profil' : item.label;
+    var label = (item.key === 'agents' && STATE.user.role === 'AGENT') ? 'Profil'
+      : (item.key === 'transactions') ? 'Transaksi' // versi pendek khusus Bottom Nav mobile; sidebar desktop & judul halaman tetap "Transaksi / PO"
+      : item.label;
     var el = document.createElement('button');
     el.type = 'button';
     el.className = 'bottom-nav-item' + (item.key === STATE.currentPage ? ' active' : '');
