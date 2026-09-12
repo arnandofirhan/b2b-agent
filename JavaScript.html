@@ -6645,6 +6645,10 @@
     var banners = cfg.banners || [];
     var categories = cfg.categories || [];
     var featured = cfg.featuredProducts || [];
+    // MOU belum SIGNED = Agent belum boleh transaksi sama sekali (backend sudah menolak
+    // PO kalau ini terjadi — lihat createPO/submitPO). Dashboard mengunci Katalog/Troli
+    // LEBIH AWAL di sisi tampilan supaya Agent tidak perlu klik-klik dulu baru tahu ditolak.
+    var mouLocked = !!(cfg.mouStatus && cfg.mouStatus !== 'SIGNED');
 
     var html = '<div class="agent-dash">';
 
@@ -6674,13 +6678,32 @@
       html += '<div class="agent-dash-greeting">Selamat datang, <strong>'+escapeHtml(name)+'</strong></div>';
     }
 
-    // Shortcut utama (Troli menggantikan Promo — Promo tetap bisa diakses lewat bottom nav /
-    // sidebar seperti biasa; Troli dipakai buat review barang yang sudah di-"+" dari sini)
+    // Banner kunci MOU — tampil paling atas, jelas & tidak bisa dilewatkan, kalau Agent
+    // belum SIGNED. Tombolnya langsung ke halaman Profil (tempat upload dokumen/TTD MOU
+    // Agent dilakukan) supaya alurnya jelas: baca kenapa dikunci -> langsung ke aksinya.
+    if(mouLocked){
+      var mouReason = (cfg.agentStatus && cfg.agentStatus !== 'ACTIVE')
+        ? 'Akun Anda sedang diproses Admin (status: '+escapeHtml(cfg.agentStatus)+').'
+        : 'Anda perlu menandatangani MOU sebelum bisa membuat order.';
+      html += '<div class="agent-mou-lock-banner">'
+        + '<div class="agent-mou-lock-icon">'+(ICONS.lock||'&#128274;')+'</div>'
+        + '<div class="agent-mou-lock-text">'
+        + '<div class="agent-mou-lock-title">Katalog &amp; Order Terkunci</div>'
+        + '<div class="agent-mou-lock-desc">'+mouReason+'</div>'
+        + '</div>'
+        + '<button type="button" class="agent-mou-lock-btn" onclick="showPage(\'agents\')">Lihat Status</button>'
+        + '</div>';
+    }
+
+    // Shortcut utama. "Buat Order" & "Riwayat Order" sengaja DIHAPUS dari sini karena sudah
+    // ada di Bottom Nav (Transaksi/PO & Order) — dobel dan makan tempat. Diganti dengan 2
+    // ringkasan yang belum ada di manapun: Jadwal Pengambilan Terdekat & Ringkasan Piutang.
+    // Semua card di-lock (non-aktif + ikon gembok) kalau MOU Agent belum SIGNED.
     html += '<div class="agent-shortcut-grid">'
-      + agentShortcut_('products', 'Katalog', 'transactions')
-      + agentShortcut_('transactions', 'Buat Order', 'transactions')
-      + agentShortcut_('orders', 'Riwayat Order', 'orders')
-      + agentCartShortcutHtml_()
+      + agentCatalogShortcutHtml_(mouLocked)
+      + agentCartShortcutHtml_(mouLocked)
+      + agentPickupShortcutHtml_(cfg.nextPickup, mouLocked)
+      + agentPiutangShortcutHtml_(cfg.piutang, mouLocked)
       + '</div>';
 
     // Kategori produk — shortcut ikon per kategori (mis. Bakpia Kukus, Bolu Kukus, dst) yang
@@ -6740,7 +6763,9 @@
     var wrap = document.getElementById('agentCategoryRowWrap');
     if(!row || !wrap) return;
     var atEnd = (row.scrollLeft + row.clientWidth) >= (row.scrollWidth - 2);
+    var atStart = row.scrollLeft <= 2;
     wrap.classList.toggle('is-at-end', atEnd);
+    wrap.classList.toggle('is-at-start', atStart);
   }
 
   // Auto-slide banner atas — geser otomatis tiap 4.5 detik (tidak terlalu cepat), dan
@@ -6766,21 +6791,61 @@
   // index terpisah), jadi kalau Agent geser manual di antara tick, autoplay otomatis
   // melanjutkan dari posisi manual itu tanpa "berebut" arah dengan swipe user.
 
-  function agentShortcut_(iconKey, label, pageKey){
-    return '<div class="agent-shortcut-item" onclick="showPage(\''+pageKey+'\')">'
-      + '<div class="agent-shortcut-icon">'+(ICONS[iconKey]||'')+'</div>'
-      + '<div class="agent-shortcut-label">'+escapeHtml(label)+'</div></div>';
+  // Klik shortcut dashboard saat MOU belum SIGNED: tidak menavigasi kemana-mana, cukup
+  // kasih tahu alasannya lewat toast (konsisten dengan pesan penolakan yang sama dari
+  // backend createPO/submitPO), supaya Agent tidak bingung kenapa card-nya diam saja.
+  function agentShortcutLockedClick_(){
+    showToast('Selesaikan tanda tangan MOU dulu sebelum bisa order. Cek halaman Profil.', 'error');
+  }
+
+  // Shortcut "Katalog" — sebelumnya SALAH diarahkan ke halaman Transaksi/PO (dobel persis
+  // dengan "Buat Order"), jadi klik Katalog kelihatan seperti tidak melakukan apa-apa yang
+  // beda. Sekarang langsung membuka modal pilih produk (newPOForm) buat browsing katalog.
+  function agentCatalogShortcutHtml_(locked){
+    var onclick = locked ? 'agentShortcutLockedClick_()' : 'newPOForm(false)';
+    return '<div class="agent-shortcut-item'+(locked?' is-locked':'')+'" onclick="'+onclick+'">'
+      + '<div class="agent-shortcut-icon">'+ICONS.products+'</div>'
+      + '<div class="agent-shortcut-label">Katalog</div></div>';
   }
 
   // Shortcut "Troli" — dengan badge jumlah item kalau sudah ada isinya, klik buka modal
   // "Buat PO" yang sudah ada, tapi cart-nya DIPERTAHANKAN (bukan direset) karena isinya
   // datang dari "+" yang diklik di Dashboard.
-  function agentCartShortcutHtml_(){
+  function agentCartShortcutHtml_(locked){
     var count = Object.keys(AGENT_DASH_CART_).reduce(function(sum,pid){ return sum + AGENT_DASH_CART_[pid]; }, 0);
-    return '<div class="agent-shortcut-item" onclick="openAgentCart_()" style="position:relative;">'
-      + (count > 0 ? '<span class="agent-cart-badge">'+count+'</span>' : '')
+    var onclick = locked ? 'agentShortcutLockedClick_()' : 'openAgentCart_()';
+    return '<div class="agent-shortcut-item'+(locked?' is-locked':'')+'" onclick="'+onclick+'" style="position:relative;">'
+      + (count > 0 && !locked ? '<span class="agent-cart-badge">'+count+'</span>' : '')
       + '<div class="agent-shortcut-icon">'+ICONS.cart+'</div>'
       + '<div class="agent-shortcut-label">Troli</div></div>';
+  }
+
+  // Shortcut "Jadwal Pengambilan Terdekat" — ringkasan tanggal PO terdekat yang siap
+  // diambil, reuse data yang sama dengan halaman Kalender Pengambilan (PickupDate) supaya
+  // tidak ada sumber data baru. Tap langsung ke halaman Kalender. Tetap bisa diklik walau
+  // mouLocked (ini cuma info, bukan aksi transaksi baru), kecuali memang tidak ada jadwal.
+  function agentPickupShortcutHtml_(nextPickup, locked){
+    var label = 'Pickup';
+    var sub = nextPickup
+      ? new Date(nextPickup.pickupDate).toLocaleDateString('id-ID', {day:'2-digit', month:'short'})
+      : 'Belum ada';
+    return '<div class="agent-shortcut-item" onclick="showPage(\'calendar\')" style="position:relative;">'
+      + '<div class="agent-shortcut-icon">'+ICONS.calendar+'</div>'
+      + '<div class="agent-shortcut-label">'+label+'</div>'
+      + '<div class="agent-shortcut-sublabel">'+escapeHtml(sub)+'</div></div>';
+  }
+
+  // Shortcut "Ringkasan Piutang" — total tagihan yang belum lunas dari PO milik Agent ini
+  // (join PO x Orders lewat POID, dihitung di getAgentDashboardConfig backend). Tap ke
+  // halaman Transaksi/PO. Info saja, jadi tetap bisa dilihat walau mouLocked.
+  function agentPiutangShortcutHtml_(piutang, locked){
+    var count = piutang ? piutang.count : 0;
+    var total = piutang ? piutang.total : 0;
+    return '<div class="agent-shortcut-item" onclick="showPage(\'transactions\')" style="position:relative;">'
+      + (count > 0 ? '<span class="agent-cart-badge">'+count+'</span>' : '')
+      + '<div class="agent-shortcut-icon">'+ICONS.reports+'</div>'
+      + '<div class="agent-shortcut-label">Tagihan</div>'
+      + '<div class="agent-shortcut-sublabel">'+(count > 0 ? formatRupiah(total) : 'Lunas')+'</div></div>';
   }
 
   // linkAction sederhana: nama halaman ('transactions','orders','promo', dst), ATAU
