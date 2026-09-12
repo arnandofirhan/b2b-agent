@@ -896,17 +896,25 @@
     display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--ag-surface);
   }
   .notif-backdrop{
-    display:none;position:fixed;inset:0;background:rgba(16,24,32,.28);z-index:199;
+    display:none;position:fixed;inset:0;background:rgba(16,24,32,.28);z-index:1099;
     -webkit-backdrop-filter:blur(1px);backdrop-filter:blur(1px);
   }
   .notif-backdrop.show{display:block;}
+  /* FIX: position:fixed (bukan absolute) karena panel ini sekarang PORTAL — dibangun
+     langsung sebagai child #notifPortalRoot di akhir <body>, BUKAN lagi di dalam
+     .notif-wrap/.topbar. position:absolute lama akan salah menempatkan diri (relatif ke
+     <html>, bukan ke tombol lonceng) sekarang setelah dipindah keluar dari topbar. Posisi
+     top/right presisi di-set inline oleh positionNotifPortal_() setiap kali dibuka;
+     top/right di sini cuma fallback awal sebelum JS itu jalan. z-index:1100 memastikan
+     panel ini SELALU di atas elemen fixed lain manapun di halaman (topbar, sidebar,
+     bottom nav mobile, user-menu, dst) — tidak ada lagi ambiguitas stacking context. */
   .notif-dropdown{
-    display:none;position:absolute;top:calc(100% + 8px);right:0;width:340px;max-width:calc(100vw - 24px);background:var(--ag-surface);
+    display:none;position:fixed;top:70px;right:24px;width:340px;max-width:calc(100vw - 24px);background:var(--ag-surface);
     border:1px solid var(--ag-gray-200);border-radius:var(--radius-md);box-shadow:0 12px 28px rgba(16,24,32,.14);
-    z-index:200;overflow:hidden;display:flex;flex-direction:column;
-    opacity:0;transform:translateY(-6px) scale(.98);transition:opacity .16s ease,transform .16s ease;
+    z-index:1100;overflow:hidden;flex-direction:column;
+    isolation:isolate;
   }
-  .notif-dropdown.show{display:flex;opacity:1;transform:translateY(0) scale(1);}
+  .notif-dropdown.show{display:flex;}
   .notif-dropdown-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--ag-gray-100);font-size:13px;font-weight:700;color:var(--ag-gray-900);flex-shrink:0;gap:10px;}
   .notif-dropdown-head-actions{display:flex;align-items:center;gap:10px;flex-shrink:0;}
   .notif-mark-all{background:none;border:none;color:var(--ag-green);font-size:11.5px;font-weight:600;cursor:pointer;padding:0;white-space:nowrap;}
@@ -938,12 +946,12 @@
   }
   .notif-see-all-btn:hover{background:var(--ag-gray-50);}
 
-  /* Mobile: dropdown ditempel sebagai sheet lebar-penuh di bawah topbar, jangan
-     mengandalkan `right:0` relatif ke tombol lonceng (bisa kepotong di layar sempit
-     karena tombol lain di sebelah kanannya). */
+  /* Mobile: dropdown ditempel sebagai sheet lebar-penuh di bawah topbar. position:fixed
+     sudah default (lihat .notif-dropdown di atas, sekarang portal), jadi di sini cukup
+     override top/left/right-nya saja. */
   @media (max-width:640px){
     .notif-dropdown{
-      position:fixed;top:calc(var(--topbar-height,65px) + 6px);left:12px;right:12px;width:auto;max-width:none;
+      top:calc(var(--topbar-height,65px) + 6px) !important;left:12px !important;right:12px !important;width:auto;max-width:none;
       max-height:calc(100vh - var(--topbar-height,65px) - 24px);
     }
     .notif-dropdown-list{max-height:calc(100vh - var(--topbar-height,65px) - 120px);}
