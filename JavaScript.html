@@ -306,9 +306,15 @@
     var caret = document.getElementById('userMenuCaret');
     var logoutBtn = document.getElementById('agentStandaloneLogoutBtn');
     var trigger = document.getElementById('userMenuTrigger');
+    var topbarEl = document.querySelector('.topbar');
     if(caret) caret.style.display = isAgent ? 'none' : '';
     if(logoutBtn) logoutBtn.style.display = isAgent ? 'flex' : 'none';
     if(trigger) trigger.classList.toggle('is-profile-link', isAgent);
+    // "agent-topbar": geser blok avatar+nama+ID Agent ke KIRI topbar KHUSUS mobile
+    // (lihat @media max-width:860px .topbar.agent-topbar di Stylesheet.html). Disetel
+    // berdasarkan role saja; pembatasan "hanya mobile" murni lewat CSS, sama seperti
+    // pola caret/is-profile-link di atas — jadi tampilan desktop tidak berubah.
+    if(topbarEl) topbarEl.classList.toggle('agent-topbar', isAgent);
   }
   /** Dipakai oleh item2 dropdown user-menu (Ganti Password / Keluar) alih2 langsung
       "closeUserMenu();aksiNya()" di onclick. FIX bug: menutup dropdown (mengubah
@@ -623,6 +629,10 @@
     document.getElementById('userNameLabel').textContent = STATE.user.name;
     document.getElementById('userRoleLabel').textContent = STATE.user.role;
     document.getElementById('userAvatar').textContent = (STATE.user.name || '?').charAt(0).toUpperCase();
+    // Baris ID Agent di topbar (dipakai khusus layout mobile role AGENT — lihat
+    // applyAgentTopbarLayout_ & .topbar.agent-topbar .user-agentid di Stylesheet.html).
+    var agentIdLabelEl = document.getElementById('userAgentIdLabel');
+    if(agentIdLabelEl) agentIdLabelEl.textContent = STATE.user.agentId ? ('ID: ' + STATE.user.agentId) : '';
     applyAgentTopbarLayout_();
     var pageDateEl = document.getElementById('pageDate');
     if(pageDateEl) pageDateEl.textContent = formatTanggalHariIni_();
