@@ -3893,11 +3893,13 @@
   // yang sudah disiapkan sebelum memanggil fungsi ini TIDAK direset ke {} (perilaku default
   // untuk "Buat PO" biasa tetap reset, karena itu memang dimaksudkan sebagai PO baru yang kosong).
   var NEWPO_CATEGORY_FILTER_ = null; // diisi kalau modal dibuka dari klik "Kategori Produk" di Dashboard
+  var NEWPO_PRESELECT_PRODUCT_ID_ = null; // diisi kalau modal dibuka dari klik Banner/Produk tertentu di Dashboard
 
-  function newPOForm(preserveCart, categoryFilter){
+  function newPOForm(preserveCart, categoryFilter, presetProductId){
     NEWPO_RESUBMIT_ID_ = null;
     NEWPO_EDIT_APPROVED_ID_ = null;
     NEWPO_CATEGORY_FILTER_ = categoryFilter || null;
+    NEWPO_PRESELECT_PRODUCT_ID_ = presetProductId || null;
 
     // If we already have data from a previous open, paint the modal immediately (no spinner
     // wait) and refresh both lists quietly in the background so it stays accurate.
@@ -3905,6 +3907,7 @@
       NEWPO_PRODUCTS_ = NEWPO_PRODUCTS_CACHE_;
       if(!preserveCart) NEWPO_CART_ = {};
       renderNewPOForm_(NEWPO_PRODUCTS_CACHE_, NEWPO_PROMOS_CACHE_);
+      applyNewPOPreselect_();
     }
 
     // Fetch products & promos in parallel (instead of one after another) so first-open latency
@@ -3922,6 +3925,7 @@
       } else {
         renderNewPOProductGrid_();
       }
+      applyNewPOPreselect_();
     }
     google.script.run.withSuccessHandler(function(products){
       got.products = products; tryFinish();
@@ -3929,6 +3933,23 @@
     google.script.run.withSuccessHandler(function(promos){
       got.promos = promos; tryFinish();
     }).withFailureHandler(function(e){ if(!NEWPO_PROMOS_CACHE_) handleBackendError(e); }).listPromos(STATE.token, true);
+  }
+
+  // Dipanggil sekali tiap modal selesai dirender KALAU dibuka lewat klik Banner/Produk
+  // tertentu di Dashboard — otomatis pindah tab ke kategori produk itu & isi kotak cari
+  // dengan nama produknya, supaya produk yang dimaksud banner langsung kelihatan di atas
+  // tanpa Agent perlu scroll/cari manual. "One-shot": sekali dipakai langsung dikosongkan
+  // supaya tidak terus-menerus menimpa pencarian manual Agent tiap grid dirender ulang.
+  function applyNewPOPreselect_(){
+    if(!NEWPO_PRESELECT_PRODUCT_ID_) return;
+    var pid = NEWPO_PRESELECT_PRODUCT_ID_;
+    NEWPO_PRESELECT_PRODUCT_ID_ = null;
+    var p = findNewPOProduct_(pid);
+    if(!p) return;
+    if(p.Category) switchNewPOCategory_(p.Category);
+    var searchInput = document.getElementById('poProductSearch');
+    if(searchInput) searchInput.value = p.ProductName;
+    renderNewPOProductGrid_();
   }
 
   function renderNewPOForm_(products, promos, isApprovedEdit){
@@ -6745,14 +6766,20 @@
   }
 
   // linkAction sederhana: nama halaman ('transactions','orders','promo', dst), ATAU
-  // 'category:KODE' (mis. 'category:BKT') untuk langsung buka modal "Buat PO" dengan
-  // produk yang sudah difilter ke kategori tsb. Kalau Admin isi nilai lain/kosong,
-  // tidak melakukan apa-apa (aman, tidak error).
+  // 'category:KODE' untuk filter ke kategori, ATAU 'product:PRODUCTID' untuk langsung buka
+  // modal "Buat PO" dengan SATU produk spesifik ter-highlight (cocok buat banner promo
+  // 1 produk, mis. banner "Ceremonial Matcha"). Kalau Admin isi nilai lain/kosong, tidak
+  // melakukan apa-apa (aman, tidak error).
   function agentDashBannerClick_(linkAction){
     if(!linkAction) return;
     if(linkAction.indexOf('category:') === 0){
       var cat = linkAction.slice('category:'.length);
       newPOForm(false, cat);
+      return;
+    }
+    if(linkAction.indexOf('product:') === 0){
+      var pid = linkAction.slice('product:'.length);
+      newPOForm(false, null, pid);
       return;
     }
     var known = ['dashboard','transactions','orders','promo','commission','calendar'];
@@ -6912,9 +6939,9 @@
   }
 
   // linkAction untuk banner/kategori: nama halaman tujuan saat diklik Agent (opsional),
-  // ATAU 'category:KODE' supaya langsung buka "Buat PO" dengan produk terfilter ke
-  // kategori itu (dipakai terutama untuk item "Kategori Produk", tapi tersedia juga untuk
-  // Banner kalau Admin mau banner tertentu langsung menjurus ke satu kategori).
+  // ATAU 'category:KODE' (filter ke satu kategori), ATAU 'product:PRODUCTID' (langsung
+  // buka "Buat PO" dengan SATU produk spesifik ter-highlight — dipakai kalau banner promo
+  // memang tentang 1 produk tertentu, mis. banner "Ceremonial Matcha").
   var DASH_CONFIG_LINK_OPTIONS_BASE_ = [
     {v:'', label:'(Tidak ada, hanya tampilan)'},
     {v:'transactions', label:'Transaksi / PO (Buat Order)'},
@@ -6922,16 +6949,32 @@
     {v:'promo', label:'Promo'},
     {v:'calendar', label:'Kalender Pengambilan'}
   ];
-  function dashConfigLinkOptions_(){
-    var opts = DASH_CONFIG_LINK_OPTIONS_BASE_.slice();
+  // Dipakai untuk render <select> "Aksi saat diklik" dengan optgroup rapi: Halaman /
+  // Kategori Produk / Produk Tertentu — supaya daftar panjang (bisa puluhan produk) tetap
+  // gampang disusuri, bukan satu list datar tanpa pengelompokan.
+  function dashConfigLinkSelectHtml_(selectedValue){
+    function opt(o){ return '<option value="'+o.v+'" '+(selectedValue===o.v?'selected':'')+'>'+escapeHtml(o.label)+'</option>'; }
+    var html = DASH_CONFIG_LINK_OPTIONS_BASE_.map(opt).join('');
+
     var cats = [];
     (PRODUCTS_CACHE||[]).forEach(function(p){
       var c = String(p.Category||'').trim();
       if(c && cats.indexOf(c) === -1) cats.push(c);
     });
     cats.sort();
-    cats.forEach(function(c){ opts.push({ v:'category:'+c, label:'Kategori Produk: '+c }); });
-    return opts;
+    if(cats.length){
+      html += '<optgroup label="Kategori Produk">'
+        + cats.map(function(c){ return opt({ v:'category:'+c, label:c }); }).join('')
+        + '</optgroup>';
+    }
+
+    var prods = (PRODUCTS_CACHE||[]).slice().sort(function(a,b){ return (a.ProductName||'').localeCompare(b.ProductName||''); });
+    if(prods.length){
+      html += '<optgroup label="Produk Tertentu">'
+        + prods.map(function(p){ return opt({ v:'product:'+p.ProductID, label:p.ProductName }); }).join('')
+        + '</optgroup>';
+    }
+    return html;
   }
 
   function openDashboardConfigModal_(type, configId){
@@ -6954,7 +6997,7 @@
       }
       body += '<div class="form-group"><label>Gambar</label>'+imageUploadWidgetHtml_(item?item.ImageURL:null)+'</div>'
         + '<div class="form-group"><label>Aksi saat diklik (opsional)</label><select id="dcLinkAction">'
-        + dashConfigLinkOptions_().map(function(o){ return '<option value="'+o.v+'" '+((item&&item.LinkAction===o.v)?'selected':'')+'>'+o.label+'</option>'; }).join('')
+        + dashConfigLinkSelectHtml_(item?item.LinkAction:'')
         + '</select></div>';
     }
     body += '<div class="form-group"><label>Urutan Tampil</label><input type="number" id="dcSortOrder" value="'+(item?item.SortOrder:(DASHBOARD_CONFIG_CACHE_.filter(function(r){return r.ItemType===type;}).length))+'"></div>';
