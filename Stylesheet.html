@@ -525,6 +525,19 @@
     font-size:11px;font-weight:800;width:22px;height:22px;border-radius:50%;
     display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow-sm);
   }
+  /* ---- Katalog (Agent): grid produk full-page, read-only info — reuse .po-product-tile
+     tapi tanpa batas tinggi/scroll internal, dan tile bisa tampilkan meta tambahan. ---- */
+  .catalog-grid{
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;
+  }
+  .catalog-tile-category{
+    font-size:10px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;
+    color:var(--ag-green);margin-bottom:2px;
+  }
+  .catalog-tile-price{font-size:12.5px;font-weight:800;color:var(--ag-gray-900);margin-top:4px;}
+  .catalog-tile-packaging{font-size:11px;color:var(--ag-gray-500);margin-top:1px;}
+  .catalog-search-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:4px;}
+  .catalog-search-row .po-search-wrap{flex:1;min-width:220px;margin-bottom:0;}
   .po-product-info{padding:9px 10px 11px;}
   .po-product-name{font-size:12.5px;font-weight:700;color:var(--ag-gray-900);line-height:1.3;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:32px;}
