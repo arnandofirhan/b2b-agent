@@ -1815,6 +1815,11 @@
   .text-field-wrap:focus-within{border-color:var(--ag-green);box-shadow:0 0 0 3px var(--ag-green-soft);}
   .text-field-wrap svg{width:15px;height:15px;flex-shrink:0;margin-left:11px;color:var(--ag-green);pointer-events:none;}
   .text-field-wrap input{border:none!important;background:transparent!important;box-shadow:none!important;flex:1;min-width:0;}
+  /* Varian textarea (mis. Alamat sesuai KTP di Edit Agent) — ikon dinaikkan ke baris atas
+     (align-items:flex-start) supaya tidak "mengambang" di tengah kotak multi-baris. */
+  .text-field-wrap.text-field-wrap--textarea{align-items:flex-start;}
+  .text-field-wrap.text-field-wrap--textarea svg{margin-top:11px;}
+  .text-field-wrap textarea{border:none!important;background:transparent!important;box-shadow:none!important;flex:1;min-width:0;resize:vertical;font:inherit;padding:9px 10px 9px 0;}
 
   /* ---------- Promo — modern card list (menggantikan tabel supaya tidak ada
      scrollbar horizontal & tidak ada teks terpotong di layar sempit) ---------- */
