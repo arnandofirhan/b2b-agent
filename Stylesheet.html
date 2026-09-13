@@ -2367,6 +2367,30 @@
     .settings-toolbar .btn{width:100%;}
   }
 
+  /* FAB Troli mengambang di Dashboard Agent — ukuran sengaja kecil/compact (bukan FAB besar
+     gaya Material lama) biar tidak menutupi konten & tetap terasa modern-minimalis. Fixed
+     ke viewport supaya tetap kelihatan walau halaman sudah discroll jauh ke bawah.
+     PENTING: definisi dasar (unconditional) ini SENGAJA diletakkan DI SINI — SEBELUM blok
+     @media (max-width:860px) "BOTTOM NAV" di bawah — supaya override posisi khusus mobile
+     di blok itu (yang menaikkan `bottom` biar tidak ketutup Bottom Nav mengambang) benar2
+     MENANG di cascade. Sebelumnya rule dasar ini sempat diletakkan SETELAH blok mobile
+     tsb, akibatnya di layar sempit `bottom` malah balik ke nilai desktop (24px) — FAB jadi
+     kegeser ke belakang Bottom Nav (z-index lebih rendah) dan kelihatan "hilang" total. */
+  .agent-cart-fab{
+    position:fixed; right:16px; bottom:24px; z-index:55; width:46px; height:46px; border-radius:50%;
+    background:var(--ag-green); color:#fff; border:none; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 6px 18px rgba(30,122,76,.38), 0 2px 6px rgba(16,24,32,.12);
+    transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .agent-cart-fab:active{ transform:scale(.93); }
+  .agent-cart-fab svg{ width:20px; height:20px; }
+  .agent-cart-fab-badge{
+    position:absolute; top:-3px; right:-3px; min-width:17px; height:17px; padding:0 4px;
+    border-radius:9px; background:var(--ag-red,#EB5757); color:#fff; font-size:10px; font-weight:700;
+    display:flex; align-items:center; justify-content:center; line-height:1; border:2px solid var(--ag-surface);
+  }
+
   /* =====================================================================
      BOTTOM NAV (mobile only) — pengganti sidebar/drawer khusus di layar
      sempit. TIDAK menyentuh tampilan desktop sama sekali: di atas 860px,
@@ -2610,23 +2634,6 @@
     display:flex; align-items:center; justify-content:center;
   }
   .agent-trend-img img{ width:100%; height:100%; object-fit:cover; display:block; }
-  /* FAB Troli mengambang di Dashboard Agent — ukuran sengaja kecil/compact (bukan FAB besar
-     gaya Material lama) biar tidak menutupi konten & tetap terasa modern-minimalis. Fixed
-     ke viewport supaya tetap kelihatan walau halaman sudah discroll jauh ke bawah. */
-  .agent-cart-fab{
-    position:fixed; right:16px; bottom:24px; z-index:55; width:46px; height:46px; border-radius:50%;
-    background:var(--ag-green); color:#fff; border:none; cursor:pointer;
-    display:flex; align-items:center; justify-content:center;
-    box-shadow:0 6px 18px rgba(30,122,76,.38), 0 2px 6px rgba(16,24,32,.12);
-    transition:transform .15s ease, box-shadow .15s ease;
-  }
-  .agent-cart-fab:active{ transform:scale(.93); }
-  .agent-cart-fab svg{ width:20px; height:20px; }
-  .agent-cart-fab-badge{
-    position:absolute; top:-3px; right:-3px; min-width:17px; height:17px; padding:0 4px;
-    border-radius:9px; background:var(--ag-red,#EB5757); color:#fff; font-size:10px; font-weight:700;
-    display:flex; align-items:center; justify-content:center; line-height:1; border:2px solid var(--ag-surface);
-  }
   .agent-product-card{ position:relative; background:var(--ag-surface); border:1px solid var(--ag-gray-200); border-radius:14px; padding:10px;
     box-shadow:0 1px 3px rgba(16,24,32,.04); transition:box-shadow .15s ease, transform .15s ease; }
   .agent-product-card:hover{ box-shadow:0 8px 20px rgba(16,24,32,.09); transform:translateY(-2px); }
