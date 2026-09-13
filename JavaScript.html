@@ -737,9 +737,16 @@
     var STAGGER_MS = 700;
     keys.forEach(function(key, i){
       setTimeout(function(){
-        // Tandai request ini sebagai background/low-priority (lihat catatan di api-bridge.js)
-        // supaya kalau user keburu klik menu lain, request klik itu SELALU didahulukan
-        // antrian, bukan ikut ngantre di belakang sisa preload.
+        // FIX "HP LEMOT PAS LOGIN / BUKA LIVE CHAT": sebelumnya preload ini jalan TERUS
+        // walau user sudah keburu pindah dari Dashboard (mis. langsung buka Live Chat
+        // begitu login selesai) — request2 background ini tetap ditembak ke backend dan
+        // rebutan bandwidth/koneksi dengan halaman yang BENAR-BENAR sedang dibuka user,
+        // apalagi di jaringan lambat (HP) di mana efeknya jauh lebih terasa daripada di
+        // desktop/wifi kencang. Sekarang dicek dulu: kalau user SUDAH tidak lagi di
+        // Dashboard saat giliran preload halaman ini tiba, SKIP total — halaman itu toh
+        // akan dirender biasa (on-demand) begitu memang dibuka user nanti. Preload cuma
+        // jalan penuh kalau user memang masih diam di Dashboard.
+        if(STATE.currentPage !== 'dashboard') return;
         window.__BG_LOW_PRIORITY__ = true;
         try{ renderers[key](); }catch(e){ /* silent — a failed background preload shouldn't disrupt the user */ }
         window.__BG_LOW_PRIORITY__ = false;
@@ -1094,6 +1101,17 @@
     // pindah ke halaman lain — supaya perilaku scroll halaman lain sama sekali tidak berubah.
     var mainAreaEl = document.querySelector('.main-area');
     if(mainAreaEl) mainAreaEl.classList.toggle('chat-page-active', pageKey === 'livechat');
+    // FIX "TOPBAR & KOLOM KETIK MASIH BISA DITARIK NAIK-TURUN" (video report): overflow:hidden
+    // di CSS saja TERNYATA TIDAK CUKUP untuk mencegah halaman ikut ter-drag oleh SENTUHAN JARI
+    // di Android/Chrome — overflow:hidden cuma mencegah scroll PROGRAMATIK/wheel, sedangkan
+    // gesture drag jari tetap bisa menggeser dokumen kalau tidak ada touch-action yang eksplisit
+    // melarangnya. class "chat-page-lock" di <html> ini mengaktifkan `touch-action:none` khusus
+    // selagi di halaman Live Chat (lihat CSS di Stylesheet.html) — dan supaya HANYA area pesan
+    // chat (.chat-inbox-messages) yang tetap bisa digeser jarinya (buat scroll baca chat lama),
+    // itu diberi pengecualian `touch-action:pan-y` sendiri. Hasilnya: topbar & kolom ketik
+    // benar2 PATEN, tidak bisa ditarik lagi walau di-drag paksa dengan jari.
+    var htmlEl = document.documentElement;
+    if(htmlEl) htmlEl.classList.toggle('chat-page-lock', pageKey === 'livechat');
     // Catat perpindahan ini ke riwayat browser (lihat initAppHistory_ di bawah) supaya
     // gesture/tombol back bawaan HP tahu ada "halaman sebelumnya" di DALAM app, dan balik
     // ke situ dulu — bukan langsung keluar app (yang bikin sessionStorage token hilang dan
@@ -10230,12 +10248,6 @@
     }
   }
   window.addEventListener('scroll', snapWindowScrollToZero_, { passive:true });
-  document.addEventListener('touchmove', function(e){
-    // Cegah "rubber-band"/geser dokumen dari sentuhan di luar area yang memang boleh
-    // discroll (mis. tap-drag di topbar/bottom-nav) — tidak mengganggu scroll normal di
-    // dalam container ber-overflow:auto (.chat-inbox-messages, .main-area, dll), karena
-    // itu tetap ditangani browser secara native sebelum event ini sempat mencegahnya.
-  }, { passive:true });
 
   function syncMobileViewportHeight_(){
     snapWindowScrollToZero_();
