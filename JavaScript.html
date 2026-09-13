@@ -6360,6 +6360,20 @@
           '</div>' +
         '</div>';
 
+      var chatSettingsCardHtml =
+        '<div class="card settings-card settings-card-wide settings-card-banner">' +
+          '<div class="settings-card-head">' +
+            '<div class="settings-card-icon">'+CHAT_ICONS_.bubble+'</div>' +
+            '<div>' +
+              '<div class="card-title">Live Chat &mdash; Auto-Reply</div>' +
+              '<div class="settings-card-desc">Atur pesan sambutan otomatis yang terkirim saat Agent pertama kali chat, sebelum dibalas manual oleh Admin/Supervisor/Manager.</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="settings-card-body">' +
+            '<button class="btn btn-secondary" onclick="openChatSettingsModal_()">'+CHAT_ICONS_.bubble+' Atur Auto-Reply Live Chat</button>' +
+          '</div>' +
+        '</div>';
+
       var html =
         '<div class="settings-toolbar">' +
           '<div class="settings-toolbar-text">' +
@@ -6368,10 +6382,54 @@
           '</div>' +
           '<button class="btn btn-primary" id="settingsSaveBtn" onclick="saveSettingsForm()">'+ICON_CHECK_SM+' Simpan Semua Pengaturan</button>' +
         '</div>' +
-        '<div class="settings-grid">' + logoCardHtml + groupsHtml + notifCardHtml + '</div>';
+        '<div class="settings-grid">' + logoCardHtml + groupsHtml + notifCardHtml + chatSettingsCardHtml + '</div>';
       paintPage_('settings', html);
       renderCompanyLogoCard_();
     }).withFailureHandler(function(e){ handleBackendError(e, pageErrorEl_('settings')); }).getSettings(STATE.token);
+  }
+
+  // =============================================================
+  // LIVE CHAT — Pengaturan Auto-Reply (modal terpisah, pola sama seperti modal
+  // Template Notifikasi di atas)
+  // =============================================================
+  function openChatSettingsModal_(){
+    var body =
+      '<div class="form-field">' +
+        '<label class="switch-row"><span class="switch"><input type="checkbox" id="chatAutoReplyEnabledEl"><span class="switch-slider"></span></span> Aktifkan auto-reply sambutan</label>' +
+        '<div class="form-hint">Kalau aktif, pesan di bawah ini otomatis terkirim (sebagai pesan sistem) saat Agent mengirim chat pertamanya di sebuah percakapan.</div>' +
+      '</div>' +
+      '<div class="form-field">' +
+        '<label>Isi Pesan Sambutan</label>' +
+        '<textarea id="chatAutoReplyTextEl" rows="4" maxlength="1000" placeholder="Contoh: Selamat datang di Live Chat Agrinesia B2B! Pesan Anda sudah kami terima..."></textarea>' +
+      '</div>';
+    openModal(
+      '<div class="modal-header"><span class="modal-title">Auto-Reply Live Chat</span><button class="modal-close" onclick="closeModal()">&times;</button></div>' +
+      '<div class="modal-body">'+body+'</div>' +
+      '<div class="modal-footer">' +
+        '<button class="btn btn-secondary" onclick="closeModal()">Batal</button>' +
+        '<button class="btn btn-primary" id="chatSettingsSaveBtn" onclick="saveChatSettingsForm_()">'+ICON_CHECK_SM+' Simpan</button>' +
+      '</div>'
+    );
+    google.script.run.withSuccessHandler(function(settings){
+      var chk = document.getElementById('chatAutoReplyEnabledEl');
+      var txt = document.getElementById('chatAutoReplyTextEl');
+      if(chk) chk.checked = !!settings.autoReplyEnabled;
+      if(txt) txt.value = settings.autoReplyText || '';
+    }).withFailureHandler(function(e){ handleBackendError(e); }).getChatSettings(STATE.token);
+  }
+
+  function saveChatSettingsForm_(){
+    var enabled = document.getElementById('chatAutoReplyEnabledEl').checked;
+    var text = document.getElementById('chatAutoReplyTextEl').value.trim();
+    if(enabled && !text){ showToast('Isi pesan auto-reply tidak boleh kosong.', 'error'); return; }
+    var btn = document.getElementById('chatSettingsSaveBtn');
+    btn.disabled = true;
+    google.script.run.withSuccessHandler(function(){
+      btn.disabled = false;
+      showToast('Pengaturan auto-reply Live Chat disimpan.', 'success');
+      closeModal();
+    }).withFailureHandler(function(e){ btn.disabled = false; handleBackendError(e); })
+      .saveChatSettings(STATE.token, { autoReplyEnabled: enabled, autoReplyText: text });
   }
 
   // =============================================================
@@ -9049,7 +9107,9 @@
     chatEmpty: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
     back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><path d="m15 18-6-6 6-6"/></svg>',
     checkCircle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m22 4-10 10-3-3"/></svg>',
-    rotate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>'
+    rotate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>',
+    attach: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>',
+    filePdf: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="22" height="22"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>'
   };
 
   /** Dipanggil dari bootApp() setelah login berhasil. Memasang floating bubble untuk Agent
@@ -9107,6 +9167,8 @@
         '</div>' +
         '<div class="chat-messages" id="chatMessagesEl"><div class="spinner"></div></div>' +
         '<div class="chat-input-bar" id="chatInputBarEl">' +
+          '<input type="file" id="chatAttachInput" accept="image/png,image/jpeg,image/webp,application/pdf" style="display:none" onchange="handleChatAttachSelected_(this,false)">' +
+          '<button type="button" class="chat-attach-btn" onclick="document.getElementById(\'chatAttachInput\').click()" aria-label="Lampirkan gambar/PDF" title="Lampirkan gambar atau PDF">' + CHAT_ICONS_.attach + '</button>' +
           '<textarea id="chatInputEl" rows="1" placeholder="Tulis pesan..." onkeydown="handleChatInputKeydown_(event)" oninput="autoGrowChatInput_(this)"></textarea>' +
           '<button type="button" class="chat-send-btn" id="chatSendBtn" onclick="sendMyChatMessage_()" aria-label="Kirim">' + CHAT_ICONS_.send + '</button>' +
         '</div>' +
@@ -9173,10 +9235,11 @@
     }
   }
 
-  function sendMyChatMessage_(){
+  function sendMyChatMessage_(attachment){
     var input = document.getElementById('chatInputEl');
     var text = input.value.trim();
-    if(!text || !CHAT_STATE_.myRoomId) return;
+    if(!text && !attachment) return;
+    if(!CHAT_STATE_.myRoomId) return;
     input.value = ''; autoGrowChatInput_(input);
     var btn = document.getElementById('chatSendBtn');
     btn.disabled = true;
@@ -9192,19 +9255,75 @@
         CHAT_STATE_.myRoomStatus = 'OPEN'; // auto-reopen sudah terjadi di backend
         updateMyChatInputState_();
       }
-    }).withFailureHandler(function(e){ btn.disabled = false; input.value = text; handleBackendError(e); }).sendChatMessage(STATE.token, CHAT_STATE_.myRoomId, text);
+    }).withFailureHandler(function(e){ btn.disabled = false; input.value = text; handleBackendError(e); }).sendChatMessage(STATE.token, CHAT_STATE_.myRoomId, text, attachment || null);
   }
 
   function handleChatInputKeydown_(e){
     if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); sendMyChatMessage_(); }
+  }
+
+  /** Dipanggil saat user memilih file di tombol lampiran (baik dari widget Agent maupun
+   *  inbox staff — dibedakan lewat parameter isInbox). Alurnya: validasi ukuran/tipe di
+   *  sisi klien dulu (respons cepat, tanpa nunggu roundtrip server), upload ke Drive lewat
+   *  uploadChatAttachment, lalu kirim pesan (dengan teks yang sedang diketik, kalau ada)
+   *  disertai info lampiran lewat sendChatMessage/sendInboxMessage. */
+  function handleChatAttachSelected_(inputEl, isInbox){
+    var file = inputEl.files && inputEl.files[0];
+    if(!file) return;
+    var allowed = ['image/png','image/jpeg','image/jpg','image/webp','application/pdf'];
+    if(allowed.indexOf(file.type) === -1){
+      showToast('Tipe file tidak didukung. Hanya gambar (PNG/JPG/WEBP) atau PDF.', 'error');
+      inputEl.value = '';
+      return;
+    }
+    if(file.size > 10 * 1024 * 1024){
+      showToast('Ukuran file maksimal 10MB.', 'error');
+      inputEl.value = '';
+      return;
+    }
+    var roomId = isInbox ? CHAT_STATE_.inboxActiveRoomId : CHAT_STATE_.myRoomId;
+    if(!roomId){ inputEl.value = ''; return; }
+
+    var sendBtnId = isInbox ? 'chatInboxSendBtn' : 'chatSendBtn';
+    var sendBtn = document.getElementById(sendBtnId);
+    if(sendBtn) sendBtn.disabled = true;
+    showToast('Mengunggah lampiran...', 'info');
+
+    fileToBase64_(file, function(fileObj){
+      google.script.run.withSuccessHandler(function(attachment){
+        inputEl.value = '';
+        if(isInbox){ sendInboxMessage_(attachment); } else { sendMyChatMessage_(attachment); }
+      }).withFailureHandler(function(e){
+        if(sendBtn) sendBtn.disabled = false;
+        inputEl.value = '';
+        handleBackendError(e);
+      }).uploadChatAttachment(STATE.token, roomId, fileObj);
+    });
   }
   function autoGrowChatInput_(el){
     el.style.height = 'auto';
     el.style.height = Math.min(el.scrollHeight, 90) + 'px';
   }
 
+  /** Render satu bubble chat ke dalam container.
+   *  PENTING (fix bug "pesan terkirim 2x di layar Agent tapi cuma 1x di Admin"):
+   *  Saat Agent kirim pesan, ada DUA jalur yang bisa menambahkan bubble yang SAMA ke DOM:
+   *   1) appendChatBubble_ langsung dipanggil dari success handler sendChatMessage
+   *      (supaya pesan langsung muncul tanpa nunggu polling — "optimistic UI").
+   *   2) Polling loadMyChatMessages_ yang jalan tiap 5 detik, yang bisa saja menangkap
+   *      pesan yang sama itu lagi dari server kalau timing poll pas kebetulan terjadi
+   *      tepat setelah pesan tersimpan tapi request pertama belum sempat selesai di browser.
+   *  Sebelumnya tidak ada pengecekan apapun, jadi messageId yang sama bisa dirender
+   *  dua kali di layar Agent. Sisi Admin tidak kena karena Admin cuma dapat pesan lewat
+   *  SATU jalur (polling saja, tidak ada optimistic-append untuk pesan masuk).
+   *  Fix: setiap bubble diberi atribut data-message-id, dan sebelum menambahkan bubble baru
+   *  kita cek dulu apakah messageId itu sudah pernah dirender di container yang sama. */
   function appendChatBubble_(container, m, isMine){
+    if(m.messageId && container.querySelector('[data-message-id="' + m.messageId + '"]')) return;
+
     var row = document.createElement('div');
+    if(m.messageId) row.setAttribute('data-message-id', m.messageId);
+
     if(m.senderRole === 'SYSTEM' || m.messageType === 'SYSTEM'){
       row.className = 'chat-msg-row system';
       row.innerHTML = '<div class="chat-bubble">' + escapeHtml(m.messageText) + '</div>';
@@ -9214,9 +9333,27 @@
     row.className = 'chat-msg-row ' + (isMine ? 'mine' : 'theirs');
     var senderLabel = isMine ? '' : '<div class="chat-msg-sender">' + escapeHtml(m.senderName) + ' &middot; ' + roleLabel_(m.senderRole) + '</div>';
     row.innerHTML = senderLabel +
-      '<div class="chat-bubble">' + escapeHtml(m.messageText) + '</div>' +
+      '<div class="chat-bubble">' + renderChatBubbleContent_(m) + '</div>' +
       '<div class="chat-msg-time">' + formatChatTime_(m.createdAt) + '</div>';
     container.appendChild(row);
+  }
+
+  /** Render isi bubble: teks biasa, atau lampiran gambar/PDF (lihat fitur kirim file). */
+  function renderChatBubbleContent_(m){
+    var html = '';
+    if(m.attachmentUrl){
+      if(m.attachmentType === 'image'){
+        html += '<a href="' + escapeHtml(m.attachmentUrl) + '" target="_blank" rel="noopener" class="chat-attachment-image-link">' +
+          '<img src="' + escapeHtml(m.attachmentUrl) + '" class="chat-attachment-image" alt="' + escapeHtml(m.attachmentName || 'Gambar') + '"></a>';
+      } else {
+        html += '<a href="' + escapeHtml(m.attachmentUrl) + '" target="_blank" rel="noopener" class="chat-attachment-file">' +
+          CHAT_ICONS_.filePdf +
+          '<span class="chat-attachment-file-name">' + escapeHtml(m.attachmentName || 'Dokumen.pdf') + '</span>' +
+        '</a>';
+      }
+    }
+    if(m.messageText){ html += (html ? '<div class="chat-attachment-caption">' : '') + escapeHtml(m.messageText) + (html ? '</div>' : ''); }
+    return html;
   }
 
   function roleLabel_(role){
@@ -9335,6 +9472,8 @@
       '</div>' +
       '<div class="chat-inbox-messages" id="chatInboxMessagesEl"><div class="spinner"></div></div>' +
       '<div class="chat-inbox-input-bar" id="chatInboxInputBarEl">' +
+        '<input type="file" id="chatInboxAttachInput" accept="image/png,image/jpeg,image/webp,application/pdf" style="display:none" onchange="handleChatAttachSelected_(this,true)">' +
+        '<button type="button" class="chat-attach-btn" onclick="document.getElementById(\'chatInboxAttachInput\').click()" aria-label="Lampirkan gambar/PDF" title="Lampirkan gambar atau PDF">' + CHAT_ICONS_.attach + '</button>' +
         '<textarea id="chatInboxInputEl" rows="1" placeholder="Balas sebagai ' + roleLabel_(STATE.user.role) + '..." onkeydown="handleInboxInputKeydown_(event)" oninput="autoGrowChatInput_(this)"></textarea>' +
         '<button type="button" class="chat-send-btn" id="chatInboxSendBtn" onclick="sendInboxMessage_()" aria-label="Kirim">' + CHAT_ICONS_.send + '</button>' +
       '</div>';
@@ -9365,11 +9504,12 @@
     }).withFailureHandler(function(e){ if(isFirstLoad) handleBackendError(e); }).getChatMessages(STATE.token, roomId, isFirstLoad ? null : CHAT_STATE_.inboxLastMessageId);
   }
 
-  function sendInboxMessage_(){
+  function sendInboxMessage_(attachment){
     var roomId = CHAT_STATE_.inboxActiveRoomId;
     var input = document.getElementById('chatInboxInputEl');
     var text = input.value.trim();
-    if(!text || !roomId) return;
+    if(!text && !attachment) return;
+    if(!roomId) return;
     input.value = ''; autoGrowChatInput_(input);
     var btn = document.getElementById('chatInboxSendBtn');
     btn.disabled = true;
@@ -9382,7 +9522,7 @@
       CHAT_STATE_.inboxLastMessageId = msg.messageId;
       el.scrollTop = el.scrollHeight;
       loadChatRoomList_();
-    }).withFailureHandler(function(e){ btn.disabled = false; input.value = text; handleBackendError(e); }).sendChatMessage(STATE.token, roomId, text);
+    }).withFailureHandler(function(e){ btn.disabled = false; input.value = text; handleBackendError(e); }).sendChatMessage(STATE.token, roomId, text, attachment || null);
   }
 
   function handleInboxInputKeydown_(e){
