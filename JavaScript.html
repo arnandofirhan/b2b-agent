@@ -9927,19 +9927,34 @@
     container.appendChild(row);
   }
 
+  /** Dipanggil lewat onerror="" saat <img> lampiran gambar chat gagal dimuat (link Drive
+   *  kadang belum siap/minta konfirmasi scan sesaat setelah upload). Mengganti <img> yang
+   *  gagal dengan kartu "Buka Gambar" yang rapi — tetap bisa diklik utk buka link aslinya.
+   *  DIPISAH jadi fungsi sendiri (bukan inline string di dalam renderChatBubbleContent_)
+   *  supaya tidak rawan salah escape kutip/HTML seperti yang sempat terjadi sebelumnya. */
+  function handleChatImgError_(imgEl){
+    var link = imgEl.closest('.chat-attachment-image-link');
+    if(!link) return;
+    link.classList.add('chat-attachment-image-broken');
+    link.innerHTML = CHAT_ICONS_.filePdf + '<span class="chat-attachment-file-name">Buka Gambar</span>';
+    link.classList.remove('chat-attachment-image-link');
+    link.classList.add('chat-attachment-file');
+  }
+
   /** Render isi bubble: teks biasa, atau lampiran gambar/PDF (lihat fitur kirim file). */
   function renderChatBubbleContent_(m){
     var html = '';
     if(m.attachmentUrl){
       if(m.attachmentType === 'image'){
-        // FIX "gambar cuma tampil link, tidak preview": URL Drive uc?export=view kadang
+        // FIX "gambar cuma tampil link, tidak preview": URL Drive uc?export=view/thumbnail kadang
         // ditolak/lambat untuk hotlink <img> langsung (terutama sesaat setelah upload, atau
-        // kalau Drive minta konfirmasi/scan). onerror di bawah ini otomatis mengganti tampilan
-        // jadi kartu "Buka Gambar" (bukan link mentah tanpa styling) begitu <img> gagal dimuat,
-        // supaya tetap terlihat rapi & tetap bisa dibuka walau thumbnail-nya gagal.
+        // kalau Drive minta konfirmasi/scan). handleChatImgError_() (fungsi terpisah, BUKAN
+        // inline string rumit — versi sebelumnya sempat salah escape dan malah menampilkan kode
+        // JS mentah "'Buka Gambar')}(>" di layar) otomatis mengganti tampilan jadi kartu
+        // "Buka Gambar" begitu <img> gagal dimuat, supaya tetap rapi & tetap bisa dibuka walau
+        // thumbnail-nya gagal.
         html += '<a href="' + escapeHtml(m.attachmentUrl) + '" target="_blank" rel="noopener" class="chat-attachment-image-link">' +
-          '<img src="' + escapeHtml(m.attachmentUrl) + '" class="chat-attachment-image" alt="' + escapeHtml(m.attachmentName || 'Gambar') + '" loading="lazy" ' +
-          'onerror="this.closest(\'.chat-attachment-image-link\').classList.add(\'chat-attachment-image-broken\'); this.replaceWith(Object.assign(document.createElement(\'span\'), {className:\'chat-attachment-file\', innerHTML:\'' + CHAT_ICONS_.filePdf.replace(/'/g,"\\'") + '<span class=&quot;chat-attachment-file-name&quot;>Buka Gambar</span>\'}));"></a>';
+          '<img src="' + escapeHtml(m.attachmentUrl) + '" class="chat-attachment-image" alt="' + escapeHtml(m.attachmentName || 'Gambar') + '" loading="lazy" onerror="handleChatImgError_(this)"></a>';
       } else {
         html += '<a href="' + escapeHtml(m.attachmentUrl) + '" target="_blank" rel="noopener" class="chat-attachment-file">' +
           CHAT_ICONS_.filePdf +
