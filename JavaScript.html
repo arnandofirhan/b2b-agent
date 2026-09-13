@@ -183,7 +183,11 @@
     APP_HISTORY_READY_ = false; // supaya initAppHistory_ pasang baseline baru saat login berikutnya, bukan numpuk di history sesi lama
     PAGE_HTML_CACHE = {};
     sessionStorage_remove(PAGE_CACHE_STORAGE_KEY_); // jangan sampai user berikutnya di tab yg sama lihat cache HTML user lama
-    sessionStorage_remove('ag_dash_cart'); // sama — troli Dashboard Agent jangan sampai kebawa ke akun Agent lain di tab yg sama
+    // CATATAN: troli Dashboard (AGENT_DASH_CART_) SENGAJA TIDAK dihapus dari penyimpanan di
+    // sini — sudah disimpan per-akun (lihat agentDashCartKey_/localStorage), jadi aman tetap
+    // ada supaya Agent yang sama tidak kehilangan troli-nya kalau logout lalu login lagi.
+    // Yang direset di sini cuma variabel di MEMORY (biar tidak kepakai keliru sebelum akun
+    // berikutnya login & memulihkan troli miliknya sendiri lewat restoreAgentDashCart_()).
     AGENT_DASH_CART_ = {};
     DASH_DATA_CACHE_ = null;
     DETAIL_MODAL_CACHE_ = {};
@@ -620,6 +624,11 @@
   }
 
   function bootApp(){
+    // Pulihkan troli Dashboard milik akun ini (per-akun, lihat agentDashCartKey_) — harus
+    // di baris PALING AWAL bootApp(), begitu STATE.user sudah pasti terisi (baik dari login
+    // baru maupun dari sesi yang dipulihkan _agBootInit_), supaya paintAgentDashboard_ yang
+    // dipanggil showPage('dashboard') di bawah sudah baca troli yang benar dari awal.
+    AGENT_DASH_CART_ = restoreAgentDashCart_();
     // Pulihkan cache HTML menu dari sessionStorage SEBELUM showPage('dashboard')
     // dipanggil — ini yang membuat reload di desktop terasa instan seperti buka
     // ulang PWA di HP (lihat catatan panjang di deklarasi PAGE_HTML_CACHE di atas).
@@ -4361,6 +4370,52 @@
     if(NEWPO_RESUBMIT_ID_ || NEWPO_EDIT_APPROVED_ID_) return;
     AGENT_DASH_CART_ = Object.assign({}, NEWPO_CART_);
     persistAgentDashCart_();
+    // BUG LANJUTAN: sinkronisasi di atas sudah benar (data troli sudah ke-update), TAPI
+    // angka di badge FAB "Troli" milik Dashboard (elemen #agentCartFab, dirender oleh
+    // paintAgentDashboard_) sengaja TIDAK ikut re-render di sini — modal "Buat PO" sedang
+    // terbuka di ATAS Dashboard, jadi kita tidak mau menghapus/menggambar ulang seluruh
+    // Dashboard di baliknya (bisa bikin scroll/animasi banner dsb ikut reset lagi, sama
+    // seperti bug banner sebelumnya). Makanya badge kelihatan "nyangkut" di angka lama
+    // sampai Dashboard di-render ulang penuh (mis. lewat reload / pindah halaman lalu
+    // balik lagi) — padahal keranjangnya sendiri sebenarnya sudah benar dari awal.
+    // FIX: cukup update BADGE-nya saja secara langsung (tanpa sentuh elemen Dashboard
+    // lain), pakai fungsi ringan di bawah.
+    refreshAgentCartFab_();
+  }
+
+  // Update/buat/hapus tombol mengambang "Troli" (#agentCartFab) di Dashboard SENDIRIAN,
+  // tanpa render ulang seluruh Dashboard — supaya aman dipanggil kapan saja (termasuk saat
+  // modal lain sedang terbuka di atasnya) dan tidak mereset scroll/banner/dll di baliknya.
+  // Aman dipanggil walau Agent sedang TIDAK di halaman Dashboard sama sekali (mis. sedang
+  // di halaman Transaksi) — kalau elemennya tidak ada di DOM, fungsi ini diam saja (no-op).
+  function refreshAgentCartFab_(){
+    var cartCount = Object.keys(AGENT_DASH_CART_).reduce(function(sum,pid){ return sum + AGENT_DASH_CART_[pid]; }, 0);
+    var fab = document.getElementById('agentCartFab');
+    var mouLocked = !!(AGENT_DASH_CFG_CACHE_ && AGENT_DASH_CFG_CACHE_.mouStatus && AGENT_DASH_CFG_CACHE_.mouStatus !== 'SIGNED');
+    if(cartCount > 0 && !mouLocked){
+      if(!fab){
+        // FAB belum ada di DOM (sebelumnya troli kosong sehingga tidak dirender) — buat
+        // barunya sekarang lalu tempel ke #content, dengan markup yang PERSIS SAMA seperti
+        // yang dibuat paintAgentDashboard_ supaya style-nya konsisten. Guard lewat
+        // '.agent-dash' (elemen pembungkus utama Dashboard Agent): kalau tidak ada berarti
+        // Agent sedang tidak berada di halaman Dashboard sama sekali, jadi tidak perlu
+        // membuat FAB di halaman lain.
+        var content = document.getElementById('content');
+        if(content && content.querySelector('.agent-dash')){
+          var wrap = document.createElement('div');
+          wrap.innerHTML = '<button type="button" class="agent-cart-fab" id="agentCartFab" onclick="openAgentCart_()" title="Buka Troli">'
+            + ICONS.cart
+            + '<span class="agent-cart-fab-badge">'+(cartCount > 99 ? '99+' : cartCount)+'</span>'
+            + '</button>';
+          content.appendChild(wrap.firstChild);
+        }
+      } else {
+        var badge = fab.querySelector('.agent-cart-fab-badge');
+        if(badge) badge.textContent = (cartCount > 99 ? '99+' : cartCount);
+      }
+    } else if(fab){
+      fab.remove();
+    }
   }
 
   function addToNewPOCart_(productId){
@@ -7124,7 +7179,7 @@
     // tidak ada Bottom Nav di sana).
     var cartCount = Object.keys(AGENT_DASH_CART_).reduce(function(sum,pid){ return sum + AGENT_DASH_CART_[pid]; }, 0);
     if(cartCount > 0 && !mouLocked){
-      html += '<button type="button" class="agent-cart-fab" onclick="openAgentCart_()" title="Buka Troli">'
+      html += '<button type="button" class="agent-cart-fab" id="agentCartFab" onclick="openAgentCart_()" title="Buka Troli">'
         + ICONS.cart
         + '<span class="agent-cart-fab-badge">'+(cartCount > 99 ? '99+' : cartCount)+'</span>'
         + '</button>';
@@ -7396,20 +7451,34 @@
   // Sebelumnya variabel ini CUMA hidup di memory JS, jadi begitu Dashboard di-refresh (atau
   // app ditutup-buka lagi), isinya balik ke {} kosong — kelihatan seperti troli "hilang
   // sendiri" padahal barangnya belum sempat diproses jadi PO. Sekarang disimpan ke
-  // sessionStorage setiap berubah, dan dipulihkan lagi di awal boot (lihat _agBootInit_/
-  // bootApp), jadi bertahan selama sesi login yang sama persis seperti PAGE_HTML_CACHE.
-  var AGENT_DASH_CART_STORAGE_KEY_ = 'ag_dash_cart';
-  var AGENT_DASH_CART_ = restoreAgentDashCart_();
+  // localStorage setiap berubah (per-akun, lihat agentDashCartKey_ di bawah), dan dipulihkan
+  // lagi di awal boot (lihat _agBootInit_/bootApp), jadi bertahan LEWAT logout/tutup-buka
+  // browser sekalipun — bukan cuma selama 1 sesi tab seperti sessionStorage.
+  //
+  // BUG SEBELUMNYA (logout): pakai KUNCI TUNGGAL yang sama utk semua akun ('ag_dash_cart'),
+  // dan handleLogout() SENGAJA menghapus kunci itu tiap logout supaya troli 1 akun tidak
+  // "kebawa" kelihatan di akun lain kalau login gantian di tab yang sama. Efek sampingnya:
+  // troli jadi ikut hilang juga kalau Agent yang SAMA logout lalu login lagi — padahal
+  // harusnya cuma perlu dipisah PER AKUN, bukan dihapus total tiap logout.
+  // FIX: kunci penyimpanan sekarang disisipi userId (lihat agentDashCartKey_), jadi tiap
+  // akun otomatis punya "laci" troli sendiri-sendiri di localStorage yang sama — tidak
+  // saling timpa/bocor ke akun lain, TAPI juga tidak perlu dihapus paksa saat logout.
+  function agentDashCartKey_(){
+    var uid = (STATE.user && (STATE.user.userId || STATE.user.email || STATE.user.agentId)) || 'anon';
+    return 'ag_dash_cart_' + uid;
+  }
+
+  var AGENT_DASH_CART_ = {}; // dipulihkan per-akun setelah login (lihat restoreAgentDashCart_ di bootApp)
 
   function restoreAgentDashCart_(){
     try{
-      var raw = sessionStorage_get(AGENT_DASH_CART_STORAGE_KEY_);
+      var raw = localStorage.getItem(agentDashCartKey_());
       return raw ? (JSON.parse(raw) || {}) : {};
     }catch(e){ return {}; }
   }
 
   function persistAgentDashCart_(){
-    try{ sessionStorage_set(AGENT_DASH_CART_STORAGE_KEY_, JSON.stringify(AGENT_DASH_CART_)); }catch(e){}
+    try{ localStorage.setItem(agentDashCartKey_(), JSON.stringify(AGENT_DASH_CART_)); }catch(e){}
   }
 
   // BUG SEBELUMNYA: klik "+"/stepper di card manapun (termasuk di row "Sedang Banyak
