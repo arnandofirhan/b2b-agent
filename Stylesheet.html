@@ -3273,6 +3273,7 @@
   }
   .chat-room-detail-header{
     padding:14px 18px; border-bottom:1px solid var(--ag-gray-200); display:flex; align-items:center; gap:10px; flex-shrink:0;
+    touch-action:none; /* topbar detail chat — PATEN, tidak boleh ikut ke-drag sama sekali (lihat catatan di .chat-inbox-input-bar) */
   }
   .chat-room-detail-back{ display:none; background:none; border:none; cursor:pointer; color:var(--ag-gray-600); padding:4px; }
   @media (max-width:900px){ .chat-room-detail-back{ display:flex; } }
@@ -3311,12 +3312,27 @@
   .chat-inbox-input-bar{
     display:flex; align-items:flex-end; gap:10px; padding:14px 18px; border-top:1px solid var(--ag-gray-200); flex-shrink:0;
     position:relative;
+    touch-action:none; /* FIX BUG: tahan+geser jari di kolom ketik sempat ikut men-scroll seluruh
+      halaman (lihat catatan lengkap di textarea di bawah) — dikunci none di sini juga supaya
+      area di SEKITAR textarea (padding kiri-kanan-atas-bawah kolom ketik) ikut kena kunci yang
+      sama, bukan cuma textarea-nya sendiri. */
   }
   .chat-inbox-input-bar textarea{
     flex:1; resize:none; border:1px solid var(--ag-gray-200); border-radius:var(--radius-md);
     padding:10px 14px; font-size:13.5px; font-family:var(--font); max-height:100px; min-height:42px;
     background:var(--ag-gray-50); color:var(--ag-gray-900);
-    touch-action:manipulation; /* pastikan tap/caret/selection teks di kolom ketik tetap normal walau html.chat-page-lock aktif */
+    /* FIX BUG "TAHAN+GESER DI KOLOM TEKS IKUT NGE-SCROLL SELURUH HALAMAN": sebelumnya di sini
+       dipasang touch-action:manipulation supaya tap/kursor/seleksi teks tetap terasa normal —
+       TERNYATA "manipulation" itu MASIH mengizinkan gesture pan/geser (cuma mematikan double-tap
+       zoom). Begitu jari menekan-lalu-geser di textarea, Android menganggapnya gesture scroll;
+       karena textarea sendiri tidak punya isi yang bisa digeser, browser melimpahkannya ke
+       ancestor terdekat yang "bisa" digeser — yang ternyata jatuh ke WINDOW/dokumen itu sendiri
+       (persis bug yang dilaporkan: kolom ketik & topbar ikut ketarik). touch-action:none di sini
+       benar2 MEMATIKAN gesture pan di textarea — tap-untuk-fokus, ketik lewat keyboard, dan
+       long-press untuk pindah kursor/pilih teks TETAP jalan normal (itu bukan gesture "pan",
+       jadi tidak kena block), tapi drag-untuk-scroll-halaman sekarang benar2 tidak bisa lagi.
+       Ini pengaturan yang sama dipakai app chat besar (WhatsApp dst) untuk kolom ketik mereka. */
+    touch-action:none;
   }
   .chat-inbox-input-bar textarea:focus{ outline:none; border-color:var(--ag-green); background:var(--ag-surface); }
   .chat-inbox-input-bar textarea:disabled{ opacity:.6; cursor:not-allowed; }
