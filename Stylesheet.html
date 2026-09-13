@@ -2511,6 +2511,11 @@
   }
   .agent-dash{ display:flex; flex-direction:column; gap:20px; }
   .agent-dash-greeting{ font-size:16px; font-weight:600; color:var(--ag-gray-900); padding:4px 2px; }
+  /* Wrapper track+dots (lihat komentar di paintAgentDashboard_) — margin-top dikit di sini
+     yang bikin banner "turun sedikit" dari topbar (sebelumnya nempel dikit banget ke
+     topbar), sementara jarak ke section BERIKUTNYA (Shortcut Katalog/Troli/dst) tetap ikut
+     gap:20px milik .agent-dash seperti section lain, supaya konsisten. */
+  .agent-banner-block{ margin-top:6px; }
   /* Carousel banner gaya "peek" modern (mirip Shopee/Traveloka dsb): slide TIDAK selebar
      penuh (86%) & ada padding kiri-kanan di wrapper, jadi sepotong kecil banner
      sebelum/sesudahnya sengaja terlihat mengintip di tepi — bukan lagi nempel rata penuh
@@ -2532,6 +2537,14 @@
     transition:transform .25s cubic-bezier(.22,.61,.36,1), opacity .25s ease;
     transform:scale(.94); opacity:.75; will-change:transform,opacity; }
   .agent-banner-card.is-centered{ transform:scale(1); opacity:1; }
+  /* Dipasang SEMENTARA (lihat onAgentBannerScroll_) persis sesaat sebelum melakukan lompatan
+     instan loop tak-berujung (dari slide klon balik ke slide asli) — mematikan transition
+     scale/opacity di atas supaya lompatan itu benar2 tidak kelihatan sama sekali. Tanpa ini,
+     transition .25s tetap jalan animasi scale/opacity pas lompat, dan karena user baru saja
+     melihat animasi swipe-nya sendiri, hasilnya kelihatan seperti "kedip 2x" / transisi
+     ganda yang tidak mulus. Dilepas lagi 1 frame setelah lompatan supaya swipe manual
+     berikutnya tetap kena animasi seperti biasa. */
+  .agent-banner-card.no-anim{ transition:none !important; }
   /* Kalau banner Admin cuma 1 (tidak ada carousel/dot sama sekali), tampilkan penuh rata
      seperti biasa — efek "peek" & scale/opacity di atas cuma relevan kalau ada >1 banner
      untuk digeser. */
@@ -2554,7 +2567,7 @@
     display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden;
     text-shadow:0 1px 3px rgba(0,0,0,.3);
   }
-  .agent-banner-dots{ display:flex; align-items:center; justify-content:center; gap:6px; margin-top:8px; }
+  .agent-banner-dots{ display:flex; align-items:center; justify-content:center; gap:6px; margin-top:4px; }
   /* Indikator titik gaya "dynamic dots" (ala iOS/Instagram Stories) — lihat penjelasan
      lengkap di komentar onAgentBannerScroll_ (JavaScript.html). Titik aktif jadi pil
      lonjong, makin jauh dari titik aktif makin kecil/pudar, dan yang terlalu jauh
