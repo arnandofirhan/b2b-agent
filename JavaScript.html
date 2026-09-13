@@ -6954,6 +6954,11 @@
           + (b.subtitle ? '<div class="agent-banner-subtitle">'+escapeHtml(b.subtitle)+'</div>' : '')
           + '</div></div>';
       };
+      // Dibungkus 1 wrapper (.agent-banner-block) supaya track+dots dianggap SATU unit oleh
+      // flex gap ".agent-dash" (gap 20px ke section berikutnya) — sebelumnya dots ikut kena
+      // gap 20px PLUS margin-top-nya sendiri, jadi jaraknya ke banner kelihatan jauh banget.
+      // Jarak track->dots sekarang diatur sendiri di dalam wrapper (kecil, cuma beberapa px).
+      html += '<div class="agent-banner-block">';
       html += '<div class="agent-dash-banners'+(loopBanners?'':' single-banner')+'" id="agentBannerTrack" onscroll="onAgentBannerScroll_()">';
       slideList.forEach(function(b){ html += bannerCardHtml_(b); });
       html += '</div>';
@@ -6968,6 +6973,7 @@
         banners.forEach(function(b, i){ html += '<span class="agent-banner-dot'+(i===0?' is-active':'')+'" onclick="scrollAgentBannerTo_('+i+')"></span>'; });
         html += '</div>';
       }
+      html += '</div>';
     } else {
       html += '<div class="agent-dash-greeting">Selamat datang, <strong>'+escapeHtml(name)+'</strong></div>';
     }
@@ -7334,8 +7340,19 @@
     AGENT_BANNER_SETTLE_TIMER_ = setTimeout(function(){
       if(totalReal > 1 && (slot === 0 || slot === totalReal + 1)){
         var targetEl = track.children[slot === 0 ? totalReal : 1];
-        if(targetEl) targetEl.scrollIntoView({ behavior:'instant', inline:'center', block:'nearest' }); // lompat diam-diam, tanpa animasi
-        onAgentBannerScroll_(); // recalc .is-centered & dot supaya langsung sinkron pasca-lompat
+        if(targetEl){
+          // Matikan dulu transition scale/opacity semua slide SEBELUM lompat instan, biar
+          // lompatannya benar2 tidak kelihatan (lihat komentar .no-anim di Stylesheet.html) —
+          // ini yang membenahi transisi "kedip 2x" pas geser dari banner terakhir balik ke awal.
+          for(var j=0;j<slides.length;j++) slides[j].classList.add('no-anim');
+          targetEl.scrollIntoView({ behavior:'instant', inline:'center', block:'nearest' });
+          onAgentBannerScroll_(); // recalc .is-centered & dot supaya langsung sinkron pasca-lompat
+          requestAnimationFrame(function(){
+            requestAnimationFrame(function(){
+              for(var k=0;k<slides.length;k++) slides[k].classList.remove('no-anim');
+            });
+          });
+        }
       }
       if(AGENT_BANNER_RESUME_TIMER_) clearTimeout(AGENT_BANNER_RESUME_TIMER_);
       AGENT_BANNER_RESUME_TIMER_ = setTimeout(function(){
