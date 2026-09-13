@@ -153,6 +153,16 @@
      Dibantu juga oleh snapWindowScrollToZero_() di JavaScript.html yang memaksa window
      balik ke (0,0) kalau tetap ada browser yang ngeyel scroll dokumen. */
   html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none;}
+  /* FIX "TOPBAR & KOLOM KETIK LIVE CHAT MASIH BISA DITARIK NAIK-TURUN DENGAN JARI":
+     overflow:hidden di atas ternyata TIDAK cukup mencegah drag-scroll oleh SENTUHAN JARI di
+     Android/Chrome — itu cuma memblokir scroll terprogram/wheel, bukan touch gesture. Class
+     "chat-page-lock" ditempel ke <html> oleh showPage() (lihat JavaScript.html) HANYA selagi
+     halaman aktif adalah Live Chat, dan mematikan SEMUA gesture pan/scroll di level dokumen
+     lewat touch-action:none. Kalau tidak dikecualikan, ini juga akan mematikan scroll di
+     dalam area pesan chat itu sendiri — makanya .chat-inbox-messages & .chat-room-list diberi
+     touch-action:pan-y secara eksplisit di bawah supaya TETAP bisa digeser jari buat baca chat
+     lama, sementara topbar & kolom ketik (di luar kedua elemen itu) jadi benar2 PATEN. */
+  html.chat-page-lock, html.chat-page-lock body{ touch-action:none; overscroll-behavior:none; }
   body{
     font-family:var(--font);
     background:var(--ag-gray-50);
@@ -3222,6 +3232,7 @@
   .chat-room-list{
     border-right:1px solid var(--ag-gray-200); overflow-y:auto; display:flex; flex-direction:column;
     min-height:0; /* lihat catatan panjang "FIX KOLOM TEXT/TOPBAR HILANG" di atas .chat-inbox */
+    touch-action:pan-y; /* pengecualian dari html.chat-page-lock (lihat catatan di awal file) — daftar percakapan tetap bisa digeser jari */
   }
   .chat-room-list-header{
     padding:14px 16px; border-bottom:1px solid var(--ag-gray-200); font-size:14px; font-weight:700;
@@ -3284,6 +3295,7 @@
 
   .chat-inbox-messages{
     flex:1; min-height:0; overflow-y:auto; padding:18px; display:flex; flex-direction:column; gap:10px; background:var(--ag-gray-50);
+    touch-action:pan-y; /* pengecualian dari html.chat-page-lock — SATU-SATUNYA area yang boleh digeser jari */
     /* min-height:0 = SATU-SATUNYA elemen yang benar2 boleh/bisa discroll di dalam kartu chat
        ini (lihat catatan panjang di .chat-inbox). Header & .chat-inbox-input-bar di luar
        elemen ini flex-shrink:0 + tidak overflow, jadi PATEN, tidak pernah ikut tergeser. */
@@ -3304,6 +3316,7 @@
     flex:1; resize:none; border:1px solid var(--ag-gray-200); border-radius:var(--radius-md);
     padding:10px 14px; font-size:13.5px; font-family:var(--font); max-height:100px; min-height:42px;
     background:var(--ag-gray-50); color:var(--ag-gray-900);
+    touch-action:manipulation; /* pastikan tap/caret/selection teks di kolom ketik tetap normal walau html.chat-page-lock aktif */
   }
   .chat-inbox-input-bar textarea:focus{ outline:none; border-color:var(--ag-green); background:var(--ag-surface); }
   .chat-inbox-input-bar textarea:disabled{ opacity:.6; cursor:not-allowed; }
