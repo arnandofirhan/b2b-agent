@@ -1094,12 +1094,6 @@
     // pindah ke halaman lain — supaya perilaku scroll halaman lain sama sekali tidak berubah.
     var mainAreaEl = document.querySelector('.main-area');
     if(mainAreaEl) mainAreaEl.classList.toggle('chat-page-active', pageKey === 'livechat');
-    // Sembunyikan bottom-nav TOTAL selama halaman Live Chat aktif (lihat CSS
-    // #bottomNav.nav-hidden-for-chat) — bagian dari rewrite layout chat mobile, supaya
-    // .chat-inbox (position:fixed) bisa mengisi persis dari bawah topbar sampai dasar
-    // layar tanpa perlu menyisakan ruang utk nav.
-    var bottomNavEl = document.getElementById('bottomNav');
-    if(bottomNavEl) bottomNavEl.classList.toggle('nav-hidden-for-chat', pageKey === 'livechat');
     // Catat perpindahan ini ke riwayat browser (lihat initAppHistory_ di bawah) supaya
     // gesture/tombol back bawaan HP tahu ada "halaman sebelumnya" di DALAM app, dan balik
     // ke situ dulu — bukan langsung keluar app (yang bikin sessionStorage token hilang dan
@@ -9870,6 +9864,15 @@
     // TEPAT sebelum memanggil ini, jadi guard tidak mengganggu pemakaian normal).
     if(STATE.currentPage !== 'livechat') return;
     var content = document.getElementById('content');
+    // FIX BUG "TOMBOL BACK/APAPUN DI LIVE CHAT KADANG TIDAK RESPON": showPage() memasang
+    // class 'content-loading-lock' (pointer-events:none sementara, lihat CSS) SEBELUM
+    // memanggil render halaman manapun, lalu MELEPASNYA lewat paintPage_() setelah selesai.
+    // Tapi fungsi ini TIDAK PERNAH memanggil paintPage_() (ia menulis ke #content langsung),
+    // jadi lock itu nyangkut aktif sampai safety-timer 4 DETIK kemudian baru otomatis lepas
+    // — kalau user keburu tap back/tombol apapun dalam 4 detik itu, tap-nya tidak kena apa-apa.
+    // Lepas manual di sini, sama seperti yang seharusnya dilakukan paintPage_().
+    content.classList.remove('content-loading-lock');
+    clearTimeout(CONTENT_LOCK_SAFETY_TIMER_);
     // FIX BUG "BALIK KE MENU LIVE CHAT SELALU LOADING ULANG": sebelumnya daftar
     // percakapan & isi chat SELALU dibangun dari nol (spinner) setiap renderLiveChatInbox()
     // dipanggil — padahal CHAT_STATE_.inboxRooms/inboxMessagesCache (dan roomId yang lagi
@@ -9998,7 +10001,7 @@
         '<button type="button" class="chat-room-detail-back" onclick="closeInboxRoom_()" aria-label="Kembali">' + CHAT_ICONS_.back + '</button>' +
         '<div class="chat-room-detail-title-wrap">' +
           '<div class="chat-room-detail-title">' +
-            escapeHtml(room.agentName || room.agentId || '-') +
+            '<span class="chat-room-detail-name">' + escapeHtml(room.agentName || room.agentId || '-') + '</span>' +
             '<span class="chat-status-badge ' + (isClosed ? 'closed' : 'open') + '">' + (isClosed ? 'Selesai' : 'Aktif') + '</span>' +
           '</div>' +
           '<div class="chat-room-detail-sub">ID Agent: ' + escapeHtml(room.agentId || '-') + '</div>' +
