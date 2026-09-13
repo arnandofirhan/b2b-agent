@@ -7356,7 +7356,16 @@
   // kanan pas nge-klik "+"-nya. Makanya user harus geser ulang tiap habis nambah qty.
   // FIX: simpan dulu posisi geser row² horizontal yg ada SEBELUM re-render, lalu kembalikan
   // lagi persis di posisi yang sama setelah render selesai (tanpa animasi, instan).
+  // BUG SEBELUMNYA (lanjutan): setelah geser horizontal row diperbaiki (tidak reset ke kiri
+  // lagi), ternyata SCROLL VERTIKAL halaman (posisi scroll ke bawah di .main-area) masih
+  // ikut ke-reset balik ke paling atas tiap klik "+" — sebabnya sama persis: paintAgentDashboard_()
+  // mengganti content.innerHTML total, dan browser me-reset scrollTop container yang isinya
+  // baru saja "dituang ulang". Fix-nya sama seperti row horizontal: simpan dulu scrollTop
+  // .main-area SEBELUM re-render, kembalikan lagi setelahnya.
   function changeAgentDashCartQty_(productId, delta){
+    var mainArea = document.querySelector('.main-area');
+    var savedMainScrollTop = mainArea ? mainArea.scrollTop : null;
+
     var scrollRowIds = ['agentTrendRow','agentCategoryRow'];
     var savedScroll = {};
     scrollRowIds.forEach(function(id){
@@ -7370,6 +7379,7 @@
     persistAgentDashCart_();
     if(AGENT_DASH_CFG_CACHE_) paintAgentDashboard_(AGENT_DASH_CFG_CACHE_);
 
+    if(mainArea && savedMainScrollTop !== null) mainArea.scrollTop = savedMainScrollTop;
     scrollRowIds.forEach(function(id){
       if(savedScroll[id] === undefined) return;
       requestAnimationFrame(function(){
@@ -7379,6 +7389,11 @@
         if(id === 'agentCategoryRow') onAgentCategoryRowScroll_();
       });
     });
+    // Jaga-jaga: beberapa browser/WebView baru benar2 "settle" reflow-nya 1 frame setelahnya,
+    // jadi assignment scrollTop pertama di atas kadang belum kepakai — set sekali lagi via rAF.
+    if(mainArea && savedMainScrollTop !== null){
+      requestAnimationFrame(function(){ mainArea.scrollTop = savedMainScrollTop; });
+    }
   }
 
   // Klik "Troli": isi NEWPO_CART_ dari AGENT_DASH_CART_, lalu buka modal "Buat PO" yang sudah
