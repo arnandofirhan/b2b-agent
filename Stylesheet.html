@@ -2784,9 +2784,13 @@
      tidak pernah menghapus data.
      ===================================================================== */
 
-  /* ---------- 1. FLOATING CHAT (AGENT) ---------- */
+  /* ---------- 1. FLOATING CHAT (AGENT) ----------
+     Ditaruh di kiri-bawah (bukan kanan) supaya TIDAK numpuk dengan FAB Troli
+     (.agent-cart-fab) yang sudah menempati kanan-bawah. Dua FAB di sudut yang sama
+     dulu saling menutupi/menumpuk di layar sempit — sekarang masing-masing punya sudut
+     sendiri, jadi kelihatan jelas dan tetap mudah dijangkau ibu jari (thumb-zone). */
   .chat-fab{
-    position:fixed; right:20px; bottom:88px; z-index:900;
+    position:fixed; left:16px; bottom:88px; z-index:900;
     width:56px; height:56px; border-radius:50%;
     background:var(--ag-green); color:#fff; border:none;
     display:flex; align-items:center; justify-content:center;
@@ -2802,12 +2806,18 @@
     display:flex; align-items:center; justify-content:center; border:2px solid var(--ag-white);
   }
   @media (max-width:768px){
-    .chat-fab{ right:16px; bottom:78px; width:52px; height:52px; }
+    /* Sama seperti FAB Troli: dinaikkan supaya tidak ketutup/kejepit Bottom Nav
+       mengambang (tinggi nav 66px + jarak mengambang 12px + sedikit jarak aman). */
+    .chat-fab{ left:14px; bottom:calc(66px + 12px + 14px + env(safe-area-inset-bottom, 0px)); width:52px; height:52px; }
   }
 
   .chat-panel-overlay{
     position:fixed; inset:0; background:var(--ag-overlay); z-index:950;
-    display:none; align-items:flex-end; justify-content:flex-end; padding:0;
+    display:none; align-items:flex-end; justify-content:flex-end;
+    /* Jarak aman merata di semua sisi (termasuk kanan) supaya panel tidak mepet
+       ke tepi layar HP — sebelumnya padding:0 di mobile membuat sisi kanan mepet
+       sementara sisi kiri tampak berjarak (karena panel punya max-width sendiri). */
+    padding:10px;
   }
   .chat-panel-overlay.active{ display:flex; }
   @media (min-width:769px){
@@ -2816,13 +2826,10 @@
 
   .chat-panel{
     width:100%; max-width:380px; height:min(620px,92vh);
-    background:var(--ag-surface); border-radius:var(--radius-lg) var(--radius-lg) 0 0;
+    background:var(--ag-surface); border-radius:var(--radius-lg);
     display:flex; flex-direction:column; overflow:hidden;
     box-shadow:var(--shadow-md);
     animation:chatSlideUp .22s ease-out;
-  }
-  @media (min-width:769px){
-    .chat-panel{ border-radius:var(--radius-lg); }
   }
   @keyframes chatSlideUp{
     from{ transform:translateY(24px); opacity:0; }
@@ -2905,6 +2912,36 @@
   .chat-send-btn:active{ transform:scale(.92); }
   .chat-send-btn:disabled{ opacity:.4; cursor:not-allowed; }
   .chat-send-btn svg{ width:17px; height:17px; }
+
+  /* Tombol lampiran (kirim gambar/PDF) di sebelah kiri kolom teks, gaya "ghost" supaya
+     tidak bersaing secara visual dengan tombol kirim (hijau, solid) di kanan. */
+  .chat-attach-btn{
+    width:38px; height:38px; border-radius:50%; background:transparent; border:none;
+    color:var(--ag-gray-400); display:flex; align-items:center; justify-content:center;
+    cursor:pointer; flex-shrink:0; transition:background .15s ease, color .15s ease;
+  }
+  .chat-attach-btn:hover{ background:var(--ag-gray-100); color:var(--ag-green); }
+  .chat-attach-btn:active{ transform:scale(.92); }
+  .chat-attach-btn svg{ width:19px; height:19px; }
+
+  /* Lampiran gambar di dalam bubble */
+  .chat-attachment-image-link{ display:block; }
+  .chat-attachment-image{
+    display:block; max-width:100%; width:220px; max-height:220px; object-fit:cover;
+    border-radius:10px; margin-bottom:2px;
+  }
+  /* Lampiran file (PDF) di dalam bubble, gaya "chip" dengan ikon dokumen */
+  .chat-attachment-file{
+    display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:10px;
+    background:rgba(0,0,0,.06); text-decoration:none; color:inherit; max-width:220px;
+  }
+  .chat-msg-row.mine .chat-attachment-file{ background:rgba(255,255,255,.18); }
+  .chat-attachment-file svg{ flex-shrink:0; opacity:.85; }
+  .chat-attachment-file-name{
+    font-size:12.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .chat-attachment-caption{ margin-top:6px; }
 
   .chat-closed-banner{
     padding:10px 14px; background:var(--ag-orange-soft); color:#8A5A22; font-size:12px;
