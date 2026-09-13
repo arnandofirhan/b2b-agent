@@ -1217,7 +1217,22 @@
     root.innerHTML = '';
     CURRENT_DETAIL_MODAL_KEY_ = null;
     ORDER_DOC_ACTIVE_ORDERID_ = null;
+    MODAL_GENERATION_++; // lihat komentar di deklarasi MODAL_GENERATION_ di bawah
   }
+  // BUG: klik banner (atau tombol lain) yang membuka popup lewat data ASYNC (mis.
+  // newPOForm() — fetch listProducts/listPromos ke server dulu baru isi modal) bisa
+  // "muncul lagi sendiri" setelah user CLOSE popup-nya duluan SEBELUM request selesai.
+  // Sebabnya: begitu closeModal() menghapus root.innerHTML, elemen² modal (mis.
+  // #poProductGrid) ikut lenyap. Saat response server akhirnya datang, kode lama cuma
+  // ngecek "elemen grid-nya ada apa nggak" utk mutusin render ulang — karena elemen itu
+  // sudah hilang (modal ditutup), dikira "belum pernah dirender", jadi dipanggil ulang
+  // openModal() dari NOL → popup yang sudah ditutup itu KEBUKA LAGI sendiri.
+  // FIX: counter generasi modal ini di-+1 SETIAP closeModal() dipanggil. Kode yang
+  // membuka modal via callback async (newPOForm, dst) menyimpan nilai counter SAAT
+  // request dikirim, lalu SEBELUM benar-benar merender hasilnya, cek dulu apa counter-nya
+  // masih sama — kalau sudah berubah (artinya modal sempat ditutup di tengah jalan),
+  // batalkan render, jangan buka modal itu lagi.
+  var MODAL_GENERATION_ = 0;
 
   /** Open the modal immediately with a spinner while data is still being fetched from the
       server, so the popup never feels "stuck". Call this first, then call openViewModal /
@@ -4158,6 +4173,7 @@
     NEWPO_EDIT_APPROVED_ID_ = null;
     NEWPO_CATEGORY_FILTER_ = categoryFilter || null;
     NEWPO_PRESELECT_PRODUCT_ID_ = presetProductId || null;
+    var myModalGeneration = MODAL_GENERATION_; // lihat penjelasan lengkap di deklarasi MODAL_GENERATION_
 
     // Kalau bukan mode preserveCart (bukan lanjutan edit PO dsb), keranjang modal SELALU
     // dimulai dari isi AGENT_DASH_CART_ (barang yang sudah di-"+" Agent dari Dashboard),
@@ -4180,6 +4196,9 @@
     var got = {};
     function tryFinish(){
       if(got.products === undefined || got.promos === undefined) return;
+      // Modal ini sudah ditutup (atau ditutup-lalu-dibuka lagi jadi generasi baru) sebelum
+      // response server ini datang — JANGAN buka/render modal, biarkan tetap tertutup.
+      if(myModalGeneration !== MODAL_GENERATION_) return;
       NEWPO_PRODUCTS_CACHE_ = got.products;
       NEWPO_PROMOS_CACHE_ = got.promos;
       NEWPO_PRODUCTS_ = got.products;
