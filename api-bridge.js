@@ -62,9 +62,32 @@
   // (preloadAllPages_ / polling notifikasi). Tanpa ini, begitu user klik menu lain
   // sesaat setelah login, request klik itu ikut antre di BELAKANG belasan request
   // preload yang sudah lebih dulu masuk antrian — makanya menu yang diklik terasa lama
-  // padahal cuma nunggu giliran, bukan benar-benar lambat. JavaScript.html menandai
-  // panggilan sebagai "background" dengan set window.__BG_LOW_PRIORITY__ = true tepat
-  // sebelum memanggil google.script.run, lalu balikin ke false lagi setelahnya.
+  // padahal cuma nunggu giliran, bukan benar-benar lambat.
+  //
+  // DUA CARA MENANDAI SEBUAH PANGGILAN SEBAGAI BACKGROUND/LOW-PRIORITY:
+  //  1) window.__BG_LOW_PRIORITY__ = true; ...panggil google.script.run...; = false;
+  //     — cara lama, cocok utk panggilan SINKRON TUNGGAL (mis. loadNotifications_).
+  //  2) google.script.run.asBackground().withSuccessHandler(fn)...namaFungsi(...)
+  //     — cara BARU (lihat FIX BUG di bawah), WAJIB dipakai kalau renderer yang dipreload
+  //     melakukan google.script.run BERANTAI (callback sukses yang di dalamnya memanggil
+  //     google.script.run LAGI) — .asBackground() menempel tag "background" ke RUNNER itu
+  //     sendiri, jadi ikut terbawa oleh clone runner (.withSuccessHandler/.withFailureHandler
+  //     mengembalikan runner baru) TANPA peduli kapan call sesungguhnya baru benar2 terjadi.
+  //
+  // FIX BUG NYATA (device kadang lemot pas ada preload jalan di background, walau
+  // MAX_CONCURRENT_HI/LO sudah dipisah): cara #1 (boolean via window) HANYA aman kalau
+  // renderer yang dipreload melakukan PERSIS SATU google.script.run.xxx(...) yang terdaftar
+  // sinkron. Kenyataannya beberapa renderer (mis. renderPO untuk role AGENT) memanggil
+  // google.script.run PERTAMA secara sinkron (aman, masih ke-tag LO oleh preloadAllPages_),
+  // tapi lalu di DALAM withSuccessHandler-nya memanggil google.script.run KEDUA (getAgentDetail
+  // sukses -> baru lanjut listPO) — panggilan kedua ini baru terdaftar SETELAH request pertama
+  // pulang dari network, yaitu SETELAH window.__BG_LOW_PRIORITY__ sudah lama di-set balik ke
+  // false oleh pemanggil awal. Akibatnya request kedua ini salah ke-tag sebagai HI-priority,
+  // ikut menyita slot MAX_CONCURRENT_HI yang seharusnya khusus buat aksi user — user klik menu
+  // lain / submit form jadi ikut ketahan antre di belakang preload background tsb.
+  // preloadAllPages_() di JavaScript.html sekarang dipanggil lewat pola #2 di atas untuk
+  // renderer yang diketahui berantai, jadi tag LO-nya ikut terbawa sampai ke request paling
+  // dalam sekalipun, seberapa pun dalam rantai callback-nya.
   var queueHi_ = [];
   var queueLo_ = [];
 
@@ -81,8 +104,8 @@
     }
   }
 
-  function enqueue_(job) {
-    if (global.__BG_LOW_PRIORITY__) queueLo_.push(job); else queueHi_.push(job);
+  function enqueue_(job, isBackground) {
+    if (isBackground || global.__BG_LOW_PRIORITY__) queueLo_.push(job); else queueHi_.push(job);
     runNext_();
   }
 
@@ -94,7 +117,7 @@
     return url;
   }
 
-  function callServer(fnName, args, onSuccess, onFailure) {
+  function callServer(fnName, args, onSuccess, onFailure, isBackground) {
     var url = resolveExecUrl();
     if (!url) {
       if (onFailure) onFailure(new Error('URL backend (GAS_EXEC_URL) belum diset.'));
@@ -187,7 +210,7 @@
       }
 
       attempt(1);
-    });
+    }, isBackground);
   }
 
   // Proxy chainable yang meniru API asli google.script.run:
@@ -208,7 +231,11 @@
         if (typeof prop !== 'string') return undefined;
         return function () {
           var args = Array.prototype.slice.call(arguments);
-          callServer(prop, args, successHandler, failureHandler);
+          // Prioritas request DITENTUKAN DI SINI, saat request BENAR-BENAR dikirim (bukan
+          // saat google.script.run.xxx di-reference) — lihat window.__BG_LOW_PRIORITY__
+          // reentrant counter di JavaScript.html (preloadAllPages_) untuk kenapa ini penting
+          // buat renderer yang google.script.run-nya berantai/nested lewat callback async.
+          callServer(prop, args, successHandler, failureHandler, !!global.__BG_LOW_PRIORITY__);
         };
       }
     });
