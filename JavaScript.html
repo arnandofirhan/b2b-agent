@@ -1094,6 +1094,12 @@
     // pindah ke halaman lain — supaya perilaku scroll halaman lain sama sekali tidak berubah.
     var mainAreaEl = document.querySelector('.main-area');
     if(mainAreaEl) mainAreaEl.classList.toggle('chat-page-active', pageKey === 'livechat');
+    // Sembunyikan bottom-nav TOTAL selama halaman Live Chat aktif (lihat CSS
+    // #bottomNav.nav-hidden-for-chat) — bagian dari rewrite layout chat mobile, supaya
+    // .chat-inbox (position:fixed) bisa mengisi persis dari bawah topbar sampai dasar
+    // layar tanpa perlu menyisakan ruang utk nav.
+    var bottomNavEl = document.getElementById('bottomNav');
+    if(bottomNavEl) bottomNavEl.classList.toggle('nav-hidden-for-chat', pageKey === 'livechat');
     // Catat perpindahan ini ke riwayat browser (lihat initAppHistory_ di bawah) supaya
     // gesture/tombol back bawaan HP tahu ada "halaman sebelumnya" di DALAM app, dan balik
     // ke situ dulu — bukan langsung keluar app (yang bikin sessionStorage token hilang dan
@@ -7553,7 +7559,7 @@
       // Dibungkus requestAnimationFrame supaya layout track sudah pasti kebentuk dulu.
       requestAnimationFrame(function(){
         var track = document.getElementById('agentBannerTrack');
-        if(track && track.children[1]) track.children[1].scrollIntoView({ behavior:'instant', inline:'center', block:'nearest' });
+        if(track && track.children[1]) scrollTrackToChild_(track, track.children[1], false);
         onAgentBannerScroll_();
       });
       startAgentBannerAutoplay_(banners.length);
@@ -7615,6 +7621,19 @@
     return best;
   }
 
+  // FIX BUG "HALAMAN IKUT TERTARIK KE ATAS SAAT BANNER AUTO-SLIDE": scrollIntoView(),
+  // walau dikasih block:'nearest', browser (terutama Chrome/Safari mobile) tetap kadang
+  // ikut menggeser SCROLL VERTIKAL ancestor (halaman Dashboard) kalau dianggap elemen
+  // targetnya "belum genap kelihatan penuh" secara vertikal — inilah yang bikin halaman
+  // ke-tarik naik sendiri tiap banner geser. Ganti dengan scroll manual HORIZONTAL SAJA
+  // langsung ke elemen track-nya (bukan scrollIntoView bawaan browser), jadi dijamin
+  // tidak pernah menyentuh scroll halaman sama sekali.
+  function scrollTrackToChild_(track, el, smooth){
+    if(!track || !el) return;
+    var target = el.offsetLeft - (track.clientWidth - el.offsetWidth) / 2;
+    track.scrollTo({ left: target, behavior: smooth ? 'smooth' : 'instant' });
+  }
+
   var AGENT_BANNER_AUTOPLAY_TIMER_ = null;
   var AGENT_BANNER_RESUME_TIMER_ = null;
   var AGENT_BANNER_SETTLE_TIMER_ = null;
@@ -7625,7 +7644,7 @@
       if(!track || !track.clientWidth) return;
       var slot = agentBannerCenterSlot_(track);
       var nextEl = track.children[slot + 1];
-      if(nextEl) nextEl.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
+      scrollTrackToChild_(track, nextEl, true);
     }, 4500);
   }
   function stopAgentBannerAutoplay_(){
@@ -7736,7 +7755,7 @@
   function scrollAgentBannerTo_(i){
     var track = document.getElementById('agentBannerTrack');
     var el = track && track.children[i + 1];
-    if(el) el.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
+    if(el) scrollTrackToChild_(track, el, true);
   }
 
   // Dipanggil tiap track discroll (swipe manual ATAU hasil scrollAgentBannerTo_/autoplay)
@@ -7787,7 +7806,7 @@
           // lompatannya benar2 tidak kelihatan (lihat komentar .no-anim di Stylesheet.html) —
           // ini yang membenahi transisi "kedip 2x" pas geser dari banner terakhir balik ke awal.
           for(var j=0;j<slides.length;j++) slides[j].classList.add('no-anim');
-          targetEl.scrollIntoView({ behavior:'instant', inline:'center', block:'nearest' });
+          scrollTrackToChild_(track, targetEl, false);
           onAgentBannerScroll_(); // recalc .is-centered & dot supaya langsung sinkron pasca-lompat
           requestAnimationFrame(function(){
             requestAnimationFrame(function(){
@@ -7886,7 +7905,7 @@
       requestAnimationFrame(function(){
         var track = document.getElementById('agentBannerTrack');
         var target = track && track.children[savedBannerSlot];
-        if(target) target.scrollIntoView({ behavior:'instant', inline:'center', block:'nearest' });
+        if(target) scrollTrackToChild_(track, target, false);
         onAgentBannerScroll_();
       });
     }
@@ -9404,7 +9423,8 @@
     pollInterval: null, unreadPollInterval: null, readStatusPollInterval: null,
     availabilityOnline: true, myLastSeenByStaff: false,
     inboxRooms: [], inboxFilter: 'OPEN', inboxActiveRoomId: null, inboxActiveRoomStatus: 'OPEN',
-    inboxLastMessageId: null, quickReplies: null, quickReplyPopoverOpen: false
+    inboxLastMessageId: null, quickReplies: null, quickReplyPopoverOpen: false,
+    inboxMessagesCache: {} // roomId -> array pesan terakhir yg pernah dimuat, utk instant-paint saat balik ke halaman ini
   };
 
   var CHAT_ICONS_ = {
@@ -9850,6 +9870,15 @@
     // TEPAT sebelum memanggil ini, jadi guard tidak mengganggu pemakaian normal).
     if(STATE.currentPage !== 'livechat') return;
     var content = document.getElementById('content');
+    // FIX BUG "BALIK KE MENU LIVE CHAT SELALU LOADING ULANG": sebelumnya daftar
+    // percakapan & isi chat SELALU dibangun dari nol (spinner) setiap renderLiveChatInbox()
+    // dipanggil — padahal CHAT_STATE_.inboxRooms/inboxMessagesCache (dan roomId yang lagi
+    // dibuka) tetap hidup di memory selama app belum di-reload, TIDAK PERNAH direset saat
+    // pindah menu. Sekarang: kalau sudah pernah ada data tersimpan, langsung dilukis instan
+    // (tanpa spinner) dari cache itu dulu, baru menyusul di-refresh diam-diam di background
+    // lewat loadChatRoomList_()/loadInboxMessages_() di bawah — user langsung lihat data
+    // lama sambil menunggu data terbaru datang, bukan layar kosong ber-spinner lagi.
+    var hasCachedRooms = CHAT_STATE_.inboxRooms && CHAT_STATE_.inboxRooms.length > 0;
     content.innerHTML =
       '<div class="chat-inbox" id="chatInboxEl">' +
         '<div class="chat-room-list" id="chatRoomListEl">' +
@@ -9860,14 +9889,20 @@
               '<button type="button" class="chat-room-filter-tab" data-filter="ALL" onclick="setChatRoomFilter_(\'ALL\')">Semua</button>' +
             '</div>' +
           '</div>' +
-          '<div id="chatRoomListItems"><div class="spinner"></div></div>' +
+          '<div id="chatRoomListItems">' + (hasCachedRooms ? '' : '<div class="spinner"></div>') + '</div>' +
         '</div>' +
         '<div class="chat-room-detail" id="chatRoomDetailEl">' +
           '<div class="chat-inbox-empty">' + CHAT_ICONS_.chatEmpty + '<span>Pilih percakapan untuk mulai membalas.</span></div>' +
         '</div>' +
       '</div>';
     CHAT_STATE_.inboxFilter = 'OPEN';
-    loadChatRoomList_();
+    if(hasCachedRooms) renderChatRoomListItems_(); // instant paint dari cache
+    // Kalau sebelumnya ada room yang sedang dibuka (user cuma pindah menu, belum benar-benar
+    // "keluar" dari percakapan itu), buka lagi persis room yang sama — instan dari cache
+    // pesan kalau ada, sekaligus me-refresh keduanya di background lewat openInboxRoom_.
+    var roomToReopen = CHAT_STATE_.inboxActiveRoomId;
+    CHAT_STATE_.inboxActiveRoomId = null; // biar openInboxRoom_ di bawah tidak dianggap "room yang sama, skip"
+    if(roomToReopen){ openInboxRoom_(roomToReopen); } else { loadChatRoomList_(); }
     if(CHAT_STATE_.pollInterval) clearInterval(CHAT_STATE_.pollInterval);
     CHAT_STATE_.pollInterval = setInterval(function(){
       loadChatRoomList_();
@@ -9925,6 +9960,12 @@
   }
 
   function openInboxRoom_(roomId){
+    if(CHAT_STATE_.inboxActiveRoomId === roomId){
+      // Sudah kebuka persis room ini (mis. dari renderLiveChatInbox() yang reopen otomatis
+      // lalu user klik ulang room yg sama di list) — tidak perlu bangun ulang shell-nya.
+      document.getElementById('chatInboxEl').classList.add('room-open');
+      return;
+    }
     CHAT_STATE_.inboxActiveRoomId = roomId;
     CHAT_STATE_.inboxLastMessageId = null;
     CHAT_STATE_.quickReplyPopoverOpen = false; // reset supaya popover tidak nyangkut terbuka dari room sebelumnya
@@ -9932,14 +9973,22 @@
 
     var room = CHAT_STATE_.inboxRooms.filter(function(r){ return r.roomId === roomId; })[0] || {};
     CHAT_STATE_.inboxActiveRoomStatus = room.status || 'OPEN';
-    renderInboxRoomDetailShell_(room);
+    // FIX CACHE LIVE CHAT: kalau room ini sudah pernah dimuat sebelumnya di sesi ini
+    // (CHAT_STATE_.inboxMessagesCache), lukis dulu bubble-bubble lama itu INSTAN tanpa
+    // spinner, sambil loadInboxMessages_(true) di bawah tetap jalan diam-diam utk
+    // menyegarkan/melengkapinya dari server.
+    renderInboxRoomDetailShell_(room, CHAT_STATE_.inboxMessagesCache[roomId]);
     loadInboxMessages_(true);
     loadChatRoomList_(); // refresh supaya badge unread & highlight active ter-update
   }
 
-  function renderInboxRoomDetailShell_(room){
+  function renderInboxRoomDetailShell_(room, cachedMessages){
     var detailEl = document.getElementById('chatRoomDetailEl');
     var isClosed = room.status === 'CLOSED';
+    var messagesInnerHtml = '<div class="spinner"></div>';
+    if(cachedMessages && cachedMessages.length){
+      messagesInnerHtml = ''; // diisi lewat appendChatBubble_ setelah elemen ada di DOM, lihat di bawah
+    }
     detailEl.innerHTML =
       '<div class="chat-room-detail-header">' +
         '<button type="button" class="chat-room-detail-back" onclick="closeInboxRoom_()" aria-label="Kembali">' + CHAT_ICONS_.back + '</button>' +
@@ -9954,7 +10003,7 @@
           ? '<button type="button" class="chat-end-btn is-reopen" onclick="reopenInboxRoom_(\'' + room.roomId + '\')">' + CHAT_ICONS_.rotate + 'Buka Lagi</button>'
           : '<button type="button" class="chat-end-btn" onclick="confirmEndChat_(\'' + room.roomId + '\')">' + CHAT_ICONS_.checkCircle + 'Selesaikan</button>') +
       '</div>' +
-      '<div class="chat-inbox-messages" id="chatInboxMessagesEl"><div class="spinner"></div></div>' +
+      '<div class="chat-inbox-messages" id="chatInboxMessagesEl">' + messagesInnerHtml + '</div>' +
       '<div class="chat-inbox-input-bar" id="chatInboxInputBarEl">' +
         '<div class="chat-quickreply-popover" id="chatQuickReplyPopover"></div>' +
         '<input type="file" id="chatInboxAttachInput" accept="image/png,image/jpeg,image/webp,application/pdf" style="display:none" onchange="handleChatAttachSelected_(this,true)">' +
@@ -9963,6 +10012,13 @@
         '<textarea id="chatInboxInputEl" rows="1" placeholder="Balas sebagai ' + roleLabel_(STATE.user.role) + '..." onkeydown="handleInboxInputKeydown_(event)" oninput="autoGrowChatInput_(this)"></textarea>' +
         '<button type="button" class="chat-send-btn" id="chatInboxSendBtn" onclick="sendInboxMessage_()" aria-label="Kirim">' + CHAT_ICONS_.send + '</button>' +
       '</div>';
+    if(cachedMessages && cachedMessages.length){
+      var el = document.getElementById('chatInboxMessagesEl');
+      cachedMessages.forEach(function(m){
+        appendChatBubble_(el, m, m.senderRole !== 'AGENT' && m.senderRole !== 'SYSTEM');
+      });
+      el.scrollTop = el.scrollHeight;
+    }
   }
 
   /** Buka/tutup popover daftar Quick Reply di atas kolom ketik staff. Isi diambil dari
@@ -10010,6 +10066,7 @@
       if(isFirstLoad) { el.innerHTML = ''; el.removeAttribute('data-last-date-key'); }
       if(isFirstLoad && messages.length === 0){
         el.innerHTML = '<div class="chat-inbox-empty">' + CHAT_ICONS_.chatEmpty + '<span>Belum ada pesan di percakapan ini.</span></div>';
+        CHAT_STATE_.inboxMessagesCache[roomId] = [];
       } else {
         var wasNearBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) < 60;
         messages.forEach(function(m){
@@ -10017,6 +10074,11 @@
           CHAT_STATE_.inboxLastMessageId = m.messageId;
         });
         if(isFirstLoad || wasNearBottom) el.scrollTop = el.scrollHeight;
+        // Simpan/lengkapi cache pesan room ini (lihat CHAT_STATE_.inboxMessagesCache) —
+        // dipakai renderInboxRoomDetailShell_ utk instant-paint kalau room ini dibuka lagi
+        // nanti tanpa perlu nunggu round-trip ke server dulu.
+        if(isFirstLoad) CHAT_STATE_.inboxMessagesCache[roomId] = messages.slice();
+        else CHAT_STATE_.inboxMessagesCache[roomId] = (CHAT_STATE_.inboxMessagesCache[roomId] || []).concat(messages);
       }
     }).withFailureHandler(function(e){ if(isFirstLoad) handleBackendError(e); }).getChatMessages(STATE.token, roomId, isFirstLoad ? null : CHAT_STATE_.inboxLastMessageId);
   }
@@ -10037,6 +10099,7 @@
       if(el.querySelector('.chat-inbox-empty')) el.innerHTML = '';
       appendChatBubble_(el, msg, true);
       CHAT_STATE_.inboxLastMessageId = msg.messageId;
+      CHAT_STATE_.inboxMessagesCache[roomId] = (CHAT_STATE_.inboxMessagesCache[roomId] || []).concat([msg]);
       el.scrollTop = el.scrollHeight;
       loadChatRoomList_();
     }).withFailureHandler(function(e){ btn.disabled = false; input.value = text; handleBackendError(e); }).sendChatMessage(STATE.token, roomId, text, attachment || null);
