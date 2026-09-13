@@ -9724,12 +9724,15 @@
     }
   }
 
-  function sendMyChatMessage_(attachment){
+  function sendMyChatMessage_(overrideText, attachment){
     var input = document.getElementById('chatInputEl');
-    var text = input.value.trim();
+    // overrideText dipakai saat dipanggil dari confirmSendChatAttachment_() (caption dari
+    // modal preview lampiran) — kalau tidak diisi (pengiriman teks biasa), baca dari kolom
+    // input seperti biasa.
+    var text = (typeof overrideText === 'string' && attachment !== undefined) ? overrideText.trim() : input.value.trim();
     if(!text && !attachment) return;
     if(!CHAT_STATE_.myRoomId) return;
-    input.value = ''; autoGrowChatInput_(input);
+    if(attachment === undefined) { input.value = ''; autoGrowChatInput_(input); }
     var btn = document.getElementById('chatSendBtn');
     btn.disabled = true;
 
@@ -9753,10 +9756,10 @@
   }
 
   /** Dipanggil saat user memilih file di tombol lampiran (baik dari widget Agent maupun
-   *  inbox staff — dibedakan lewat parameter isInbox). Alurnya: validasi ukuran/tipe di
-   *  sisi klien dulu (respons cepat, tanpa nunggu roundtrip server), upload ke Drive lewat
-   *  uploadChatAttachment, lalu kirim pesan (dengan teks yang sedang diketik, kalau ada)
-   *  disertai info lampiran lewat sendChatMessage/sendInboxMessage. */
+   *  inbox staff — dibedakan lewat parameter isInbox). BARU: alurnya sekarang tidak langsung
+   *  upload+kirim — file yang dipilih ditampilkan dulu di modal preview (ala WhatsApp), user
+   *  bisa menambahkan caption/teks, baru menekan "Kirim" untuk benar-benar upload ke Drive
+   *  (uploadChatAttachment) lalu mengirim pesannya (sendChatMessage/sendInboxMessage). */
   function handleChatAttachSelected_(inputEl, isInbox){
     var file = inputEl.files && inputEl.files[0];
     if(!file) return;
@@ -9773,19 +9776,81 @@
     }
     var roomId = isInbox ? CHAT_STATE_.inboxActiveRoomId : CHAT_STATE_.myRoomId;
     if(!roomId){ inputEl.value = ''; return; }
+    inputEl.value = ''; // reset input file supaya bisa pilih file sama lagi nanti
+    openChatAttachPreview_(file, isInbox);
+  }
 
-    var sendBtnId = isInbox ? 'chatInboxSendBtn' : 'chatSendBtn';
-    var sendBtn = document.getElementById(sendBtnId);
+  var CHAT_ATTACH_PREVIEW_STATE_ = null; // { file, isInbox, objectUrl }
+
+  /** Modal preview lampiran sebelum dikirim — mirip alur WhatsApp: tampilkan gambar/nama
+   *  file dulu, sediakan kolom caption, baru upload+kirim beneran saat tombol Kirim ditekan. */
+  function openChatAttachPreview_(file, isInbox){
+    closeChatAttachPreview_(); // jaga2 kalau ada sisa modal sebelumnya
+    var isImage = file.type.indexOf('image/') === 0;
+    var objectUrl = isImage ? URL.createObjectURL(file) : null;
+    CHAT_ATTACH_PREVIEW_STATE_ = { file: file, isInbox: isInbox, objectUrl: objectUrl };
+
+    var overlay = document.createElement('div');
+    overlay.id = 'chatAttachPreviewOverlay';
+    overlay.className = 'chat-attach-preview-overlay';
+    overlay.innerHTML =
+      '<div class="chat-attach-preview-modal">' +
+        '<div class="chat-attach-preview-header">' +
+          '<span>Kirim ' + (isImage ? 'Gambar' : 'File') + '</span>' +
+          '<button type="button" class="chat-panel-close" onclick="closeChatAttachPreview_()" aria-label="Batal">' + CHAT_ICONS_.close + '</button>' +
+        '</div>' +
+        '<div class="chat-attach-preview-body">' +
+          (isImage
+            ? '<img src="' + objectUrl + '" class="chat-attach-preview-img" alt="Preview gambar">'
+            : '<div class="chat-attachment-file chat-attach-preview-file">' + CHAT_ICONS_.filePdf +
+              '<span class="chat-attachment-file-name">' + escapeHtml(file.name || 'Dokumen.pdf') + '</span></div>'
+          ) +
+        '</div>' +
+        '<div class="chat-attach-preview-footer">' +
+          '<input type="text" id="chatAttachCaptionInput" placeholder="Tambahkan keterangan (opsional)..." maxlength="500">' +
+          '<button type="button" class="chat-send-btn" id="chatAttachPreviewSendBtn" onclick="confirmSendChatAttachment_()" aria-label="Kirim">' + CHAT_ICONS_.send + '</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(overlay);
+    setTimeout(function(){
+      overlay.classList.add('open');
+      var capEl = document.getElementById('chatAttachCaptionInput');
+      if(capEl) capEl.focus();
+    }, 10);
+  }
+
+  function closeChatAttachPreview_(){
+    var overlay = document.getElementById('chatAttachPreviewOverlay');
+    if(overlay) overlay.remove();
+    if(CHAT_ATTACH_PREVIEW_STATE_ && CHAT_ATTACH_PREVIEW_STATE_.objectUrl){
+      try{ URL.revokeObjectURL(CHAT_ATTACH_PREVIEW_STATE_.objectUrl); }catch(e){}
+    }
+    CHAT_ATTACH_PREVIEW_STATE_ = null;
+  }
+
+  /** Dipanggil saat user menekan tombol Kirim di modal preview lampiran — baru di titik INI
+   *  file benar2 di-upload ke Drive (uploadChatAttachment), lalu pesan dikirim beserta caption
+   *  yang sempat diketik (kalau ada). */
+  function confirmSendChatAttachment_(){
+    if(!CHAT_ATTACH_PREVIEW_STATE_) return;
+    var st = CHAT_ATTACH_PREVIEW_STATE_;
+    var isInbox = st.isInbox;
+    var file = st.file;
+    var capEl = document.getElementById('chatAttachCaptionInput');
+    var caption = capEl ? capEl.value.trim() : '';
+    var roomId = isInbox ? CHAT_STATE_.inboxActiveRoomId : CHAT_STATE_.myRoomId;
+    if(!roomId){ closeChatAttachPreview_(); return; }
+
+    var sendBtn = document.getElementById('chatAttachPreviewSendBtn');
     if(sendBtn) sendBtn.disabled = true;
-    showToast('Mengunggah lampiran...', 'info');
+    if(capEl) capEl.disabled = true;
 
     fileToBase64_(file, function(fileObj){
       google.script.run.withSuccessHandler(function(attachment){
-        inputEl.value = '';
-        if(isInbox){ sendInboxMessage_(attachment); } else { sendMyChatMessage_(attachment); }
+        closeChatAttachPreview_();
+        if(isInbox){ sendInboxMessage_(attachment, caption); } else { sendMyChatMessage_(caption, attachment); }
       }).withFailureHandler(function(e){
-        if(sendBtn) sendBtn.disabled = false;
-        inputEl.value = '';
+        closeChatAttachPreview_();
         handleBackendError(e);
       }).uploadChatAttachment(STATE.token, roomId, fileObj);
     });
@@ -9852,8 +9917,14 @@
     var html = '';
     if(m.attachmentUrl){
       if(m.attachmentType === 'image'){
+        // FIX "gambar cuma tampil link, tidak preview": URL Drive uc?export=view kadang
+        // ditolak/lambat untuk hotlink <img> langsung (terutama sesaat setelah upload, atau
+        // kalau Drive minta konfirmasi/scan). onerror di bawah ini otomatis mengganti tampilan
+        // jadi kartu "Buka Gambar" (bukan link mentah tanpa styling) begitu <img> gagal dimuat,
+        // supaya tetap terlihat rapi & tetap bisa dibuka walau thumbnail-nya gagal.
         html += '<a href="' + escapeHtml(m.attachmentUrl) + '" target="_blank" rel="noopener" class="chat-attachment-image-link">' +
-          '<img src="' + escapeHtml(m.attachmentUrl) + '" class="chat-attachment-image" alt="' + escapeHtml(m.attachmentName || 'Gambar') + '"></a>';
+          '<img src="' + escapeHtml(m.attachmentUrl) + '" class="chat-attachment-image" alt="' + escapeHtml(m.attachmentName || 'Gambar') + '" loading="lazy" ' +
+          'onerror="this.closest(\'.chat-attachment-image-link\').classList.add(\'chat-attachment-image-broken\'); this.replaceWith(Object.assign(document.createElement(\'span\'), {className:\'chat-attachment-file\', innerHTML:\'' + CHAT_ICONS_.filePdf.replace(/'/g,"\\'") + '<span class=&quot;chat-attachment-file-name&quot;>Buka Gambar</span>\'}));"></a>';
       } else {
         html += '<a href="' + escapeHtml(m.attachmentUrl) + '" target="_blank" rel="noopener" class="chat-attachment-file">' +
           CHAT_ICONS_.filePdf +
@@ -10159,13 +10230,15 @@
     }).withFailureHandler(function(e){ if(isFirstLoad) handleBackendError(e); }).getChatMessages(STATE.token, roomId, isFirstLoad ? null : CHAT_STATE_.inboxLastMessageId);
   }
 
-  function sendInboxMessage_(attachment){
+  function sendInboxMessage_(attachment, overrideText){
     var roomId = CHAT_STATE_.inboxActiveRoomId;
     var input = document.getElementById('chatInboxInputEl');
-    var text = input.value.trim();
+    // overrideText dipakai saat dipanggil dari confirmSendChatAttachment_() (caption dari
+    // modal preview lampiran) — kalau tidak diisi, baca dari kolom input seperti biasa.
+    var text = (typeof overrideText === 'string') ? overrideText.trim() : input.value.trim();
     if(!text && !attachment) return;
     if(!roomId) return;
-    input.value = ''; autoGrowChatInput_(input);
+    if(typeof overrideText !== 'string'){ input.value = ''; autoGrowChatInput_(input); }
     var btn = document.getElementById('chatInboxSendBtn');
     btn.disabled = true;
 
