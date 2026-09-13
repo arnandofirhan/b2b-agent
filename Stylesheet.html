@@ -2491,12 +2491,6 @@
     #bottomNav.nav-hidden-for-keyboard{
       transform:translateY(120%); opacity:0; pointer-events:none;
     }
-    /* Live Chat: bottom-nav disembunyikan TOTAL selama halaman ini aktif (bukan cuma pas
-       keyboard buka) — chat sudah punya tombol "back" sendiri (.chat-room-detail-back) utk
-       kembali ke daftar percakapan, dan .chat-inbox butuh full-bleed sampai dasar layar
-       persis (lihat komentar panjang di .chat-inbox @media 900px). Toggle class ini di
-       showPage() JavaScript.html. */
-    #bottomNav.nav-hidden-for-chat{ display:none; }
 
     /* FIX BUG KEPOTONG/GAP KOSONG LIVE CHAT MOBILE: .content punya padding-bottom:92px
        (reservasi bottom-nav mengambang) + padding-top 14px. Tapi tinggi .chat-inbox SUDAH
@@ -3163,35 +3157,43 @@
     overflow:hidden;
   }
   @media (max-width:900px){
-    /* REWRITE TOTAL LAYOUT CHAT MOBILE (v2): pendekatan sebelumnya (height:calc dikurangi
-       "118px"/"12px" tebakan utk ruang content-padding + bottom-nav) TERBUKTI RAPUH — begitu
-       ada elemen lain yang turut menyumbang tinggi (padding .content, dsb) itungannya gampang
-       dobel/kurang, hasilnya kolom ketik kepotong / muncul celah kosong / halaman malah ikut
-       kescroll. Sekarang .chat-inbox dilepas TOTAL dari flow .content lewat position:fixed
-       yang dipatok ke VIEWPORT LAYAR LANGSUNG (bukan ke sisa tinggi parent) — jadi manapun
-       angka padding/margin leluhurnya, tidak akan pernah mempengaruhi tinggi/posisi chat ini.
-       - top: tepat di bawah topbar.
-       - bottom: 0 (mentok dasar layar terlihat — bottom-nav DISEMBUNYIKAN TOTAL selama
-         halaman Live Chat aktif, lihat #bottomNav.nav-hidden-for-chat di bawah & toggle-nya
-         di showPage() JavaScript.html — bukan cuma "diangkat" pas keyboard buka seperti versi
-         lama, jadi chat SELALU punya kolom ketik nempel persis di dasar layar/tepat di atas
-         keyboard, tanpa perlu hitung-hitungan ruang bottom-nav apa pun).
-       height dipatok ke --app-vvh (visualViewport, ikut mengecil otomatis begitu keyboard
-       muncul — lihat syncMobileViewportHeight_ di JavaScript.html) supaya SATU-SATUNYA yang
-       bergerak saat keyboard buka/tutup adalah tinggi .chat-inbox itu sendiri — bagian
-       lain (topbar, dsb) diam di tempat, dan TIDAK ADA elemen manapun di luar
-       .chat-inbox-messages yang bisa discroll (position:fixed penuh menutup .content di
-       baliknya total, jadi tidak ada "halaman" tersisa untuk discroll). */
+    /* REWRITE LAYOUT CHAT MOBILE (v3): .chat-inbox dilepas dari flow .content via
+       position:fixed dipatok LANGSUNG ke viewport (top = bawah topbar), supaya tinggi/posisi
+       nya TIDAK PERNAH kebawa dobel-hitung oleh padding .content dsb (lihat histori bug di
+       versi-versi sebelumnya). BEDA dari v2: bottom-nav TETAP TAMPIL normal di halaman ini
+       (permintaan user) — jadi .chat-inbox menyisakan --chat-nav-space di bawah utk jatah
+       bottom-nav, dan HANYA melebar penuh sampai dasar layar (chat-inbox.keyboard-open)
+       begitu keyboard balasan benar-benar terbuka & bottom-nav ikut disembunyikan sementara
+       (lihat toggleBottomNavForKeyboard_ di JavaScript.html) — pola standar app chat. */
     .chat-inbox{
-      position:fixed; left:0; right:0; bottom:0;
-      top:var(--topbar-height);
-      height:calc(100dvh - var(--topbar-height));
-      height:calc(var(--app-vvh, 100dvh) - var(--topbar-height));
+      position:fixed; left:0; right:0; top:var(--topbar-height);
+      --chat-nav-space: calc(78px + env(safe-area-inset-bottom, 0px)); /* tinggi pill 66px + margin bawah 12px */
+      height:calc(100dvh - var(--topbar-height) - var(--chat-nav-space));
+      height:calc(var(--app-vvh, 100dvh) - var(--topbar-height) - var(--chat-nav-space));
       grid-template-columns:1fr; min-height:0;
-      border:none; border-radius:0; z-index:12; /* di atas .content, di bawah dropdown topbar (100) */
+      border:none; border-radius:0; z-index:12; /* di atas .content, di bawah dropdown topbar (100) & bottom-nav (60 > 12? nav 60 > chat 12, jadi nav tetap di atas — sengaja, chat tidak sampai menutupinya) */
     }
     .chat-inbox.room-open .chat-room-list{ display:none; }
     .chat-inbox:not(.room-open) .chat-room-detail{ display:none; }
+    /* Keyboard balasan terbuka: bottom-nav disembunyikan (lihat JS), jadi ruang yang
+       tadinya disisakan utk nav dipakai penuh oleh chat — kolom ketik pas persis di atas
+       keyboard, tidak ada celah kosong. */
+    .chat-inbox.keyboard-open{
+      height:calc(100dvh - var(--topbar-height));
+      height:calc(var(--app-vvh, 100dvh) - var(--topbar-height));
+    }
+  }
+
+  /* Header detail room (nama Agent + badge status + tombol Selesaikan) — dirapikan khusus
+     mobile: nama dipaksa SATU BARIS (ellipsis, bukan wrap 2 baris yg bikin badge & tombol
+     jadi berantakan sejajar setengah-setengah), badge tetap nempel di sebelah nama, dan
+     tombol "Selesaikan"/"Buka Lagi" pindah ke baris sendiri di kanan supaya tidak berebut
+     ruang sempit dengan nama+badge pada lebar layar HP. */
+  @media (max-width:900px){
+    .chat-room-detail-header{ flex-wrap:wrap; row-gap:6px; }
+    .chat-room-detail-title-wrap{ flex:1 1 auto; min-width:0; }
+    .chat-room-detail-name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .chat-end-btn{ margin-left:auto; }
   }
 
   .chat-room-list{
