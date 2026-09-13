@@ -10,7 +10,7 @@
  * dan perubahannya tidak muncul di HP, naikkan CACHE_VERSION di bawah
  * ini supaya service worker lama dibuang & cache diisi ulang.
  *************************************************************/
-var CACHE_VERSION = 'agrinesia-b2b-v47';
+var CACHE_VERSION = 'agrinesia-b2b-v48';
 var APP_SHELL = [
   './',
   './index.html',
@@ -58,8 +58,15 @@ self.addEventListener('fetch', function (event) {
     return; // biarkan request ini lewat network seperti biasa
   }
 
+  // FIX PERFORMA: index.html memuat JavaScript.html/Stylesheet.html dengan cache-buster di
+  // query string (?v=...) supaya versi baru selalu ke-fetch begitu Anda deploy ulang. Tapi
+  // caches.match() DEFAULT-nya cocokkan URL PERSIS termasuk query string — jadi request
+  // "JavaScript.html?v=XXXX" tidak pernah ketemu entri precache "./JavaScript.html" (tanpa
+  // query), dan app-shell jadi SELALU diambil dari network (lambat, terutama file 700KB+ di
+  // koneksi HP yang lemah). ignoreSearch:true membuat pencocokan mengabaikan query string,
+  // sehingga precache app-shell benar-benar terpakai untuk file-file ini.
   event.respondWith(
-    caches.match(req).then(function (cached) {
+    caches.match(req, { ignoreSearch: true }).then(function (cached) {
       var networkFetch = fetch(req)
         .then(function (res) {
           if (res && res.status === 200) {
