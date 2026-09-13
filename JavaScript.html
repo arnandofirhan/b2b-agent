@@ -195,6 +195,23 @@
     MY_SIGNATURE_STATUS_CACHE_ = null;
     NOTIF_STATE_.items = [];
     if(NOTIF_POLL_INTERVAL_){ clearInterval(NOTIF_POLL_INTERVAL_); NOTIF_POLL_INTERVAL_ = null; }
+    // FIX: FAB Live Chat & Troli (#fabDialWrap, #fabDialScrim, #chatPanelOverlay) ditempel
+    // langsung ke document.body OLEH DESAIN (lihat injectChatFab_) supaya bisa mengambang di
+    // ATAS #appShell tanpa ikut ke-clip overflow oleh halaman manapun. Konsekuensinya: ketiga
+    // elemen itu berada DI LUAR #appShell, jadi menyembunyikan #appShell (baris di bawah) TIDAK
+    // ikut menyembunyikan mereka — makanya FAB Troli sebelumnya masih nyangkut kelihatan sampai
+    // ke halaman Login. Hentikan dulu semua polling chat yang masih berjalan, lalu hapus total
+    // ketiga elemen ini supaya sesi berikutnya (akun apapun yang login berikutnya, termasuk
+    // yang bukan role AGENT) mulai dari kondisi bersih tanpa sisa FAB milik akun sebelumnya.
+    if(CHAT_STATE_.pollInterval){ clearInterval(CHAT_STATE_.pollInterval); CHAT_STATE_.pollInterval = null; }
+    if(CHAT_STATE_.readStatusPollInterval){ clearInterval(CHAT_STATE_.readStatusPollInterval); CHAT_STATE_.readStatusPollInterval = null; }
+    if(CHAT_STATE_.unreadPollInterval){ clearInterval(CHAT_STATE_.unreadPollInterval); CHAT_STATE_.unreadPollInterval = null; }
+    ['fabDialWrap', 'fabDialScrim', 'chatPanelOverlay'].forEach(function(id){
+      var el = document.getElementById(id);
+      if(el) el.remove();
+    });
+    CHAT_STATE_.myRoomId = null; CHAT_STATE_.lastMessageId = null; CHAT_STATE_.panelOpen = false;
+    CHAT_STATE_.myLastSeenByStaff = false;
     document.getElementById('appShell').style.display = 'none';
     document.getElementById('loginScreen').style.display = 'flex';
   }
