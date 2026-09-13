@@ -1141,6 +1141,17 @@
   function paintPage_(pageKey, html){
     PAGE_HTML_CACHE[pageKey] = html;
     persistPageCache_();
+    // FAB Troli ditempel di #agentCartFabSlot (di dalam FAB Speed Dial, document.body —
+    // lihat injectChatFab_/refreshAgentCartFab_), yaitu DI LUAR #content. Karena itu ia
+    // TIDAK ikut hilang otomatis saat innerHTML #content diganti untuk pindah ke halaman
+    // lain (beda dari perilaku sebelumnya waktu Troli masih anak langsung #content).
+    // Untuk halaman selain Dashboard, Troli FAB memang tidak relevan (aksinya "buka
+    // ringkasan Troli dashboard"), jadi dibersihkan di sini supaya tidak nyangkut
+    // tertinggal saat Agent pindah ke halaman lain.
+    if(pageKey !== 'dashboard'){
+      var lingeringCartFab = document.getElementById('agentCartFab');
+      if(lingeringCartFab) lingeringCartFab.remove();
+    }
     // Only overwrite the DOM if the user is still on this page (they may have navigated away
     // while this background fetch was in flight).
     if(STATE.currentPage === pageKey){
@@ -4400,19 +4411,20 @@
     if(cartCount > 0 && !mouLocked){
       if(!fab){
         // FAB belum ada di DOM (sebelumnya troli kosong sehingga tidak dirender) — buat
-        // barunya sekarang lalu tempel ke #content, dengan markup yang PERSIS SAMA seperti
-        // yang dibuat paintAgentDashboard_ supaya style-nya konsisten. Guard lewat
-        // '.agent-dash' (elemen pembungkus utama Dashboard Agent): kalau tidak ada berarti
-        // Agent sedang tidak berada di halaman Dashboard sama sekali, jadi tidak perlu
-        // membuat FAB di halaman lain.
+        // barunya sekarang lalu tempel ke slot di dalam FAB Speed Dial (#agentCartFabSlot,
+        // lihat injectChatFab_), supaya Troli & toggle Live Chat selalu serumpun dalam
+        // satu kelompok FAB, bukan dua elemen fixed terpisah yang bisa saling tumpuk.
+        // Guard lewat '.agent-dash' (elemen pembungkus utama Dashboard Agent): kalau
+        // tidak ada berarti Agent sedang tidak berada di halaman Dashboard sama sekali.
         var content = document.getElementById('content');
-        if(content && content.querySelector('.agent-dash')){
+        var slot = document.getElementById('agentCartFabSlot');
+        if(content && content.querySelector('.agent-dash') && slot){
           var wrap = document.createElement('div');
           wrap.innerHTML = '<button type="button" class="agent-cart-fab" id="agentCartFab" onclick="openAgentCart_()" title="Buka Troli">'
             + ICONS.cart
             + '<span class="agent-cart-fab-badge">'+(cartCount > 99 ? '99+' : cartCount)+'</span>'
             + '</button>';
-          content.appendChild(wrap.firstChild);
+          slot.appendChild(wrap.firstChild);
         }
       } else {
         var badge = fab.querySelector('.agent-cart-fab-badge');
@@ -7045,6 +7057,12 @@
     // selalu kelihatan loading ulang dari nol walau datanya belum tentu berubah.
     if(PAGE_HTML_CACHE['dashboard']){
       content.innerHTML = PAGE_HTML_CACHE['dashboard'];
+      // Troli FAB ditempel di luar #content (lihat paintAgentDashboard_/refreshAgentCartFab_),
+      // jadi saat Dashboard ditampilkan instan dari cache di atas, FAB itu tidak otomatis ikut
+      // muncul lagi (baru akan dipanggil ulang setelah request backend di bawah selesai).
+      // Panggil sekarang juga supaya tidak ada jeda "Dashboard sudah kelihatan tapi Troli
+      // FAB belum nongol" walau isi troli sebenarnya masih ada dari sesi sebelumnya.
+      refreshAgentCartFab_();
     } else {
       content.innerHTML = '<div class="spinner"></div>';
     }
@@ -7234,21 +7252,15 @@
     }
 
     html += '</div>';
-    // FAB Troli mengambang — MUNCUL HANYA kalau ada isi di troli, supaya Agent yang sudah
-    // scroll jauh ke bawah (lewat banyak produk) tidak perlu balik ke atas lagi buat buka
-    // Troli. Diletakkan fixed di viewport (bukan ikut scroll konten), mengambang di atas
-    // Bottom Nav khusus mobile (lihat @media max-width:860px .agent-cart-fab di
-    // Stylesheet.html — di desktop otomatis nempel ke pojok kanan bawah biasa karena
-    // tidak ada Bottom Nav di sana).
-    var cartCount = Object.keys(AGENT_DASH_CART_).reduce(function(sum,pid){ return sum + AGENT_DASH_CART_[pid]; }, 0);
-    if(cartCount > 0 && !mouLocked){
-      html += '<button type="button" class="agent-cart-fab" id="agentCartFab" onclick="openAgentCart_()" title="Buka Troli">'
-        + ICONS.cart
-        + '<span class="agent-cart-fab-badge">'+(cartCount > 99 ? '99+' : cartCount)+'</span>'
-        + '</button>';
-    }
     content.innerHTML = html;
     PAGE_HTML_CACHE['dashboard'] = html;
+    // FAB Troli mengambang — MUNCUL HANYA kalau ada isi di troli, ditempel ke slot
+    // di dalam FAB Speed Dial (#agentCartFabSlot, di document.body — lihat
+    // injectChatFab_ & refreshAgentCartFab_) supaya Troli & toggle Live Chat selalu
+    // serumpun sebagai satu kelompok FAB, bukan dua elemen fixed terpisah yang bisa
+    // saling tumpuk. Dipisah dari innerHTML di atas karena slot-nya berada DI LUAR
+    // #content (jadi ikut ke-reset kalau ditulis lewat innerHTML content di sini).
+    refreshAgentCartFab_();
     if(banners.length > 1){
       // Posisikan track PERSIS di slide asli index-0 (bukan klon di paling depan) — instan
       // tanpa animasi. Pakai scrollIntoView(inline:'center') bukan hitung pixel manual,
@@ -9109,7 +9121,8 @@
     checkCircle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m22 4-10 10-3-3"/></svg>',
     rotate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>',
     attach: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>',
-    filePdf: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="22" height="22"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>'
+    filePdf: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="22" height="22"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>',
+    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>'
   };
 
   /** Dipanggil dari bootApp() setelah login berhasil. Memasang floating bubble untuk Agent
@@ -9139,17 +9152,36 @@
   // ---------- AGENT: floating bubble + panel chat ----------
 
   function injectChatFab_(){
-    if(document.getElementById('chatFab')) return; // sudah ada, jangan dobel
+    if(document.getElementById('fabDialWrap')) return; // sudah ada, jangan dobel
 
-    var fab = document.createElement('button');
-    fab.type = 'button';
-    fab.id = 'chatFab';
-    fab.className = 'chat-fab';
-    fab.title = 'Live Chat';
-    fab.setAttribute('aria-label', 'Buka Live Chat');
-    fab.innerHTML = CHAT_ICONS_.bubble + '<span id="chatFabBadge" class="chat-fab-badge" style="display:none;">0</span>';
-    fab.onclick = openChatPanel_;
-    document.body.appendChild(fab);
+    // ---- Speed Dial wrapper: selalu ada di DOM sepanjang sesi Agent login ----
+    // Troli (.agent-cart-fab) numpang masuk-keluar dari #agentCartFabSlot lewat
+    // refreshAgentCartFab_ / paintAgentDashboard_ tergantung isi troli — dial ini
+    // sendiri tidak peduli isi troli, cuma menyediakan "tempat" untuknya supaya
+    // kedua FAB (Troli & toggle Chat) selalu serumpun & tidak saling tumpuk.
+    var wrap = document.createElement('div');
+    wrap.id = 'fabDialWrap';
+    wrap.className = 'fab-dial-wrap';
+    wrap.innerHTML =
+      '<div class="fab-dial-row">' +
+        '<div class="fab-dial-option chat">' +
+          '<span class="fab-dial-option-label">Live Chat</span>' +
+          '<button type="button" class="chat-fab" id="chatFab" title="Live Chat" aria-label="Buka Live Chat" onclick="toggleFabDial_(false); openChatPanel_();">' +
+            CHAT_ICONS_.bubble + '<span id="chatFabBadge" class="chat-fab-badge" style="display:none;">0</span>' +
+          '</button>' +
+        '</div>' +
+        '<span id="agentCartFabSlot"></span>' +
+        '<button type="button" class="fab-dial-toggle" id="fabDialToggle" title="Opsi lainnya" aria-label="Buka opsi lainnya" onclick="toggleFabDial_()">' +
+          CHAT_ICONS_.plus +
+        '</button>' +
+      '</div>';
+    document.body.appendChild(wrap);
+
+    var scrim = document.createElement('div');
+    scrim.id = 'fabDialScrim';
+    scrim.className = 'fab-dial-scrim';
+    scrim.onclick = function(){ toggleFabDial_(false); };
+    document.body.appendChild(scrim);
 
     var overlay = document.createElement('div');
     overlay.id = 'chatPanelOverlay';
@@ -9174,6 +9206,17 @@
         '</div>' +
       '</div>';
     document.body.appendChild(overlay);
+  }
+
+  /** Buka/tutup speed dial (opsi Live Chat di atas tombol titik-3). Parameter
+   *  `force` opsional: true=paksa buka, false=paksa tutup, undefined=toggle. */
+  function toggleFabDial_(force){
+    var wrap = document.getElementById('fabDialWrap');
+    var toggleBtn = document.getElementById('fabDialToggle');
+    if(!wrap) return;
+    var next = (force === undefined) ? !wrap.classList.contains('expanded') : force;
+    wrap.classList.toggle('expanded', next);
+    if(toggleBtn) toggleBtn.classList.toggle('expanded', next);
   }
 
   function openChatPanel_(){
