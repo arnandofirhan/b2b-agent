@@ -685,7 +685,7 @@
     // panggilan Dashboard sendiri yang baru saja ditembak oleh showPage('dashboard') di
     // atas — beri jeda dulu supaya beban ke GAS di detik-detik awal boot lebih landai
     // (mengurangi peluang redirect/echo 404 transient yang selama ini muncul di console).
-    setTimeout(preloadAllPages_, 1200);
+    setTimeout(preloadAllPages_, 2000);
     loadNotifications_();
     if(NOTIF_POLL_INTERVAL_) clearInterval(NOTIF_POLL_INTERVAL_);
     NOTIF_POLL_INTERVAL_ = setInterval(loadNotifications_, 120000); // refresh tiap 2 menit
@@ -734,7 +734,7 @@
     // bertahap (trickle), bukan serentak — dan seandainya satu preload tetap gagal,
     // pageErrorEl_() di atas memastikan itu tidak pernah menimpa layar user kalau dia
     // sedang tidak melihat halaman itu.
-    var STAGGER_MS = 400;
+    var STAGGER_MS = 700;
     keys.forEach(function(key, i){
       setTimeout(function(){
         // Tandai request ini sebagai background/low-priority (lihat catatan di api-bridge.js)
@@ -9904,6 +9904,10 @@
     CHAT_STATE_.inboxActiveRoomId = null; // biar openInboxRoom_ di bawah tidak dianggap "room yang sama, skip"
     if(roomToReopen){ openInboxRoom_(roomToReopen); } else { loadChatRoomList_(); }
     if(CHAT_STATE_.pollInterval) clearInterval(CHAT_STATE_.pollInterval);
+    // Jeda 6 detik SEBELUM polling pertama (bukan langsung nembak di detik ke-0) — supaya
+    // tidak ikut menumpuk dengan request awal (loadChatRoomList_/openInboxRoom_/quickReplies
+    // di atas) yang baru saja ditembak begitu halaman ini dibuka, apalagi kalau bertepatan
+    // dengan preloadAllPages_ background yang masih berjalan.
     CHAT_STATE_.pollInterval = setInterval(function(){
       loadChatRoomList_();
       if(CHAT_STATE_.inboxActiveRoomId) loadInboxMessages_(false);
