@@ -2491,6 +2491,18 @@
     #bottomNav.nav-hidden-for-keyboard{
       transform:translateY(120%); opacity:0; pointer-events:none;
     }
+
+    /* FIX BUG KEPOTONG/GAP KOSONG LIVE CHAT MOBILE: .content punya padding-bottom:92px
+       (reservasi bottom-nav mengambang) + padding-top 14px. Tapi tinggi .chat-inbox SUDAH
+       menghitung sendiri ruang itu lewat calc(var(--app-vvh) - topbar - 118px/12px) di
+       bagian "LIVE CHAT INBOX PAGE" di bawah. Kalau padding .content menumpuk DI ATAS
+       pengurangan itu, ruang yang "dimakan" jadi DOBEL: kolom ketik balasan ter-dorong
+       turun sampai kepotong bottom-nav (keluhan #1), dan saat keyboard muncul & bottom-nav
+       disembunyikan, sisa 92px yang tidak dipakai apa-apa itu jadi CELAH KOSONG PUTIH di
+       bawah kolom ketik, tepat di atas keyboard (keluhan #2). Nolkan padding .content
+       KHUSUS saat Live Chat aktif — ruang untuk bottom-nav & keyboard sudah diurus sendiri
+       oleh .chat-inbox lewat flex. */
+    .main-area.chat-page-active .content{ padding:0 !important; }
     html[data-theme="dark"] #bottomNav{ background:#0f1e18; border-color:rgba(255,255,255,.08); }
 
     .bottom-nav-item{
