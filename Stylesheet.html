@@ -3041,6 +3041,25 @@
   .cs-panel{ display:flex; flex-direction:column; gap:16px; animation:csFadeIn .15s ease-out; }
   @keyframes csFadeIn{ from{ opacity:0; transform:translateY(4px); } to{ opacity:1; transform:translateY(0); } }
 
+  /* Field generik (label + textarea/input) di dalam modal Pengaturan Live Chat. Sebelumnya
+     textarea di sini tidak diberi lebar/resize eksplisit, jadi browser memakai default (lebar
+     sempit ~20 karakter, tinggi bebas ditarik TANPA batas kontainer) — begitu user menyeret
+     kotaknya jadi besar, ia melebar menimpa label "Isi Pesan Sambutan" di baris berikutnya
+     alih-alih mendorong layout ke bawah. Diperbaiki dengan width:100% + box-sizing:border-box
+     (supaya tetap pas di dalam modal walau di-resize) dan resize:vertical dibatasi min/max-height.  */
+  .cs-panel .form-field{ display:flex; flex-direction:column; gap:6px; }
+  .cs-panel .form-field > label{ font-size:12.5px; font-weight:700; color:var(--ag-gray-700); }
+  .cs-panel .form-field textarea,
+  .cs-panel .form-field input[type="text"],
+  .cs-panel .form-field input[type="time"]{
+    width:100%; box-sizing:border-box; border:1px solid var(--ag-gray-200); border-radius:10px;
+    padding:10px 12px; font-size:13px; font-family:var(--font); background:var(--ag-surface);
+    color:var(--ag-gray-900);
+  }
+  .cs-panel .form-field textarea{ resize:vertical; min-height:70px; max-height:220px; line-height:1.5; }
+  .cs-panel .form-field textarea:focus,
+  .cs-panel .form-field input:focus{ outline:none; border-color:var(--ag-green); }
+
   .cs-fields-disabled{ opacity:.45; pointer-events:none; filter:grayscale(.3); transition:opacity .15s ease; }
 
   .cs-preview{ background:var(--ag-gray-50); border-radius:12px; padding:14px; }
