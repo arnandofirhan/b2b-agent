@@ -749,7 +749,20 @@
         if(STATE.currentPage !== 'dashboard') return;
         window.__BG_LOW_PRIORITY__ = true;
         try{ renderers[key](); }catch(e){ /* silent — a failed background preload shouldn't disrupt the user */ }
-        window.__BG_LOW_PRIORITY__ = false;
+        // FIX BUG NYATA (device kadang lemot pas ada preload jalan di background, walau
+        // MAX_CONCURRENT_HI/LO di api-bridge.js sudah dipisah dari klik user): beberapa
+        // renderer (mis. renderPO untuk role AGENT) melakukan google.script.run PERTAMA
+        // secara sinkron di sini (aman, ke-tag LO), tapi lalu di DALAM withSuccessHandler-nya
+        // memanggil google.script.run KEDUA (mis. getAgentDetail sukses -> baru lanjut
+        // listPO) — panggilan kedua itu baru benar2 terjadi setelah request pertama pulang
+        // dari network (puluhan-ratusan ms kemudian), BUKAN sinkron di baris yang sama.
+        // Mematikan flag ini SINKRON tepat di sini (seperti sebelumnya) membuat request
+        // kedua itu salah ke-tag HI-priority, ikut menyita slot yang seharusnya khusus
+        // buat klik/aksi user. FIX: matikan lewat setTimeout singkat (bukan langsung),
+        // cukup lama untuk menaungi request susulan seperti itu, tapi masih jauh lebih
+        // pendek dari STAGGER_MS di atas (jadi tidak akan salah menaungi giliran preload
+        // BERIKUTNYA atau klik user yang kebetulan terjadi setelahnya).
+        setTimeout(function(){ window.__BG_LOW_PRIORITY__ = false; }, 500);
       }, i * STAGGER_MS);
     });
   }
@@ -9237,6 +9250,8 @@
   function loadNotifications_(){
     // Notifikasi (ikon lonceng) bukan sesuatu yang user tunggu secara aktif — selalu
     // tandai low-priority supaya tidak menyalip request yang dipicu langsung oleh klik user.
+    // (Hanya 1 google.script.run di sini, jadi matikan sinkron sudah aman — beda dengan
+    // preloadAllPages_ yang bisa memanggil renderer dgn call berantai, lihat catatan di sana.)
     window.__BG_LOW_PRIORITY__ = true;
     google.script.run.withSuccessHandler(function(list){
       NOTIF_STATE_.items = list || [];
