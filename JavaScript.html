@@ -1158,7 +1158,17 @@
     // Untuk halaman selain Dashboard, Troli FAB memang tidak relevan (aksinya "buka
     // ringkasan Troli dashboard"), jadi dibersihkan di sini supaya tidak nyangkut
     // tertinggal saat Agent pindah ke halaman lain.
-    if(pageKey !== 'dashboard'){
+    // BUG SEBELUMNYA: kondisi ini cuma cek argumen `pageKey` (halaman YANG SEDANG di-paint
+    // oleh pemanggil ini) — tapi paintPage_() juga dipakai oleh preloadAllPages_() untuk
+    // diam-diam merender & men-cache SEMUA halaman lain (products, promo, dst) di BACKGROUND
+    // beberapa detik setelah login, TERLEPAS dari halaman apa yang sedang benar-benar
+    // dilihat Agent. Akibatnya: Agent lagi di Dashboard, troli sudah keisi lewat tombol "+",
+    // lalu tiba-tiba FAB Troli lenyap sendiri begitu preload latar belakang itu kebetulan
+    // sampai giliran merender halaman non-dashboard (mis. Produk/Promo) — padahal Agent TIDAK
+    // PERNAH pindah halaman. FIX: cek STATE.currentPage (halaman yang BENAR-BENAR aktif di
+    // layar Agent saat ini), bukan pageKey argumen — jadi FAB cuma dihapus kalau Agent memang
+    // sedang berada di halaman selain Dashboard, bukan gara-gara preload diam-diam di balik layar.
+    if(STATE.currentPage !== 'dashboard'){
       var lingeringCartFab = document.getElementById('agentCartFab');
       if(lingeringCartFab) lingeringCartFab.remove();
     }
