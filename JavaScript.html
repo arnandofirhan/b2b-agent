@@ -4344,8 +4344,28 @@
     renderNewPOProductGrid_();
   }
 
+  // BUG: item yang di-"+"/diketik langsung DI DALAM modal "Buat PO Baru" (mis. modal yang
+  // dibuka dari klik Banner/Kategori Dashboard, lewat newPOForm(false,...)) cuma tersimpan
+  // di NEWPO_CART_ — TIDAK PERNAH disinkronkan balik ke AGENT_DASH_CART_ (troli Dashboard).
+  // Begitu modal ditutup (tombol X / "Batal" / klik luar, semuanya lewat closeModal() yang
+  // generic dan dipakai puluhan modal lain, jadi tidak aman diubah langsung di sana),
+  // NEWPO_CART_ tetap ada di memori tapi Agent klik icon "Troli" di Dashboard justru baca
+  // AGENT_DASH_CART_ yang tidak pernah ikut ter-update — hasilnya produk yang barusan
+  // ditambah di modal itu "hilang", padahal sebenarnya cuma nyangkut di keranjang modal.
+  // FIX: setiap NEWPO_CART_ berubah lewat 4 fungsi di bawah, langsung mirror ke
+  // AGENT_DASH_CART_ + persist ke sessionStorage, SELAMA modal ini memang mode "Buat PO
+  // Baru" biasa (bukan mode "Edit & Ajukan Ulang" / "Edit PO Approved" milik Staff — dua
+  // mode itu punya cart sendiri yang tidak berhubungan dengan troli Dashboard Agent, jadi
+  // sengaja tidak ikut disinkron supaya tidak salah campur).
+  function syncNewPOCartToDashCart_(){
+    if(NEWPO_RESUBMIT_ID_ || NEWPO_EDIT_APPROVED_ID_) return;
+    AGENT_DASH_CART_ = Object.assign({}, NEWPO_CART_);
+    persistAgentDashCart_();
+  }
+
   function addToNewPOCart_(productId){
     NEWPO_CART_[productId] = (NEWPO_CART_[productId] || 0) + 1;
+    syncNewPOCartToDashCart_();
     renderNewPOProductGrid_();
     renderNewPOCart_();
   }
@@ -4354,6 +4374,7 @@
     var newQty = (NEWPO_CART_[productId] || 0) + delta;
     if(newQty <= 0){ delete NEWPO_CART_[productId]; }
     else { NEWPO_CART_[productId] = newQty; }
+    syncNewPOCartToDashCart_();
     renderNewPOProductGrid_();
     renderNewPOCart_();
   }
@@ -4364,12 +4385,14 @@
     var newQty = parseInt(String(rawValue).replace(/[^0-9]/g,''), 10);
     if(isNaN(newQty) || newQty <= 0){ delete NEWPO_CART_[productId]; }
     else { NEWPO_CART_[productId] = newQty; }
+    syncNewPOCartToDashCart_();
     renderNewPOProductGrid_();
     renderNewPOCart_();
   }
 
   function removeNewPOCartItem_(productId){
     delete NEWPO_CART_[productId];
+    syncNewPOCartToDashCart_();
     renderNewPOProductGrid_();
     renderNewPOCart_();
   }
@@ -4522,6 +4545,11 @@
     var onDone = function(res){
       if(res.success){
         NEWPO_CART_ = {};
+        // PO sudah berhasil terkirim — kosongkan juga troli Dashboard (AGENT_DASH_CART_)
+        // supaya badge "Troli" & Produk Unggulan di Dashboard ikut balik ke 0, bukan
+        // nyisain seolah-olah barangnya masih "nunggu di troli" padahal sudah jadi PO.
+        AGENT_DASH_CART_ = {};
+        persistAgentDashCart_();
         NEWPO_RESUBMIT_ID_ = null;
         closeModal();
         if(resubmitId) invalidateDetailModalCache_('po:'+resubmitId);
