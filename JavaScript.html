@@ -652,6 +652,17 @@
     renderBottomNav();
     initAppHistory_();
     SKIP_NEXT_HISTORY_PUSH_ = true; // baseline dashboard sudah di-replaceState oleh initAppHistory_, jangan dobel-push
+    // FIX TROLI FAB TIDAK MUNCUL: initLiveChat_() HARUS dipanggil SEBELUM showPage('dashboard').
+    // injectChatFab_() (dipanggil dari dalamnya, khusus role AGENT) adalah yang membuat elemen
+    // #agentCartFabSlot di document.body — slot tempat FAB Troli (.agent-cart-fab) numpang
+    // ditempel oleh refreshAgentCartFab_()/paintAgentDashboard_(). Sebelumnya initLiveChat_()
+    // dipanggil SETELAH showPage('dashboard'), jadi saat Dashboard dirender pertama kali
+    // (render awal setelah login) slot itu belum ada di DOM -> refreshAgentCartFab_() gagal
+    // menemukan slot -> FAB Troli tidak pernah dibuat sama sekali di render pertama itu,
+    // walau Agent sudah mengisi troli lewat tombol "+". FAB baru muncul kalau kebetulan ada
+    // re-render Dashboard susulan SETELAH slot akhirnya ada (mis. pindah halaman lalu balik
+    // lagi ke Dashboard) — makanya terkesan "kadang muncul kadang tidak".
+    initLiveChat_();
     showPage('dashboard');
     // Tunda mulainya preload background ~1.2 detik supaya tidak langsung tabrakan dengan
     // panggilan Dashboard sendiri yang baru saja ditembak oleh showPage('dashboard') di
@@ -661,7 +672,6 @@
     loadNotifications_();
     if(NOTIF_POLL_INTERVAL_) clearInterval(NOTIF_POLL_INTERVAL_);
     NOTIF_POLL_INTERVAL_ = setInterval(loadNotifications_, 120000); // refresh tiap 2 menit
-    initLiveChat_();
   }
   var NOTIF_POLL_INTERVAL_ = null;
 
