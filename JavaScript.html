@@ -6507,16 +6507,23 @@
       if(txt) CHAT_SETTINGS_CACHE_.autoReplyText = txt.value;
     } else if(CHAT_SETTINGS_TAB_ === 'hours'){
       var ohChk = document.getElementById('chatOfficeHoursEnabledEl');
-      var startEl = document.getElementById('chatOfficeStartEl');
-      var endEl = document.getElementById('chatOfficeEndEl');
       var offNoteEl = document.getElementById('chatOfflineNoteTextEl');
       if(!CHAT_SETTINGS_CACHE_.officeHours) CHAT_SETTINGS_CACHE_.officeHours = {};
       if(ohChk) CHAT_SETTINGS_CACHE_.officeHours.enabled = ohChk.checked;
-      if(startEl) CHAT_SETTINGS_CACHE_.officeHours.start = startEl.value;
-      if(endEl) CHAT_SETTINGS_CACHE_.officeHours.end = endEl.value;
       if(offNoteEl) CHAT_SETTINGS_CACHE_.offlineNoteText = offNoteEl.value;
-      var dayChips = document.querySelectorAll('.cs-day-chip.active');
-      CHAT_SETTINGS_CACHE_.officeHours.days = Array.prototype.map.call(dayChips, function(el){ return parseInt(el.getAttribute('data-day'), 10); });
+      // Kumpulkan jadwal PER HARI dari tiap .cs-day-row (index 0=Minggu..6=Sabtu, sesuai
+      // urutan CHAT_DAY_LABELS_ yang dipakai saat render — lihat renderChatHoursTab_).
+      var dayRows = document.querySelectorAll('.cs-day-row');
+      var perDay = [];
+      dayRows.forEach(function(row){
+        var idx = parseInt(row.getAttribute('data-day-idx'), 10);
+        perDay[idx] = {
+          enabled: row.querySelector('.cs-day-enabled-input').checked,
+          start: row.querySelector('.cs-day-start-input').value || '08:00',
+          end: row.querySelector('.cs-day-end-input').value || '17:00'
+        };
+      });
+      if(perDay.length === 7) CHAT_SETTINGS_CACHE_.officeHours.perDay = perDay;
     } else if(CHAT_SETTINGS_TAB_ === 'quickreply'){
       var inputs = document.querySelectorAll('.cs-qr-input');
       CHAT_SETTINGS_QUICK_REPLIES_ = Array.prototype.map.call(inputs, function(el){ return el.value; }).filter(function(v){ return v.trim(); });
@@ -6551,31 +6558,40 @@
   }
 
   function renderChatHoursTab_(settings){
-    var oh = settings.officeHours || { enabled:true, start:'08:00', end:'17:00', days:[1,2,3,4,5,6] };
-    var dayChipsHtml = CHAT_DAY_LABELS_.map(function(label, i){
-      var active = oh.days.indexOf(i) !== -1;
-      return '<button type="button" class="cs-day-chip'+(active?' active':'')+'" data-day="'+i+'" onclick="this.classList.toggle(\'active\')">'+label+'</button>';
+    var oh = settings.officeHours || { enabled:true, perDay: CHAT_DAY_LABELS_.map(function(_, i){ return { enabled: i>=1&&i<=6, start:'08:00', end:'17:00' }; }) };
+    var perDay = oh.perDay || [];
+    var dayRowsHtml = CHAT_DAY_LABELS_.map(function(label, i){
+      var d = perDay[i] || { enabled:false, start:'08:00', end:'17:00' };
+      return (
+        '<div class="cs-day-row'+(d.enabled?'':' is-off')+'" data-day-idx="'+i+'">' +
+          '<div class="cs-day-row-head">' +
+            '<label class="switch-row cs-day-row-label"><span class="switch"><input type="checkbox" class="cs-day-enabled-input" '+(d.enabled?'checked':'')+' onchange="toggleChatDayRow_(this)"><span class="switch-slider"></span></span> '+label+'</label>' +
+            '<span class="cs-day-row-summary">'+(d.enabled ? escapeHtml(d.start)+' \u2013 '+escapeHtml(d.end) : 'Libur')+'</span>' +
+          '</div>' +
+          '<div class="cs-day-row-times">' +
+            '<div class="form-field">' +
+              '<label>Jam Mulai</label>' +
+              '<input type="time" class="cs-day-start-input" value="'+escapeHtml(d.start||'08:00')+'" oninput="updateChatDayRowSummary_(this)">' +
+            '</div>' +
+            '<div class="form-field">' +
+              '<label>Jam Selesai</label>' +
+              '<input type="time" class="cs-day-end-input" value="'+escapeHtml(d.end||'17:00')+'" oninput="updateChatDayRowSummary_(this)">' +
+            '</div>' +
+          '</div>' +
+        '</div>'
+      );
     }).join('');
     return (
       '<div class="cs-panel">' +
         '<div class="form-field">' +
           '<label class="switch-row"><span class="switch"><input type="checkbox" id="chatOfficeHoursEnabledEl" '+(oh.enabled?'checked':'')+' onchange="toggleChatHoursFieldsEnabled_(this.checked)"><span class="switch-slider"></span></span> Aktifkan jam operasional</label>' +
-          '<div class="form-hint">Kalau aktif, header Live Chat Agent akan menampilkan status <b>Online</b>/<b>Offline</b> mengikuti jadwal di bawah. Kalau dimatikan, status selalu ditampilkan Online.</div>' +
+          '<div class="form-hint">Kalau aktif, header Live Chat Agent akan menampilkan status <b>Online</b>/<b>Offline</b> mengikuti jadwal per hari di bawah. Kalau dimatikan, status selalu ditampilkan Online.</div>' +
         '</div>' +
         '<div id="chatHoursFieldsWrap" class="'+(oh.enabled?'':'cs-fields-disabled')+'">' +
           '<div class="form-field">' +
-            '<label>Hari Operasional</label>' +
-            '<div class="cs-day-picker">'+dayChipsHtml+'</div>' +
-          '</div>' +
-          '<div class="cs-time-row">' +
-            '<div class="form-field">' +
-              '<label>Jam Mulai</label>' +
-              '<input type="time" id="chatOfficeStartEl" value="'+escapeHtml(oh.start||'08:00')+'">' +
-            '</div>' +
-            '<div class="form-field">' +
-              '<label>Jam Selesai</label>' +
-              '<input type="time" id="chatOfficeEndEl" value="'+escapeHtml(oh.end||'17:00')+'">' +
-            '</div>' +
+            '<label>Jadwal Per Hari</label>' +
+            '<div class="form-hint" style="margin-top:-2px;margin-bottom:2px;">Tap nama hari untuk mengaktifkan/menonaktifkan, lalu atur jam mulai &amp; selesai masing-masing. Tiap hari boleh berbeda.</div>' +
+            '<div class="cs-day-list" id="csDayList">'+dayRowsHtml+'</div>' +
           '</div>' +
           '<div class="form-field">' +
             '<label>Catatan Saat Offline</label>' +
@@ -6585,6 +6601,33 @@
         '</div>' +
       '</div>'
     );
+  }
+
+  /** Toggle satu baris hari (aktif/nonaktif) — update class visual (is-off = dim + input
+   *  jam disembunyikan) dan ringkasan jam di sisi kanan header baris. */
+  function toggleChatDayRow_(checkboxEl){
+    var row = checkboxEl.closest('.cs-day-row');
+    if(!row) return;
+    var enabled = checkboxEl.checked;
+    row.classList.toggle('is-off', !enabled);
+    updateChatDayRowSummaryFromRow_(row);
+  }
+
+  /** Dipanggil saat input jam mulai/selesai berubah — refresh teks ringkasan di header baris
+   *  (mis. "08.00 – 17.00") supaya Admin bisa lihat sekilas tanpa harus expand semua baris. */
+  function updateChatDayRowSummary_(inputEl){
+    var row = inputEl.closest('.cs-day-row');
+    if(row) updateChatDayRowSummaryFromRow_(row);
+  }
+
+  function updateChatDayRowSummaryFromRow_(row){
+    var summaryEl = row.querySelector('.cs-day-row-summary');
+    var enabled = row.querySelector('.cs-day-enabled-input').checked;
+    if(!summaryEl) return;
+    if(!enabled){ summaryEl.textContent = 'Libur'; return; }
+    var start = row.querySelector('.cs-day-start-input').value || '08:00';
+    var end = row.querySelector('.cs-day-end-input').value || '17:00';
+    summaryEl.textContent = start + ' \u2013 ' + end;
   }
 
   function toggleChatHoursFieldsEnabled_(enabled){
@@ -6646,8 +6689,15 @@
     if(enabled && !text){ showToast('Isi pesan auto-reply tidak boleh kosong.', 'error'); CHAT_SETTINGS_TAB_='welcome'; paintChatSettingsModal_(cfg); return; }
 
     var oh = cfg.officeHours || {};
-    if(oh.enabled && (!oh.days || !oh.days.length)){ showToast('Pilih minimal satu hari operasional.', 'error'); CHAT_SETTINGS_TAB_='hours'; paintChatSettingsModal_(cfg); return; }
-    if(oh.enabled && oh.start && oh.end && oh.start >= oh.end){ showToast('Jam mulai harus lebih awal dari jam selesai.', 'error'); CHAT_SETTINGS_TAB_='hours'; paintChatSettingsModal_(cfg); return; }
+    var perDay = Array.isArray(oh.perDay) && oh.perDay.length === 7 ? oh.perDay : CHAT_DAY_LABELS_.map(function(_, i){ return { enabled: i>=1&&i<=6, start:'08:00', end:'17:00' }; });
+    if(oh.enabled && !perDay.some(function(d){ return d.enabled; })){
+      showToast('Pilih minimal satu hari operasional.', 'error'); CHAT_SETTINGS_TAB_='hours'; paintChatSettingsModal_(cfg); return;
+    }
+    var badDayIdx = perDay.findIndex(function(d){ return d.enabled && d.start >= d.end; });
+    if(oh.enabled && badDayIdx !== -1){
+      showToast('Jam mulai harus lebih awal dari jam selesai ('+CHAT_DAY_LABELS_[badDayIdx]+').', 'error');
+      CHAT_SETTINGS_TAB_='hours'; paintChatSettingsModal_(cfg); return;
+    }
 
     var btn = document.getElementById('chatSettingsSaveBtn');
     btn.disabled = true;
@@ -6659,7 +6709,7 @@
       .saveChatSettings(STATE.token, {
         autoReplyEnabled: enabled,
         autoReplyText: text,
-        officeHours: { enabled: !!oh.enabled, start: oh.start || '08:00', end: oh.end || '17:00', days: oh.days || [1,2,3,4,5,6] },
+        officeHours: { enabled: !!oh.enabled, perDay: perDay },
         offlineNoteText: (cfg.offlineNoteText || '').trim(),
         quickReplies: cfg.quickReplies || []
       });
@@ -9456,13 +9506,38 @@
       if(text){
         text.textContent = CHAT_STATE_.availabilityOnline
           ? 'Admin & Supervisor siap membantu'
-          : 'Sedang offline' + (res && res.officeHours && res.officeHours.enabled ? ' \u2014 kembali ' + res.officeHours.start : '');
+          : 'Sedang offline' + describeNextOnlineTime_(res && res.officeHours);
       }
     }).withFailureHandler(function(){
       // Gagal ambil status tidak boleh mengganggu chat itu sendiri — biarkan status
       // terakhir (default "online") tetap tampil, diam-diam gagal saja.
     }).getChatAvailability(STATE.token);
   }
+
+  /** Cari kapan Live Chat kembali online berikutnya, berbasis skema jam operasional PER
+   *  HARI (officeHours.perDay, index 0=Minggu..6=Sabtu). Mengecek hari ini dulu (mungkin
+   *  belum masuk jam buka hari ini), lalu maju hari demi hari sampai 7 hari ke depan.
+   *  Dipakai untuk melengkapi teks status "Sedang offline — kembali [kapan]" di header. */
+  function describeNextOnlineTime_(officeHours){
+    if(!officeHours || !officeHours.enabled || !Array.isArray(officeHours.perDay)) return '';
+    var dayNames = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+    var now = new Date();
+    var nowHM = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+    for(var offset = 0; offset <= 7; offset++){
+      var d = new Date(now); d.setDate(d.getDate() + offset);
+      var dayIdx = d.getDay();
+      var setting = officeHours.perDay[dayIdx];
+      if(!setting || !setting.enabled) continue;
+      // Untuk hari ini (offset 0), hanya valid kalau jam buka hari ini BELUM lewat DAN
+      // belum masuk (kalau sudah masuk jam buka, seharusnya status online, bukan offline —
+      // fungsi ini hanya dipanggil saat offline, jadi baris kedua ini jaga-jaga saja).
+      if(offset === 0 && (setting.end <= nowHM || setting.start <= nowHM)) continue;
+      var dayLabel = offset === 0 ? 'hari ini' : (offset === 1 ? 'besok' : dayNames[dayIdx]);
+      return ' \u2014 kembali ' + dayLabel + ' ' + setting.start;
+    }
+    return '';
+  }
+
 
   /** Buka/tutup speed dial (opsi Live Chat di atas tombol titik-3). Parameter
    *  `force` opsional: true=paksa buka, false=paksa tutup, undefined=toggle. */
@@ -9985,4 +10060,73 @@
       loadInboxMessages_(true);
     }).withFailureHandler(function(e){ handleBackendError(e); }).reopenChatRoom(STATE.token, roomId);
   }
+
+  // =============================================================
+  // FIX LAYOUT MOBILE — keyboard virtual & bottom nav (lihat 3 keluhan user):
+  //  1) Kolom ketik chat "sudah di atas" sebelum keyboard muncul, karena tinggi
+  //     .chat-inbox sebelumnya height:auto (ikut tinggi konten, bukan tinggi layar).
+  //  2) Bottom-nav ikut "naik" mengambang saat keyboard dibuka & discroll, karena
+  //     position:fixed dihitung terhadap layout viewport yang tidak selalu sinkron
+  //     dengan visual viewport yang berubah saat keyboard tampil (perilaku browser
+  //     mobile yang tidak konsisten antar-vendor).
+  // Solusi: pakai window.visualViewport (didukung luas di browser mobile modern —
+  // Chrome Android, Safari iOS 13+) untuk TAHU persis tinggi layar yang benar-benar
+  // terlihat saat ini (sudah dikurangi keyboard), lalu:
+  //  a) Set custom property --app-vvh ke tinggi itu, dipakai .chat-inbox (via CSS di
+  //     atas) supaya tinggi area chat SELALU pas dengan layar yang terlihat.
+  //  b) Sembunyikan #bottomNav (translateY + fade) begitu keyboard terdeteksi terbuka
+  //     (viewport visual mengecil signifikan dibanding layout viewport), dan tampilkan
+  //     lagi begitu keyboard tertutup — pola UI chat standar, sekaligus menghindari
+  //     bottom-nav jadi korban reflow aneh dari keyboard itu sendiri.
+  // =============================================================
+  var MOBILE_KEYBOARD_OPEN_ = false;
+
+  function syncMobileViewportHeight_(){
+    var vv = window.visualViewport;
+    var vh = vv ? vv.height : window.innerHeight;
+    document.documentElement.style.setProperty('--app-vvh', vh + 'px');
+
+    // Deteksi keyboard terbuka: viewport visual jauh lebih pendek dari layout viewport
+    // (window.innerHeight relatif stabil, tidak ikut mengecil saat keyboard muncul di
+    // kebanyakan browser modern yang mendukung visualViewport). Ambang 120px dipakai
+    // supaya toolbar address-bar yang collapse/expand biasa (bukan keyboard) tidak
+    // salah terdeteksi sebagai keyboard.
+    var layoutH = window.innerHeight;
+    var keyboardLikelyOpen = vv ? (layoutH - vv.height) > 120 : false;
+    if (keyboardLikelyOpen !== MOBILE_KEYBOARD_OPEN_) {
+      MOBILE_KEYBOARD_OPEN_ = keyboardLikelyOpen;
+      toggleBottomNavForKeyboard_(keyboardLikelyOpen);
+    }
+  }
+
+  function toggleBottomNavForKeyboard_(hide){
+    var nav = document.getElementById('bottomNav');
+    if (nav) nav.classList.toggle('nav-hidden-for-keyboard', hide);
+    var chatInbox = document.getElementById('chatInboxEl');
+    if (chatInbox) chatInbox.classList.toggle('keyboard-open', hide);
+  }
+
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', syncMobileViewportHeight_);
+    window.visualViewport.addEventListener('scroll', syncMobileViewportHeight_);
+  }
+  window.addEventListener('resize', syncMobileViewportHeight_);
+  syncMobileViewportHeight_(); // set nilai awal sebelum interaksi apapun
+
+  // Fallback eksplisit untuk textarea chat: beberapa browser Android lawas menembak
+  // event resize visualViewport dengan delay/tidak konsisten tepat saat fokus pertama
+  // kali. Memicu sync manual di focus/blur menutup celah itu tanpa mengganggu browser
+  // yang sudah benar (di situ ini jadi no-op karena nilainya sama).
+  document.addEventListener('focusin', function(e){
+    if (e.target && (e.target.id === 'chatInboxInputEl' || e.target.id === 'chatInputEl')) {
+      setTimeout(syncMobileViewportHeight_, 50);
+      setTimeout(syncMobileViewportHeight_, 350); // browser lambat menyesuaikan viewport saat animasi keyboard belum kelar
+    }
+  });
+  document.addEventListener('focusout', function(e){
+    if (e.target && (e.target.id === 'chatInboxInputEl' || e.target.id === 'chatInputEl')) {
+      setTimeout(syncMobileViewportHeight_, 50);
+      setTimeout(syncMobileViewportHeight_, 350);
+    }
+  });
 </script>
