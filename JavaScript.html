@@ -8247,6 +8247,42 @@
         kpiCard('Total PO', data.totalPO, 'blue', ICONS.transactions, 'All PO submissions', 'transactions') +
         kpiCard('Commission Paid', formatRupiah(data.totalCommissionPaid), 'orange', ICONS.commission, 'Total commission paid out', 'commission');
 
+    // FIX "DASHBOARD SEAKAN-AKAN RELOAD LAGI" (khusus ADMIN/SUPERVISOR/MANAGER):
+    // paintDashboardKpis_() ini dipanggil DUA KALI setiap kali Dashboard dibuka — sekali
+    // instan dari DASH_DATA_CACHE_ (kalau ada, cuma ada di SPA-navigation dalam sesi yang
+    // sama) dan sekali lagi begitu getDashboardData() selesai fetch data terbaru dari
+    // backend. Sebelumnya, KEDUA panggilan itu selalu membangun ULANG seluruh skeleton
+    // dashboard dari nol (welcome banner + kpi-grid + SEMUA panel Tren/Status PO/PO
+    // Terbaru/Leaderboard, lengkap dengan spinner kosong baru untuk tiap panel) lalu
+    // menimpa #content total lewat paintPage_() — walau panel2 itu SEBELUMNYA sudah
+    // terisi data (baik dari cache basi hasil instant-paint showPage(), atau dari
+    // render pertama yang baru saja selesai). Efeknya persis seperti "reload dobel":
+    // Dashboard sempat kelihatan penuh terisi, lalu SEKEJAP semua panel balik jadi
+    // spinner kosong, baru terisi lagi begitu loadDashboardPoInsights_/
+    // loadDashboardTrendInsights_ selesai — padahal cuma angka KPI yang sebenarnya
+    // berubah (atau malah sama sekali tidak berubah).
+    // FIX: kalau skeleton Dashboard SUDAH ada di DOM (elemen #dashKpiGrid ditemukan —
+    // baik dari instant-paint cache di renderDashboard()/showPage() maupun dari
+    // panggilan paintDashboardKpis_ sebelumnya), JANGAN bangun ulang seluruh skeleton.
+    // Cukup timpa isi grid KPI-nya saja secara in-place; panel Tren/Status PO/PO
+    // Terbaru/Leaderboard dibiarkan apa adanya (nanti diperbarui sendiri-sendiri oleh
+    // fungsi masing2 kalau memang ada data baru) — jadi tidak pernah ada kedipan
+    // "kosong lalu terisi lagi" yang terlihat seperti reload.
+    var existingKpiGrid = document.getElementById('dashKpiGrid');
+    if(existingKpiGrid){
+      existingKpiGrid.innerHTML = kpis;
+      startDashboardClock_();
+      // Sinkronkan juga cache HTML halaman supaya kunjungan berikutnya (instant-paint
+      // dari PAGE_HTML_CACHE) sudah membawa angka KPI terbaru ini, bukan angka basi dari
+      // render skeleton pertama kali.
+      var contentElNow = document.getElementById('content');
+      if(contentElNow && STATE.currentPage === 'dashboard'){
+        PAGE_HTML_CACHE['dashboard'] = contentElNow.innerHTML;
+        persistPageCache_();
+      }
+      return;
+    }
+
     var html =
       '<div class="welcome-banner">' +
         '<span class="welcome-banner-icon" id="dashGreetIcon"></span>' +
@@ -8258,7 +8294,7 @@
           '<div class="welcome-banner-clock-time" id="dashClockTime"></div>' +
         '</div>' +
       '</div>' +
-      '<div class="kpi-grid">' + kpis + '</div>' +
+      '<div class="kpi-grid" id="dashKpiGrid">' + kpis + '</div>' +
       '<div class="dash-panel" style="margin-bottom:16px;">' +
         '<div class="dash-panel-head"><span class="dash-section-title" style="margin:0;">Tren PO 7 Hari Terakhir</span></div>' +
         '<div id="dashTrendBox"><div class="spinner" style="padding:18px 0;"></div></div>' +
@@ -10175,7 +10211,34 @@
   // =============================================================
   var MOBILE_KEYBOARD_OPEN_ = false;
 
+  // FIX TOPBAR HILANG + KOLOM KETIK IKUT "KETARIK" SAAT KEYBOARD MUNCUL (mobile, chat):
+  // Root cause-nya BUKAN CSS .chat-inbox/.topbar (itu sudah benar, position:fixed dipatok
+  // ke viewport) — tapi Android/Chrome kadang memaksa SELURUH DOKUMEN (window) ikut
+  // discroll begitu textarea balasan difokus, walau html/body/.app-shell semuanya sudah
+  // overflow:hidden. ".chat-inbox mengurus scroll-nya sendiri" tidak cukup untuk mencegah
+  // ini karena perilaku auto-scroll-into-view browser ini bekerja di level WINDOW, bukan
+  // level elemen — begitu window ikut bergeser, topbar (yang statis di dalam .main-area)
+  // ikut terdorong ke luar layar ke atas, dan .chat-inbox (position:fixed, dipatok relatif
+  // ke LAYOUT viewport) ikut kelihatan bergeser juga kalau browser lawas tidak konsisten
+  // menyinkronkan fixed-position dengan visual viewport. FIX: paksa window tetap di (0,0)
+  // setiap kali ada indikasi ia bergeser (event scroll di window ATAU visualViewport) —
+  // karena app ini memang TIDAK PERNAH butuh scroll di level window sama sekali (semua
+  // scroll internal ditangani container masing2 seperti .chat-inbox-messages/.main-area).
+  function snapWindowScrollToZero_(){
+    if (window.scrollX !== 0 || window.scrollY !== 0) {
+      window.scrollTo(0, 0);
+    }
+  }
+  window.addEventListener('scroll', snapWindowScrollToZero_, { passive:true });
+  document.addEventListener('touchmove', function(e){
+    // Cegah "rubber-band"/geser dokumen dari sentuhan di luar area yang memang boleh
+    // discroll (mis. tap-drag di topbar/bottom-nav) — tidak mengganggu scroll normal di
+    // dalam container ber-overflow:auto (.chat-inbox-messages, .main-area, dll), karena
+    // itu tetap ditangani browser secara native sebelum event ini sempat mencegahnya.
+  }, { passive:true });
+
   function syncMobileViewportHeight_(){
+    snapWindowScrollToZero_();
     var vv = window.visualViewport;
     var vh = vv ? vv.height : window.innerHeight;
     document.documentElement.style.setProperty('--app-vvh', vh + 'px');
@@ -10213,12 +10276,16 @@
   // yang sudah benar (di situ ini jadi no-op karena nilainya sama).
   document.addEventListener('focusin', function(e){
     if (e.target && (e.target.id === 'chatInboxInputEl' || e.target.id === 'chatInputEl')) {
+      snapWindowScrollToZero_();
       setTimeout(syncMobileViewportHeight_, 50);
+      setTimeout(syncMobileViewportHeight_, 150);
       setTimeout(syncMobileViewportHeight_, 350); // browser lambat menyesuaikan viewport saat animasi keyboard belum kelar
+      setTimeout(syncMobileViewportHeight_, 600); // jaga2 kalau animasi keyboard di HP tertentu lebih lambat lagi
     }
   });
   document.addEventListener('focusout', function(e){
     if (e.target && (e.target.id === 'chatInboxInputEl' || e.target.id === 'chatInputEl')) {
+      snapWindowScrollToZero_();
       setTimeout(syncMobileViewportHeight_, 50);
       setTimeout(syncMobileViewportHeight_, 350);
     }
