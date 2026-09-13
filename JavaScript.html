@@ -7047,6 +7047,19 @@
     }
 
     html += '</div>';
+    // FAB Troli mengambang — MUNCUL HANYA kalau ada isi di troli, supaya Agent yang sudah
+    // scroll jauh ke bawah (lewat banyak produk) tidak perlu balik ke atas lagi buat buka
+    // Troli. Diletakkan fixed di viewport (bukan ikut scroll konten), mengambang di atas
+    // Bottom Nav khusus mobile (lihat @media max-width:860px .agent-cart-fab di
+    // Stylesheet.html — di desktop otomatis nempel ke pojok kanan bawah biasa karena
+    // tidak ada Bottom Nav di sana).
+    var cartCount = Object.keys(AGENT_DASH_CART_).reduce(function(sum,pid){ return sum + AGENT_DASH_CART_[pid]; }, 0);
+    if(cartCount > 0 && !mouLocked){
+      html += '<button type="button" class="agent-cart-fab" onclick="openAgentCart_()" title="Buka Troli">'
+        + ICONS.cart
+        + '<span class="agent-cart-fab-badge">'+(cartCount > 99 ? '99+' : cartCount)+'</span>'
+        + '</button>';
+    }
     content.innerHTML = html;
     PAGE_HTML_CACHE['dashboard'] = html;
     if(banners.length > 1) startAgentBannerAutoplay_(banners.length);
