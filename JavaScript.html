@@ -1081,6 +1081,19 @@
 
   function showPage(pageKey){
     STATE.currentPage = pageKey;
+    // FIX SCROLL CHAT MOBILE: halaman Live Chat ('livechat') punya scroll AREA-NYA SENDIRI
+    // (.chat-inbox-messages, di dalam .chat-room-detail) yang seharusnya jadi SATU-SATUNYA
+    // bagian yang bisa di-scroll saat sedang membalas chat. Sebelumnya .main-area (scroll
+    // container GLOBAL yang membungkus semua halaman) tetap overflow-y:auto biarpun sedang
+    // di halaman Live Chat — begitu textarea balasan difokus & keyboard muncul, browser mobile
+    // otomatis mem-scroll parent scrollable TERDEKAT untuk membawa elemen fokus ke pandangan,
+    // dan yang dipilihnya adalah .main-area (bukan .chat-inbox-messages), sehingga SELURUH
+    // HALAMAN (termasuk topbar & area kosong di atasnya) ikut "naik"/ter-scroll aneh.
+    // Fix: .main-area dikunci (overflow:hidden, lihat CSS .main-area.chat-page-active di
+    // Stylesheet.html) SETIAP KALI halaman aktif adalah 'livechat', dan dilepas lagi begitu
+    // pindah ke halaman lain — supaya perilaku scroll halaman lain sama sekali tidak berubah.
+    var mainAreaEl = document.querySelector('.main-area');
+    if(mainAreaEl) mainAreaEl.classList.toggle('chat-page-active', pageKey === 'livechat');
     // Catat perpindahan ini ke riwayat browser (lihat initAppHistory_ di bawah) supaya
     // gesture/tombol back bawaan HP tahu ada "halaman sebelumnya" di DALAM app, dan balik
     // ke situ dulu — bukan langsung keluar app (yang bikin sessionStorage token hilang dan
