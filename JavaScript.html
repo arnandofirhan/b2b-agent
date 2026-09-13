@@ -82,6 +82,7 @@
     { key: 'products',    icon: ICONS.products,  label: 'Master Item Product', roles: ['ADMIN','MANAGER'] },
     { key: 'catalog',     icon: ICONS.products,  label: 'Katalog',          roles: ['AGENT','SUPERVISOR'] },
     { key: 'promo',       icon: ICONS.promo,     label: 'Promo',            roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
+    { key: 'livechat',    icon: ICONS.bell,      label: 'Live Chat',        roles: ['ADMIN','SUPERVISOR','MANAGER'] },
     { key: 'transactions',icon: ICONS.transactions, label: 'Transaksi / PO',roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
     { key: 'orders',      icon: ICONS.orders,    label: 'Order',            roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
     { key: 'commission',  icon: ICONS.commission,label: 'Commission',       roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
@@ -99,7 +100,7 @@
   // MENU_ITEMS above remains the flat source of truth for role/icon/label/preload) ----------
   var MENU_GROUPS = [
     { key: '__top__',   label: null,               items: ['dashboard'] }, // ungrouped, always visible, no header
-    { key: 'transaksi', label: 'Transaksi',         items: ['catalog','promo','transactions','orders','commission','commission-scheme'] },
+    { key: 'transaksi', label: 'Transaksi',         items: ['catalog','promo','livechat','transactions','orders','commission','commission-scheme'] },
     { key: 'master',    label: 'Master Data',       items: ['agents','products','stores'] },
     { key: 'laporan',   label: 'Laporan & Jadwal',  items: ['reports','calendar'] },
     { key: 'sistem',    label: 'Sistem',            items: ['users','settings','dashboard-settings','audit-log'] }
@@ -110,7 +111,7 @@
   var PAGE_TITLES = {
     dashboard: 'Dashboard', agents: 'Agent', products: 'Master Item Product',
     catalog: 'Katalog Produk',
-    promo: 'Promo', transactions: 'Transaksi / PO', orders: 'Order',
+    promo: 'Promo', livechat: 'Live Chat', transactions: 'Transaksi / PO', orders: 'Order',
     commission: 'Commission', 'commission-scheme': 'Skema Komisi',
     stores: 'Store Management', users: 'Kelola User', settings: 'Pengaturan',
     'dashboard-settings': 'Dashboard Settings',
@@ -660,6 +661,7 @@
     loadNotifications_();
     if(NOTIF_POLL_INTERVAL_) clearInterval(NOTIF_POLL_INTERVAL_);
     NOTIF_POLL_INTERVAL_ = setInterval(loadNotifications_, 120000); // refresh tiap 2 menit
+    initLiveChat_();
   }
   var NOTIF_POLL_INTERVAL_ = null;
 
@@ -675,6 +677,7 @@
       agents: renderAgents,
       products: renderProducts,
       promo: renderPromos,
+      livechat: renderLiveChatInbox,
       transactions: renderPO,
       orders: renderOrders,
       commission: renderCommissions,
@@ -949,7 +952,8 @@
       // Order yang sudah dibuat tapi belum dikirim (menunggu Surat Jalan).
       return n.type === 'orange' && n.orderId;
     });
-    NAV_BADGE_COUNTS_ = { transactions: poActionable.length, orders: orderActionable.length };
+    NAV_BADGE_COUNTS_.transactions = poActionable.length;
+    NAV_BADGE_COUNTS_.orders = orderActionable.length;
   }
 
   function toggleSidebar(){
@@ -1110,6 +1114,7 @@
         case 'products': return renderProducts();
         case 'catalog': return renderCatalog();
         case 'promo': return renderPromos();
+        case 'livechat': return renderLiveChatInbox();
         case 'stores': return renderStores();
         case 'transactions': return renderPO();
         case 'orders': return renderOrders();
@@ -9016,5 +9021,410 @@
     renderNotifBadge_();
     renderNotifDropdownList_();
     google.script.run.withSuccessHandler(function(){}).withFailureHandler(function(){ /* silent — akan terkoreksi di polling berikutnya */ }).markAllNotifSeen(STATE.token);
+  }
+
+  /*************************************************************
+   * LIVE CHAT — Frontend
+   * - AGENT: floating bubble (chat-fab) + panel 1:1 dengan tim staff
+   * - ADMIN/SUPERVISOR/MANAGER: halaman "Live Chat" (inbox semua room,
+   *   kolaboratif — siapa pun dari role ini bisa membalas room mana pun)
+   * - "End Chat": staff bisa menandai room selesai (CLOSED). Riwayat TETAP
+   *   tersimpan permanen di sheet CHAT_MESSAGES — tidak pernah dihapus.
+   *   Kalau Agent mengirim pesan baru ke room yang sudah selesai, room
+   *   otomatis terbuka lagi (auto-reopen, lihat backend sendChatMessage).
+   * Polling-based (bukan WebSocket — Google Apps Script tidak mendukungnya).
+   *************************************************************/
+
+  var CHAT_STATE_ = {
+    myRoomId: null, myRoomStatus: 'OPEN', lastMessageId: null, panelOpen: false,
+    pollInterval: null, unreadPollInterval: null,
+    inboxRooms: [], inboxFilter: 'OPEN', inboxActiveRoomId: null, inboxActiveRoomStatus: 'OPEN',
+    inboxLastMessageId: null
+  };
+
+  var CHAT_ICONS_ = {
+    bubble: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
+    close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+    send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>',
+    chatEmpty: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>',
+    back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><path d="m15 18-6-6 6-6"/></svg>',
+    checkCircle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m22 4-10 10-3-3"/></svg>',
+    rotate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>'
+  };
+
+  /** Dipanggil dari bootApp() setelah login berhasil. Memasang floating bubble untuk Agent
+      dan memulai polling badge unread untuk semua role (termasuk staff, untuk badge menu
+      sidebar "Live Chat"). */
+  function initLiveChat_(){
+    if(CHAT_STATE_.unreadPollInterval) clearInterval(CHAT_STATE_.unreadPollInterval);
+
+    if(STATE.user.role === 'AGENT'){
+      injectChatFab_();
+    }
+    refreshChatUnreadBadge_();
+    CHAT_STATE_.unreadPollInterval = setInterval(refreshChatUnreadBadge_, 15000);
+  }
+
+  function refreshChatUnreadBadge_(){
+    google.script.run.withSuccessHandler(function(res){
+      var unread = (res && res.unread) || 0;
+      var fabBadge = document.getElementById('chatFabBadge');
+      if(fabBadge){ fabBadge.style.display = unread > 0 ? 'flex' : 'none'; fabBadge.textContent = unread > 99 ? '99+' : String(unread); }
+      NAV_BADGE_COUNTS_.livechat = unread;
+      renderSidebar();
+      renderBottomNav();
+    }).withFailureHandler(function(){ /* diam-diam gagal, jangan ganggu UX; akan dicoba lagi di poll berikutnya */ }).getChatUnreadSummary(STATE.token);
+  }
+
+  // ---------- AGENT: floating bubble + panel chat ----------
+
+  function injectChatFab_(){
+    if(document.getElementById('chatFab')) return; // sudah ada, jangan dobel
+
+    var fab = document.createElement('button');
+    fab.type = 'button';
+    fab.id = 'chatFab';
+    fab.className = 'chat-fab';
+    fab.title = 'Live Chat';
+    fab.setAttribute('aria-label', 'Buka Live Chat');
+    fab.innerHTML = CHAT_ICONS_.bubble + '<span id="chatFabBadge" class="chat-fab-badge" style="display:none;">0</span>';
+    fab.onclick = openChatPanel_;
+    document.body.appendChild(fab);
+
+    var overlay = document.createElement('div');
+    overlay.id = 'chatPanelOverlay';
+    overlay.className = 'chat-panel-overlay';
+    overlay.onpointerdown = function(e){ if(e.target === overlay) closeChatPanel_(); };
+    overlay.innerHTML =
+      '<div class="chat-panel">' +
+        '<div class="chat-panel-header">' +
+          '<div class="chat-panel-header-avatar">' + CHAT_ICONS_.bubble + '</div>' +
+          '<div class="chat-panel-header-info">' +
+            '<div class="chat-panel-header-title">Live Chat</div>' +
+            '<div class="chat-panel-header-sub"><span class="chat-online-dot"></span>Admin &amp; Supervisor siap membantu</div>' +
+          '</div>' +
+          '<button type="button" class="chat-panel-close" onclick="closeChatPanel_()" aria-label="Tutup">' + CHAT_ICONS_.close + '</button>' +
+        '</div>' +
+        '<div class="chat-messages" id="chatMessagesEl"><div class="spinner"></div></div>' +
+        '<div class="chat-input-bar" id="chatInputBarEl">' +
+          '<textarea id="chatInputEl" rows="1" placeholder="Tulis pesan..." onkeydown="handleChatInputKeydown_(event)" oninput="autoGrowChatInput_(this)"></textarea>' +
+          '<button type="button" class="chat-send-btn" id="chatSendBtn" onclick="sendMyChatMessage_()" aria-label="Kirim">' + CHAT_ICONS_.send + '</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(overlay);
+  }
+
+  function openChatPanel_(){
+    var overlay = document.getElementById('chatPanelOverlay');
+    overlay.classList.add('active');
+    CHAT_STATE_.panelOpen = true;
+
+    google.script.run.withSuccessHandler(function(room){
+      CHAT_STATE_.myRoomId = room.roomId;
+      CHAT_STATE_.myRoomStatus = room.status || 'OPEN';
+      loadMyChatMessages_(true);
+      if(CHAT_STATE_.pollInterval) clearInterval(CHAT_STATE_.pollInterval);
+      CHAT_STATE_.pollInterval = setInterval(function(){ loadMyChatMessages_(false); }, 5000);
+    }).withFailureHandler(function(e){ handleBackendError(e); }).getOrCreateMyChatRoom(STATE.token);
+  }
+
+  function closeChatPanel_(){
+    document.getElementById('chatPanelOverlay').classList.remove('active');
+    CHAT_STATE_.panelOpen = false;
+    if(CHAT_STATE_.pollInterval){ clearInterval(CHAT_STATE_.pollInterval); CHAT_STATE_.pollInterval = null; }
+    refreshChatUnreadBadge_();
+  }
+
+  function loadMyChatMessages_(isFirstLoad){
+    if(!CHAT_STATE_.myRoomId) return;
+    google.script.run.withSuccessHandler(function(messages){
+      var el = document.getElementById('chatMessagesEl');
+      if(!el) return;
+      if(isFirstLoad) el.innerHTML = '';
+      if(isFirstLoad && messages.length === 0){
+        el.innerHTML = '<div class="chat-empty-state">' + CHAT_ICONS_.chatEmpty +
+          '<span>Belum ada percakapan.<br>Tulis pesan untuk mulai chat dengan tim kami.</span></div>';
+      } else {
+        var wasNearBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) < 60;
+        messages.forEach(function(m){
+          appendChatBubble_(el, m, m.senderRole === 'AGENT');
+          CHAT_STATE_.lastMessageId = m.messageId;
+        });
+        if(isFirstLoad || wasNearBottom) el.scrollTop = el.scrollHeight;
+      }
+      updateMyChatInputState_();
+    }).withFailureHandler(function(e){ if(isFirstLoad) handleBackendError(e); }).getChatMessages(STATE.token, CHAT_STATE_.myRoomId, isFirstLoad ? null : CHAT_STATE_.lastMessageId);
+  }
+
+  /** Agent TETAP bisa mengetik & kirim meski room berstatus CLOSED — mengirim pesan baru akan
+      otomatis membuka kembali percakapan (lihat sendChatMessage di backend). Banner info saja
+      yang ditampilkan supaya Agent tahu status terakhirnya, tidak menghalangi. */
+  function updateMyChatInputState_(){
+    var barEl = document.getElementById('chatInputBarEl');
+    if(!barEl) return;
+    var existingBanner = document.getElementById('chatClosedBannerEl');
+    if(existingBanner) existingBanner.remove();
+    if(CHAT_STATE_.myRoomStatus === 'CLOSED'){
+      var banner = document.createElement('div');
+      banner.id = 'chatClosedBannerEl';
+      banner.className = 'chat-closed-banner';
+      banner.textContent = 'Percakapan ini sudah ditandai selesai. Kirim pesan baru untuk membukanya kembali.';
+      barEl.parentNode.insertBefore(banner, barEl);
+    }
+  }
+
+  function sendMyChatMessage_(){
+    var input = document.getElementById('chatInputEl');
+    var text = input.value.trim();
+    if(!text || !CHAT_STATE_.myRoomId) return;
+    input.value = ''; autoGrowChatInput_(input);
+    var btn = document.getElementById('chatSendBtn');
+    btn.disabled = true;
+
+    google.script.run.withSuccessHandler(function(msg){
+      btn.disabled = false;
+      var el = document.getElementById('chatMessagesEl');
+      if(el.querySelector('.chat-empty-state')) el.innerHTML = '';
+      appendChatBubble_(el, msg, true);
+      CHAT_STATE_.lastMessageId = msg.messageId;
+      el.scrollTop = el.scrollHeight;
+      if(CHAT_STATE_.myRoomStatus === 'CLOSED'){
+        CHAT_STATE_.myRoomStatus = 'OPEN'; // auto-reopen sudah terjadi di backend
+        updateMyChatInputState_();
+      }
+    }).withFailureHandler(function(e){ btn.disabled = false; input.value = text; handleBackendError(e); }).sendChatMessage(STATE.token, CHAT_STATE_.myRoomId, text);
+  }
+
+  function handleChatInputKeydown_(e){
+    if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); sendMyChatMessage_(); }
+  }
+  function autoGrowChatInput_(el){
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 90) + 'px';
+  }
+
+  function appendChatBubble_(container, m, isMine){
+    var row = document.createElement('div');
+    if(m.senderRole === 'SYSTEM' || m.messageType === 'SYSTEM'){
+      row.className = 'chat-msg-row system';
+      row.innerHTML = '<div class="chat-bubble">' + escapeHtml(m.messageText) + '</div>';
+      container.appendChild(row);
+      return;
+    }
+    row.className = 'chat-msg-row ' + (isMine ? 'mine' : 'theirs');
+    var senderLabel = isMine ? '' : '<div class="chat-msg-sender">' + escapeHtml(m.senderName) + ' &middot; ' + roleLabel_(m.senderRole) + '</div>';
+    row.innerHTML = senderLabel +
+      '<div class="chat-bubble">' + escapeHtml(m.messageText) + '</div>' +
+      '<div class="chat-msg-time">' + formatChatTime_(m.createdAt) + '</div>';
+    container.appendChild(row);
+  }
+
+  function roleLabel_(role){
+    return { ADMIN:'Admin', SUPERVISOR:'Supervisor', MANAGER:'Manager', AGENT:'Agent', SYSTEM:'Sistem' }[role] || role;
+  }
+
+  function formatChatTime_(iso){
+    try{
+      var d = new Date(iso);
+      var hh = String(d.getHours()).padStart(2,'0');
+      var mi = String(d.getMinutes()).padStart(2,'0');
+      return hh + ':' + mi;
+    }catch(e){ return ''; }
+  }
+
+  // ---------- STAFF (ADMIN/SUPERVISOR/MANAGER): halaman inbox "Live Chat" ----------
+
+  function renderLiveChatInbox(){
+    var content = document.getElementById('content');
+    content.innerHTML =
+      '<div class="chat-inbox" id="chatInboxEl">' +
+        '<div class="chat-room-list" id="chatRoomListEl">' +
+          '<div class="chat-room-list-header">' +
+            '<span>Percakapan</span>' +
+            '<div class="chat-room-filter-tabs">' +
+              '<button type="button" class="chat-room-filter-tab active" data-filter="OPEN" onclick="setChatRoomFilter_(\'OPEN\')">Aktif</button>' +
+              '<button type="button" class="chat-room-filter-tab" data-filter="ALL" onclick="setChatRoomFilter_(\'ALL\')">Semua</button>' +
+            '</div>' +
+          '</div>' +
+          '<div id="chatRoomListItems"><div class="spinner"></div></div>' +
+        '</div>' +
+        '<div class="chat-room-detail" id="chatRoomDetailEl">' +
+          '<div class="chat-inbox-empty">' + CHAT_ICONS_.chatEmpty + '<span>Pilih percakapan untuk mulai membalas.</span></div>' +
+        '</div>' +
+      '</div>';
+    CHAT_STATE_.inboxFilter = 'OPEN';
+    loadChatRoomList_();
+    if(CHAT_STATE_.pollInterval) clearInterval(CHAT_STATE_.pollInterval);
+    CHAT_STATE_.pollInterval = setInterval(function(){
+      loadChatRoomList_();
+      if(CHAT_STATE_.inboxActiveRoomId) loadInboxMessages_(false);
+    }, 6000);
+  }
+
+  function setChatRoomFilter_(filter){
+    CHAT_STATE_.inboxFilter = filter;
+    var tabs = document.querySelectorAll('.chat-room-filter-tab');
+    tabs.forEach(function(t){ t.classList.toggle('active', t.getAttribute('data-filter') === filter); });
+    renderChatRoomListItems_();
+  }
+
+  function loadChatRoomList_(){
+    google.script.run.withSuccessHandler(function(rooms){
+      CHAT_STATE_.inboxRooms = rooms;
+      renderChatRoomListItems_();
+    }).withFailureHandler(function(e){ handleBackendError(e); }).listChatRooms(STATE.token);
+  }
+
+  function renderChatRoomListItems_(){
+    var listEl = document.getElementById('chatRoomListItems');
+    if(!listEl) return; // user sudah pindah halaman
+    var rooms = CHAT_STATE_.inboxRooms.filter(function(r){
+      return CHAT_STATE_.inboxFilter === 'ALL' ? true : r.status === 'OPEN';
+    });
+    if(rooms.length === 0){
+      listEl.innerHTML = '<div class="chat-inbox-empty" style="padding:32px 16px;">' + CHAT_ICONS_.chatEmpty +
+        '<span>' + (CHAT_STATE_.inboxFilter === 'ALL' ? 'Belum ada percakapan masuk.' : 'Tidak ada percakapan aktif.') + '</span></div>';
+      return;
+    }
+    listEl.innerHTML = rooms.map(function(r){
+      var initials = (r.agentName || '?').trim().charAt(0).toUpperCase();
+      var isActive = r.roomId === CHAT_STATE_.inboxActiveRoomId;
+      var isClosed = r.status === 'CLOSED';
+      return '<div class="chat-room-item' + (isActive ? ' active' : '') + (isClosed ? ' is-closed' : '') + '" onclick="openInboxRoom_(\'' + r.roomId + '\')">' +
+        '<div class="chat-room-avatar">' + escapeHtml(initials) + '</div>' +
+        '<div class="chat-room-info">' +
+          '<div class="chat-room-name">' + escapeHtml(r.agentName || r.agentId) + '</div>' +
+          '<div class="chat-room-preview">' + escapeHtml(r.lastMessage || 'Belum ada pesan') + '</div>' +
+        '</div>' +
+        '<div class="chat-room-meta">' +
+          '<span class="chat-room-time">' + (r.lastMessageAt ? formatChatTime_(r.lastMessageAt) : '') + '</span>' +
+          (r.unreadForStaff > 0 ? '<span class="chat-room-unread-badge">' + (r.unreadForStaff > 99 ? '99+' : r.unreadForStaff) + '</span>' : '') +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  function openInboxRoom_(roomId){
+    CHAT_STATE_.inboxActiveRoomId = roomId;
+    CHAT_STATE_.inboxLastMessageId = null;
+    document.getElementById('chatInboxEl').classList.add('room-open');
+
+    var room = CHAT_STATE_.inboxRooms.filter(function(r){ return r.roomId === roomId; })[0] || {};
+    CHAT_STATE_.inboxActiveRoomStatus = room.status || 'OPEN';
+    renderInboxRoomDetailShell_(room);
+    loadInboxMessages_(true);
+    loadChatRoomList_(); // refresh supaya badge unread & highlight active ter-update
+  }
+
+  function renderInboxRoomDetailShell_(room){
+    var detailEl = document.getElementById('chatRoomDetailEl');
+    var isClosed = room.status === 'CLOSED';
+    detailEl.innerHTML =
+      '<div class="chat-room-detail-header">' +
+        '<button type="button" class="chat-room-detail-back" onclick="closeInboxRoom_()" aria-label="Kembali">' + CHAT_ICONS_.back + '</button>' +
+        '<div class="chat-room-detail-title-wrap">' +
+          '<div class="chat-room-detail-title">' +
+            escapeHtml(room.agentName || room.agentId || '-') +
+            '<span class="chat-status-badge ' + (isClosed ? 'closed' : 'open') + '">' + (isClosed ? 'Selesai' : 'Aktif') + '</span>' +
+          '</div>' +
+          '<div class="chat-room-detail-sub">ID Agent: ' + escapeHtml(room.agentId || '-') + '</div>' +
+        '</div>' +
+        (isClosed
+          ? '<button type="button" class="chat-end-btn is-reopen" onclick="reopenInboxRoom_(\'' + room.roomId + '\')">' + CHAT_ICONS_.rotate + 'Buka Lagi</button>'
+          : '<button type="button" class="chat-end-btn" onclick="confirmEndChat_(\'' + room.roomId + '\')">' + CHAT_ICONS_.checkCircle + 'Selesaikan</button>') +
+      '</div>' +
+      '<div class="chat-inbox-messages" id="chatInboxMessagesEl"><div class="spinner"></div></div>' +
+      '<div class="chat-inbox-input-bar" id="chatInboxInputBarEl">' +
+        '<textarea id="chatInboxInputEl" rows="1" placeholder="Balas sebagai ' + roleLabel_(STATE.user.role) + '..." onkeydown="handleInboxInputKeydown_(event)" oninput="autoGrowChatInput_(this)"></textarea>' +
+        '<button type="button" class="chat-send-btn" id="chatInboxSendBtn" onclick="sendInboxMessage_()" aria-label="Kirim">' + CHAT_ICONS_.send + '</button>' +
+      '</div>';
+  }
+
+  function closeInboxRoom_(){
+    CHAT_STATE_.inboxActiveRoomId = null;
+    document.getElementById('chatInboxEl').classList.remove('room-open');
+  }
+
+  function loadInboxMessages_(isFirstLoad){
+    var roomId = CHAT_STATE_.inboxActiveRoomId;
+    if(!roomId) return;
+    google.script.run.withSuccessHandler(function(messages){
+      var el = document.getElementById('chatInboxMessagesEl');
+      if(!el) return;
+      if(isFirstLoad) el.innerHTML = '';
+      if(isFirstLoad && messages.length === 0){
+        el.innerHTML = '<div class="chat-inbox-empty">' + CHAT_ICONS_.chatEmpty + '<span>Belum ada pesan di percakapan ini.</span></div>';
+      } else {
+        var wasNearBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) < 60;
+        messages.forEach(function(m){
+          appendChatBubble_(el, m, m.senderRole !== 'AGENT' && m.senderRole !== 'SYSTEM');
+          CHAT_STATE_.inboxLastMessageId = m.messageId;
+        });
+        if(isFirstLoad || wasNearBottom) el.scrollTop = el.scrollHeight;
+      }
+    }).withFailureHandler(function(e){ if(isFirstLoad) handleBackendError(e); }).getChatMessages(STATE.token, roomId, isFirstLoad ? null : CHAT_STATE_.inboxLastMessageId);
+  }
+
+  function sendInboxMessage_(){
+    var roomId = CHAT_STATE_.inboxActiveRoomId;
+    var input = document.getElementById('chatInboxInputEl');
+    var text = input.value.trim();
+    if(!text || !roomId) return;
+    input.value = ''; autoGrowChatInput_(input);
+    var btn = document.getElementById('chatInboxSendBtn');
+    btn.disabled = true;
+
+    google.script.run.withSuccessHandler(function(msg){
+      btn.disabled = false;
+      var el = document.getElementById('chatInboxMessagesEl');
+      if(el.querySelector('.chat-inbox-empty')) el.innerHTML = '';
+      appendChatBubble_(el, msg, true);
+      CHAT_STATE_.inboxLastMessageId = msg.messageId;
+      el.scrollTop = el.scrollHeight;
+      loadChatRoomList_();
+    }).withFailureHandler(function(e){ btn.disabled = false; input.value = text; handleBackendError(e); }).sendChatMessage(STATE.token, roomId, text);
+  }
+
+  function handleInboxInputKeydown_(e){
+    if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); sendInboxMessage_(); }
+  }
+
+  /** "End Chat" — konfirmasi dulu sebelum menandai room selesai, supaya staff tidak salah
+      klik dan menutup percakapan yang masih berjalan. Riwayat pesan TIDAK dihapus. */
+  function confirmEndChat_(roomId){
+    openConfirmModal({
+      title: 'Selesaikan percakapan ini?',
+      message: 'Percakapan akan ditandai selesai. Riwayat chat tetap tersimpan dan Agent masih bisa membaca semuanya. Kalau Agent mengirim pesan baru lagi nanti, percakapan ini otomatis terbuka kembali.',
+      confirmLabel: 'Ya, Selesaikan',
+      confirmIcon: CHAT_ICONS_.checkCircle,
+      icon: CHAT_ICONS_.checkCircle,
+      onConfirm: function(){ endChat_(roomId); }
+    });
+  }
+
+  function endChat_(roomId){
+    google.script.run.withSuccessHandler(function(res){
+      showToast('Percakapan ditandai selesai.', 'success');
+      CHAT_STATE_.inboxActiveRoomStatus = 'CLOSED';
+      loadChatRoomList_();
+      var room = { roomId: roomId, status: 'CLOSED',
+        agentName: (CHAT_STATE_.inboxRooms.filter(function(r){ return r.roomId===roomId; })[0]||{}).agentName,
+        agentId: (CHAT_STATE_.inboxRooms.filter(function(r){ return r.roomId===roomId; })[0]||{}).agentId };
+      renderInboxRoomDetailShell_(room);
+      loadInboxMessages_(true);
+    }).withFailureHandler(function(e){ handleBackendError(e); }).closeChatRoom(STATE.token, roomId);
+  }
+
+  function reopenInboxRoom_(roomId){
+    google.script.run.withSuccessHandler(function(res){
+      showToast('Percakapan dibuka kembali.', 'success');
+      CHAT_STATE_.inboxActiveRoomStatus = 'OPEN';
+      loadChatRoomList_();
+      var room = { roomId: roomId, status: 'OPEN',
+        agentName: (CHAT_STATE_.inboxRooms.filter(function(r){ return r.roomId===roomId; })[0]||{}).agentName,
+        agentId: (CHAT_STATE_.inboxRooms.filter(function(r){ return r.roomId===roomId; })[0]||{}).agentId };
+      renderInboxRoomDetailShell_(room);
+      loadInboxMessages_(true);
+    }).withFailureHandler(function(e){ handleBackendError(e); }).reopenChatRoom(STATE.token, roomId);
   }
 </script>
