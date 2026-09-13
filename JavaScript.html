@@ -6917,18 +6917,34 @@
 
     // Banner carousel (kalau Admin belum atur satupun, tampilkan header sapaan polos saja)
     if(banners.length){
-      html += '<div class="agent-dash-banners" id="agentBannerTrack" onscroll="onAgentBannerScroll_()">';
-      banners.forEach(function(b, i){
-        html += '<div class="agent-banner-card" '
+      // Loop tak berujung: tempel KLON banner terakhir di paling depan & KLON banner
+      // pertama di paling belakang. Track dibuka di posisi slide asli index-0 (bukan index
+      // klon). Begitu user/autoplay geser sampai masuk ke slide klon di ujung, langsung
+      // "dilompat" diam-diam (scrollLeft instan, tanpa animasi) ke slide asli yang sepadan
+      // di sisi lain — jadi dari mata user kelihatan muter terus, padahal aslinya cuma
+      // pindah diam-diam pas tidak kelihatan. Kalau banner cuma 1, tidak perlu klon sama
+      // sekali (tidak ada yang perlu di-loop).
+      var loopBanners = banners.length > 1;
+      var slideList = loopBanners ? [banners[banners.length-1]].concat(banners, [banners[0]]) : banners;
+      var bannerCardHtml_ = function(b){
+        return '<div class="agent-banner-card" '
           + (b.linkAction ? 'onclick="agentDashBannerClick_(\''+escapeHtml(b.linkAction)+'\')"' : '') + '>'
           + (b.imageUrl ? '<img src="'+escapeHtml(b.imageUrl)+'" alt="">' : '')
           + '<div class="agent-banner-overlay">'
           + (b.title ? '<div class="agent-banner-title">'+escapeHtml(b.title)+'</div>' : '')
           + (b.subtitle ? '<div class="agent-banner-subtitle">'+escapeHtml(b.subtitle)+'</div>' : '')
           + '</div></div>';
-      });
+      };
+      html += '<div class="agent-dash-banners'+(loopBanners?'':' single-banner')+'" id="agentBannerTrack" onscroll="onAgentBannerScroll_()">';
+      slideList.forEach(function(b){ html += bannerCardHtml_(b); });
       html += '</div>';
       if(banners.length > 1){
+        // Indikator titik gaya modern ("dynamic dots" ala iOS/Instagram Stories): titik
+        // aktif jadi pil lonjong, 1 tetangga kiri-kanan mengecil dikit, 2 tetangga
+        // berikutnya makin kecil/pudar, sisanya disembunyikan. Jadi walau bannernya banyak
+        // (10, 20, dst), indikatornya tidak pernah melebar jadi sebaris titik panjang —
+        // lebar totalnya tetap ringkas & rapi (lihat kelas is-near/is-far/is-hidden yang
+        // diatur onAgentBannerScroll_, style-nya di Stylesheet.html).
         html += '<div class="agent-banner-dots" id="agentBannerDots">';
         banners.forEach(function(b, i){ html += '<span class="agent-banner-dot'+(i===0?' is-active':'')+'" onclick="scrollAgentBannerTo_('+i+')"></span>'; });
         html += '</div>';
@@ -7062,7 +7078,20 @@
     }
     content.innerHTML = html;
     PAGE_HTML_CACHE['dashboard'] = html;
-    if(banners.length > 1) startAgentBannerAutoplay_(banners.length);
+    if(banners.length > 1){
+      // Posisikan track PERSIS di slide asli index-0 (bukan klon di paling depan) — instan
+      // tanpa animasi. Pakai scrollIntoView(inline:'center') bukan hitung pixel manual,
+      // karena sekarang lebar slide cuma 86% (ada "peek" kartu sebelah) jadi lebih aman
+      // biar tetap presisi di tengah walau ukurannya bukan persis 100% lebar track.
+      // Dibungkus requestAnimationFrame supaya layout track sudah pasti kebentuk dulu.
+      requestAnimationFrame(function(){
+        var track = document.getElementById('agentBannerTrack');
+        if(track && track.children[1]) track.children[1].scrollIntoView({ behavior:'instant', inline:'center', block:'nearest' });
+        onAgentBannerScroll_();
+      });
+      startAgentBannerAutoplay_(banners.length);
+      wireAgentBannerTouchPause_();
+    }
     onAgentCategoryRowScroll_(); // cek sekali di awal — kalau kategori dikit & muat tanpa scroll, fade langsung disembunyikan
     onAgentTrendRowScroll_(); // sama, untuk row "Sedang Banyak Dipesan"
   }
@@ -7092,23 +7121,61 @@
   }
 
   // Auto-slide banner atas — geser otomatis tiap 4.5 detik (tidak terlalu cepat), dan
-  // dihentikan sementara begitu Agent geser manual supaya tidak "berebut" arah dengan swipe
-  // user, lalu jalan lagi otomatis setelah beberapa saat.
+  // dihentikan sementara begitu Agent geser manual (lihat wireAgentBannerTouchPause_)
+  // supaya tidak "berebut" arah dengan swipe user — inilah penyebab bug "geser manual
+  // kadang ikut ke-geser otomatis lagi (kayak geser 2x)" sebelumnya: autoplay dulu TIDAK
+  // pernah berhenti saat user sedang menyentuh/menggeser track, jadi timer 4.5 detik bisa
+  // "numpuk" tepat pas jari masih di layar / animasi belum selesai.
+  //
+  // Track sekarang berisi SLIDE KLON di kedua ujung (lihat komentar di paintAgentDashboard_
+  // saat membangun slideList): [klonTerakhir, asli0, asli1, ..., asliN-1, klonPertama].
+  // Jadi index SLOT di track = index asli + 1. `count` = jumlah banner ASLI (N).
+  //
+  // CATATAN PERHITUNGAN POSISI: sejak slide dibuat "peek" (lebar 86%, ada gap, ada padding
+  // di wrapper — bukan 100% penuh lagi), rumus lama `scrollLeft / track.clientWidth` untuk
+  // menebak slot yang lagi aktif SUDAH TIDAK AKURAT (lebar 1 slide != lebar track lagi).
+  // Makanya semua fungsi di bawah pindah pakai agentBannerCenterSlot_() (cari child yang
+  // titik tengahnya paling dekat dengan titik tengah track) & scrollIntoView({inline:
+  // 'center'}) untuk pindah slide — keduanya otomatis benar berapapun lebar/gap slide-nya.
+  function agentBannerCenterSlot_(track){
+    var center = track.scrollLeft + track.clientWidth / 2;
+    var children = track.children, best = 0, bestDist = Infinity;
+    for(var i=0;i<children.length;i++){
+      var childCenter = children[i].offsetLeft + children[i].offsetWidth / 2;
+      var dist = Math.abs(childCenter - center);
+      if(dist < bestDist){ bestDist = dist; best = i; }
+    }
+    return best;
+  }
+
   var AGENT_BANNER_AUTOPLAY_TIMER_ = null;
   var AGENT_BANNER_RESUME_TIMER_ = null;
+  var AGENT_BANNER_SETTLE_TIMER_ = null;
   function startAgentBannerAutoplay_(count){
     stopAgentBannerAutoplay_();
     AGENT_BANNER_AUTOPLAY_TIMER_ = setInterval(function(){
       var track = document.getElementById('agentBannerTrack');
       if(!track || !track.clientWidth) return;
-      var idx = Math.round(track.scrollLeft / track.clientWidth);
-      var next = (idx + 1) % count;
-      scrollAgentBannerTo_(next);
+      var slot = agentBannerCenterSlot_(track);
+      var nextEl = track.children[slot + 1];
+      if(nextEl) nextEl.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
     }, 4500);
   }
   function stopAgentBannerAutoplay_(){
     if(AGENT_BANNER_AUTOPLAY_TIMER_){ clearInterval(AGENT_BANNER_AUTOPLAY_TIMER_); AGENT_BANNER_AUTOPLAY_TIMER_ = null; }
     if(AGENT_BANNER_RESUME_TIMER_){ clearTimeout(AGENT_BANNER_RESUME_TIMER_); AGENT_BANNER_RESUME_TIMER_ = null; }
+  }
+  // Pasang SEKALI per render: begitu jari mulai menyentuh track, autoplay langsung berhenti
+  // (bukan cuma "diperlambat"), lalu jalan lagi otomatis ~3.5 detik setelah jari lepas DAN
+  // scroll benar-benar berhenti (dideteksi lewat debounce di onAgentBannerScroll_, bukan
+  // langsung saat touchend, karena momentum/snap masih lanjut sesaat setelah jari lepas).
+  function wireAgentBannerTouchPause_(){
+    var track = document.getElementById('agentBannerTrack');
+    if(!track || track.dataset.pauseWired) return;
+    track.dataset.pauseWired = '1';
+    ['pointerdown','touchstart'].forEach(function(evt){
+      track.addEventListener(evt, stopAgentBannerAutoplay_, { passive: true });
+    });
   }
   // CATATAN: autoplay sengaja SELALU membaca posisi scroll TERKINI tiap tick (bukan simpan
   // index terpisah), jadi kalau Agent geser manual di antara tick, autoplay otomatis
@@ -7196,23 +7263,66 @@
     if(known.indexOf(linkAction) !== -1) showPage(linkAction);
   }
 
-  // Klik dot -> scroll track ke banner ke-i (pakai scrollTo halus, dot aktif diupdate lewat
-  // event scroll di onAgentBannerScroll_ supaya tetap sinkron kalau user geser manual/swipe).
+  // Klik dot -> scroll track ke banner ASLI ke-i (dikonversi ke index slot dgn +1 karena
+  // ada klon di slot 0), pakai scrollIntoView halus, dot aktif diupdate lewat event scroll
+  // di onAgentBannerScroll_ supaya tetap sinkron kalau user geser manual/swipe.
   function scrollAgentBannerTo_(i){
     var track = document.getElementById('agentBannerTrack');
-    if(!track) return;
-    track.scrollTo({ left: track.clientWidth * i, behavior: 'smooth' });
+    var el = track && track.children[i + 1];
+    if(el) el.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
   }
 
-  // Dipanggil tiap track discroll (swipe manual ATAU hasil scrollAgentBannerTo_) supaya dot
-  // aktif selalu mengikuti banner yang SEDANG terlihat.
+  // Dipanggil tiap track discroll (swipe manual ATAU hasil scrollAgentBannerTo_/autoplay)
+  // untuk 3 hal:
+  //   1) Animasi "carousel fokus": tiap slide diberi transform scale+opacity berdasar jarak
+  //      titik tengahnya ke titik tengah track — yang lagi di tengah membesar & terang
+  //      penuh (class .is-centered), yang di kanan/kiri sedikit mengecil & meredup. Dihitung
+  //      ULANG di SETIAP event scroll, jadi animasinya hidup/mengikuti jari secara live,
+  //      bukan cuma lompat di akhir geseran — inilah "animasi modern" yang diminta,
+  //      dibanding sebelumnya cuma geser polos rata kiri-kanan tanpa efek apa-apa.
+  //   2) Update dot aktif (dot indicator "dynamic dots").
+  //   3) "Loop tak berujung" + jadwalkan lagi autoplay ~3.5 detik setelah scroll berhenti
+  //      (didebounce 160ms) — sama seperti sebelumnya, lihat catatan di startAgentBannerAutoplay_.
   function onAgentBannerScroll_(){
     var track = document.getElementById('agentBannerTrack');
     var dotsWrap = document.getElementById('agentBannerDots');
-    if(!track || !dotsWrap) return;
-    var idx = Math.round(track.scrollLeft / track.clientWidth);
-    var dots = dotsWrap.querySelectorAll('.agent-banner-dot');
-    dots.forEach(function(d, i){ d.classList.toggle('is-active', i === idx); });
+    if(!track) return;
+    var slides = track.children;
+    var slot = agentBannerCenterSlot_(track);
+
+    // (1) Animasi scale/opacity live mengikuti jarak tiap slide ke slide yang lagi di tengah.
+    for(var i=0;i<slides.length;i++){
+      slides[i].classList.toggle('is-centered', i === slot);
+    }
+
+    // (2) Dot indicator.
+    var dots = dotsWrap ? dotsWrap.querySelectorAll('.agent-banner-dot') : [];
+    var totalReal = dots.length;
+    // slot 0 = klon terakhir, slot totalReal+1 = klon pertama, slot 1..totalReal = asli.
+    var realIdx = totalReal ? ((slot - 1 + totalReal) % totalReal) : 0;
+    dots.forEach(function(d, i){
+      var dist = Math.min(Math.abs(i - realIdx), totalReal - Math.abs(i - realIdx));
+      d.classList.toggle('is-active', i === realIdx);
+      d.classList.remove('is-near','is-far','is-hidden');
+      if(i === realIdx){ /* aktif, tidak perlu kelas tambahan */ }
+      else if(dist === 1) d.classList.add('is-near');
+      else if(dist === 2) d.classList.add('is-far');
+      else d.classList.add('is-hidden');
+    });
+
+    // (3) Loop tak berujung + jadwal ulang autoplay setelah scroll benar2 berhenti.
+    if(AGENT_BANNER_SETTLE_TIMER_) clearTimeout(AGENT_BANNER_SETTLE_TIMER_);
+    AGENT_BANNER_SETTLE_TIMER_ = setTimeout(function(){
+      if(totalReal > 1 && (slot === 0 || slot === totalReal + 1)){
+        var targetEl = track.children[slot === 0 ? totalReal : 1];
+        if(targetEl) targetEl.scrollIntoView({ behavior:'instant', inline:'center', block:'nearest' }); // lompat diam-diam, tanpa animasi
+        onAgentBannerScroll_(); // recalc .is-centered & dot supaya langsung sinkron pasca-lompat
+      }
+      if(AGENT_BANNER_RESUME_TIMER_) clearTimeout(AGENT_BANNER_RESUME_TIMER_);
+      AGENT_BANNER_RESUME_TIMER_ = setTimeout(function(){
+        if(totalReal > 1) startAgentBannerAutoplay_(totalReal);
+      }, 3500);
+    }, 160);
   }
 
   // Troli Dashboard Agent — TERPISAH dari NEWPO_CART_ (yang dipakai modal "Buat PO") supaya
@@ -7238,12 +7348,37 @@
     try{ sessionStorage_set(AGENT_DASH_CART_STORAGE_KEY_, JSON.stringify(AGENT_DASH_CART_)); }catch(e){}
   }
 
+  // BUG SEBELUMNYA: klik "+"/stepper di card manapun (termasuk di row "Sedang Banyak
+  // Dipesan" yang geser samping) memicu paintAgentDashboard_() re-render TOTAL
+  // (content.innerHTML diganti seluruhnya) supaya angka qty/troli ter-update — tapi
+  // akibatnya elemen scroll horizontal row itu ikut dibuat ULANG dari nol, jadi posisi
+  // geser baliknya selalu ke paling kiri (card pertama) walau user lagi geser jauh ke
+  // kanan pas nge-klik "+"-nya. Makanya user harus geser ulang tiap habis nambah qty.
+  // FIX: simpan dulu posisi geser row² horizontal yg ada SEBELUM re-render, lalu kembalikan
+  // lagi persis di posisi yang sama setelah render selesai (tanpa animasi, instan).
   function changeAgentDashCartQty_(productId, delta){
+    var scrollRowIds = ['agentTrendRow','agentCategoryRow'];
+    var savedScroll = {};
+    scrollRowIds.forEach(function(id){
+      var el = document.getElementById(id);
+      if(el) savedScroll[id] = el.scrollLeft;
+    });
+
     var q = (AGENT_DASH_CART_[productId] || 0) + delta;
     if(q <= 0) delete AGENT_DASH_CART_[productId];
     else AGENT_DASH_CART_[productId] = q;
     persistAgentDashCart_();
     if(AGENT_DASH_CFG_CACHE_) paintAgentDashboard_(AGENT_DASH_CFG_CACHE_);
+
+    scrollRowIds.forEach(function(id){
+      if(savedScroll[id] === undefined) return;
+      requestAnimationFrame(function(){
+        var el = document.getElementById(id);
+        if(el) el.scrollLeft = savedScroll[id];
+        if(id === 'agentTrendRow') onAgentTrendRowScroll_();
+        if(id === 'agentCategoryRow') onAgentCategoryRowScroll_();
+      });
+    });
   }
 
   // Klik "Troli": isi NEWPO_CART_ dari AGENT_DASH_CART_, lalu buka modal "Buat PO" yang sudah
