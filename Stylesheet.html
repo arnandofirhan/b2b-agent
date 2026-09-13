@@ -2474,6 +2474,15 @@
       background:var(--ag-white, #fff); border:1px solid var(--ag-gray-100,#f0f0ee);
       border-radius:22px;
       box-shadow:0 10px 28px rgba(16,24,32,.14), 0 2px 8px rgba(16,24,32,.06);
+      transition:transform .18s ease, opacity .18s ease;
+    }
+    /* Disembunyikan sementara saat keyboard chat terbuka (lihat syncMobileViewportHeight_ /
+       toggleBottomNavForKeyboard_ di JavaScript.html) — pola UI chat standar (WhatsApp,
+       Telegram, dll): begitu layar sudah "mode mengetik" penuh, bottom-nav cuma makan tempat
+       dan berisiko ikut ter-drag oleh reflow keyboard di browser tertentu. Digeser+fade alih-
+       alih display:none supaya transisi tampil halus, bukan menghilang tiba-tiba. */
+    #bottomNav.nav-hidden-for-keyboard{
+      transform:translateY(120%); opacity:0; pointer-events:none;
     }
     html[data-theme="dark"] #bottomNav{ background:#0f1e18; border-color:rgba(255,255,255,.08); }
 
@@ -2873,7 +2882,9 @@
   }
 
   .chat-panel{
-    width:100%; max-width:380px; height:min(620px,92vh);
+    width:100%; max-width:380px;
+    height:min(620px, 92vh);
+    height:min(620px, calc(var(--app-vvh, 100vh) * .92));
     background:var(--ag-surface); border-radius:var(--radius-lg);
     display:flex; flex-direction:column; overflow:hidden;
     box-shadow:var(--shadow-md);
@@ -3068,20 +3079,37 @@
   .cs-preview-bubble{ align-self:center; max-width:100%; }
   .cs-preview-bubble .chat-bubble{ max-width:340px; }
 
-  .cs-day-picker{ display:flex; flex-wrap:wrap; gap:8px; }
-  .cs-day-chip{
-    width:44px; height:38px; border-radius:10px; border:1.5px solid var(--ag-gray-200); background:var(--ag-surface);
-    color:var(--ag-gray-600); font-size:12.5px; font-weight:700; cursor:pointer; transition:all .15s ease;
+  /* Jadwal Jam Operasional PER HARI — tiap baris = satu hari, dengan toggle aktif/nonaktif
+     sendiri + input jam mulai/selesai sendiri. Menggantikan day-chip global (satu jam untuk
+     semua hari tercentang) supaya Admin bisa mengatur mis. Sabtu tutup lebih awal dari
+     Senin–Jumat, atau Minggu libur total. */
+  .cs-day-list{ display:flex; flex-direction:column; gap:8px; }
+  .cs-day-row{
+    border:1px solid var(--ag-gray-200); border-radius:12px; padding:12px 14px; background:var(--ag-surface);
+    transition:background .15s ease, border-color .15s ease;
   }
-  .cs-day-chip:hover{ border-color:var(--ag-green); }
-  .cs-day-chip.active{ background:var(--ag-green); border-color:var(--ag-green); color:#fff; }
-
-  .cs-time-row{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
-  .cs-time-row input[type="time"]{
-    width:100%; padding:9px 12px; border:1px solid var(--ag-gray-200); border-radius:9px;
-    font-size:13.5px; font-family:var(--font); background:var(--ag-surface); color:var(--ag-gray-900);
+  .cs-day-row.is-off{ background:var(--ag-gray-50); }
+  [data-theme="dark"] .cs-day-row.is-off{ background:var(--ag-gray-900); }
+  .cs-day-row-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .cs-day-row-label{ margin:0; }
+  .cs-day-row-label .switch-slider{ margin-right:0; }
+  .cs-day-row-summary{
+    font-size:12px; font-weight:600; color:var(--ag-gray-500); flex-shrink:0; white-space:nowrap;
   }
-  .cs-time-row input[type="time"]:focus{ outline:none; border-color:var(--ag-green); }
+  .cs-day-row.is-off .cs-day-row-summary{ color:var(--ag-gray-400); font-style:italic; }
+  .cs-day-row-times{
+    display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px;
+    overflow:hidden; max-height:80px; opacity:1; transition:max-height .18s ease, opacity .15s ease, margin-top .18s ease;
+  }
+  .cs-day-row.is-off .cs-day-row-times{ max-height:0; opacity:0; margin-top:0; pointer-events:none; }
+  .cs-day-row-times .form-field{ gap:4px; }
+  .cs-day-row-times .form-field label{ font-size:11px; color:var(--ag-gray-500); font-weight:600; }
+  .cs-day-row-times input[type="time"]{
+    width:100%; padding:8px 10px; border:1px solid var(--ag-gray-200); border-radius:9px;
+    font-size:13px; font-family:var(--font); background:var(--ag-surface); color:var(--ag-gray-900);
+    box-sizing:border-box;
+  }
+  .cs-day-row-times input[type="time"]:focus{ outline:none; border-color:var(--ag-green); }
 
   .cs-qr-list{ display:flex; flex-direction:column; gap:8px; }
   .cs-qr-item{
@@ -3110,9 +3138,30 @@
     overflow:hidden;
   }
   @media (max-width:900px){
-    .chat-inbox{ grid-template-columns:1fr; height:auto; min-height:0; }
+    /* FIX LAYOUT CHAT MOBILE: sebelumnya height:auto membuat tinggi .chat-inbox mengikuti
+       tinggi KONTEN (jumlah pesan), bukan tinggi LAYAR — akibatnya kalau pesan cuma sedikit,
+       kolom ketik nampak "menempel pas-pasan" tepat di bawah bubble terakhir alih-alih di
+       dasar layar, jauh sebelum keyboard bahkan muncul (ini keluhan #1). Sekarang dipatok ke
+       --app-vvh (dikelola JS lewat visualViewport, lihat syncMobileViewportHeight_ di
+       JavaScript.html) dikurangi tinggi topbar + margin bottom-nav mengambang, supaya
+       .chat-inbox SELALU mengisi persis sisa layar yang benar-benar terlihat — baik sebelum
+       maupun sesudah keyboard muncul — dan kolom ketik konsisten menempel di dasarnya lewat
+       flex (.chat-room-detail column + .chat-inbox-messages flex:1).
+       Fallback ke 100dvh (didukung browser modern) untuk kondisi sebelum JS sempat jalan. */
+    .chat-inbox{
+      grid-template-columns:1fr; min-height:0;
+      height:calc(100dvh - var(--topbar-height) - 110px);
+      height:calc(var(--app-vvh, 100dvh) - var(--topbar-height) - 110px);
+    }
     .chat-inbox.room-open .chat-room-list{ display:none; }
     .chat-inbox:not(.room-open) .chat-room-detail{ display:none; }
+    /* Saat sedang mengetik balasan (textarea fokus), bottom-nav disembunyikan (lihat JS)
+       supaya area chat bisa memakai ruang tambahan itu — dipatok penuh ke sisa viewport
+       tanpa perlu menyisakan jarak untuk bottom-nav yang sedang tidak tampil. */
+    .chat-inbox.keyboard-open{
+      height:calc(100dvh - var(--topbar-height) - 12px);
+      height:calc(var(--app-vvh, 100dvh) - var(--topbar-height) - 12px);
+    }
   }
 
   .chat-room-list{
