@@ -7409,11 +7409,31 @@
       if(el) savedScroll[id] = el.scrollLeft;
     });
 
+    // FIX: paintAgentDashboard_() SELALU mereset banner atas ke slide index-0 tiap kali
+    // dipanggil (lihat requestAnimationFrame di dalamnya yang scrollIntoView ke
+    // track.children[1] / slide asli pertama) — makanya banner ikut "lompat balik" ke
+    // urutan pertama tiap klik "+"/"-" pada produk, walau banner sedang ada di urutan
+    // ke-3 dst. Sama seperti row horizontal lain, simpan dulu SLOT banner yang lagi aktif
+    // (bukan cuma scrollLeft mentah — setelah re-render, lebar/urutan child clone tetap
+    // sama sehingga slot index tetap valid) SEBELUM re-render, lalu kembalikan lagi persis
+    // ke slot yang sama setelah render selesai (instan, tanpa animasi).
+    var bannerTrackBefore = document.getElementById('agentBannerTrack');
+    var savedBannerSlot = bannerTrackBefore ? agentBannerCenterSlot_(bannerTrackBefore) : null;
+
     var q = (AGENT_DASH_CART_[productId] || 0) + delta;
     if(q <= 0) delete AGENT_DASH_CART_[productId];
     else AGENT_DASH_CART_[productId] = q;
     persistAgentDashCart_();
     if(AGENT_DASH_CFG_CACHE_) paintAgentDashboard_(AGENT_DASH_CFG_CACHE_);
+
+    if(savedBannerSlot !== null){
+      requestAnimationFrame(function(){
+        var track = document.getElementById('agentBannerTrack');
+        var target = track && track.children[savedBannerSlot];
+        if(target) target.scrollIntoView({ behavior:'instant', inline:'center', block:'nearest' });
+        onAgentBannerScroll_();
+      });
+    }
 
     if(mainArea && savedMainScrollTop !== null) mainArea.scrollTop = savedMainScrollTop;
     scrollRowIds.forEach(function(id){
