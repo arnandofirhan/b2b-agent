@@ -9838,6 +9838,17 @@
   // ---------- STAFF (ADMIN/SUPERVISOR/MANAGER): halaman inbox "Live Chat" ----------
 
   function renderLiveChatInbox(){
+    // FIX BUG "LOGIN/REFRESH SEMPAT NAMPAKKAN LIVE CHAT SEBELUM DASHBOARD": beda dari
+    // hampir semua render*() halaman lain (yang menulis lewat paintPage_(), sudah otomatis
+    // menjaga diri lewat LAST_PAINTED_PAGE_/STATE.currentPage), fungsi ini SELALU langsung
+    // menulis ke #content tanpa penjagaan. preloadAllPages_() (dipanggil ~1.2 detik setelah
+    // bootApp menampilkan Dashboard, untuk warm-cache semua menu di background) ikut
+    // memanggil renderLiveChatInbox() ini walau user masih di Dashboard — akibatnya #content
+    // KETIMPA jadi Live Chat sesaat, baru "kembali" begitu render halaman lain berikutnya
+    // jalan. Guard ini menghentikan fungsi lebih dulu kalau BUKAN user yang benar-benar
+    // sedang membuka halaman Live Chat (showPage('livechat') selalu set STATE.currentPage
+    // TEPAT sebelum memanggil ini, jadi guard tidak mengganggu pemakaian normal).
+    if(STATE.currentPage !== 'livechat') return;
     var content = document.getElementById('content');
     content.innerHTML =
       '<div class="chat-inbox" id="chatInboxEl">' +
