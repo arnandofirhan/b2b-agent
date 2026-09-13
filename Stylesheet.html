@@ -143,7 +143,16 @@
 
   .content-loading-lock{pointer-events:none;}
   *{box-sizing:border-box;}
-  html,body{height:100%;margin:0;}
+  /* FIX TOPBAR/CHAT IKUT TERGESER SAAT KEYBOARD MOBILE MUNCUL: html & body TIDAK PERNAH
+     boleh jadi elemen yang discroll browser (satu-satunya scroll owner di app ini adalah
+     .main-area / .chat-inbox-messages / container internal lain yang punya overflow:auto
+     sendiri). Tanpa overflow:hidden eksplisit di sini, sebagian browser Android tetap
+     memaksa scroll level dokumen supaya elemen yang difokus (textarea chat) "kelihatan",
+     walau secara visual elemen itu sebenarnya sudah di atas keyboard karena position:fixed
+     — scroll paksa inilah yang membuat topbar & panel chat seolah ikut tergeser/hilang.
+     Dibantu juga oleh snapWindowScrollToZero_() di JavaScript.html yang memaksa window
+     balik ke (0,0) kalau tetap ada browser yang ngeyel scroll dokumen. */
+  html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none;}
   body{
     font-family:var(--font);
     background:var(--ag-gray-50);
