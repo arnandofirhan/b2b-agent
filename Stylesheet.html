@@ -2367,19 +2367,31 @@
     .settings-toolbar .btn{width:100%;}
   }
 
-  /* FAB Troli mengambang di Dashboard Agent — ukuran sengaja kecil/compact (bukan FAB besar
-     gaya Material lama) biar tidak menutupi konten & tetap terasa modern-minimalis. Fixed
-     ke viewport supaya tetap kelihatan walau halaman sudah discroll jauh ke bawah.
-     PENTING: definisi dasar (unconditional) ini SENGAJA diletakkan DI SINI — SEBELUM blok
-     @media (max-width:860px) "BOTTOM NAV" di bawah — supaya override posisi khusus mobile
-     di blok itu (yang menaikkan `bottom` biar tidak ketutup Bottom Nav mengambang) benar2
-     MENANG di cascade. Sebelumnya rule dasar ini sempat diletakkan SETELAH blok mobile
-     tsb, akibatnya di layar sempit `bottom` malah balik ke nilai desktop (24px) — FAB jadi
-     kegeser ke belakang Bottom Nav (z-index lebih rendah) dan kelihatan "hilang" total. */
+  /* =====================================================================
+     FAB SPEED DIAL: Troli (utama, sering dipakai) + Live Chat (disembunyikan
+     di balik tombol kecil "titik 3" karena jarang dipakai). Pola ini dipilih
+     ketimbang 2 FAB terpisah supaya tidak ada dua tombol besar berdempetan
+     di sudut yang sama (bikin berantakan & gampang salah pencet), sekaligus
+     tidak menghilangkan akses Live Chat sama sekali dari Dashboard.
+     Struktur DOM (lihat injectChatFab_ di JavaScript.html):
+       .fab-dial-wrap
+         .fab-dial-option.chat   (opsi Chat, muncul saat expanded)
+         .agent-cart-fab         (Troli, tombol utama — TIDAK ikut toggle)
+         .fab-dial-toggle        (titik 3, kecil, di samping Troli)
+     PENTING: definisi dasar (unconditional) ini SENGAJA diletakkan DI SINI —
+     SEBELUM blok @media (max-width:860px) "BOTTOM NAV" di bawah — supaya
+     override posisi khusus mobile di blok itu (yang menaikkan `bottom` biar
+     tidak ketutup Bottom Nav mengambang) benar2 MENANG di cascade. */
+  .fab-dial-wrap{
+    position:fixed; right:16px; bottom:24px; z-index:55;
+    display:flex; flex-direction:column; align-items:flex-end; gap:10px;
+  }
+  .fab-dial-row{ display:flex; align-items:center; gap:8px; }
+
   .agent-cart-fab{
-    position:fixed; right:16px; bottom:24px; z-index:55; width:46px; height:46px; border-radius:50%;
+    width:46px; height:46px; border-radius:50%;
     background:var(--ag-green); color:#fff; border:none; cursor:pointer;
-    display:flex; align-items:center; justify-content:center;
+    display:flex; align-items:center; justify-content:center; position:relative; flex-shrink:0;
     box-shadow:0 6px 18px rgba(30,122,76,.38), 0 2px 6px rgba(16,24,32,.12);
     transition:transform .15s ease, box-shadow .15s ease;
   }
@@ -2390,6 +2402,45 @@
     border-radius:9px; background:var(--ag-red,#EB5757); color:#fff; font-size:10px; font-weight:700;
     display:flex; align-items:center; justify-content:center; line-height:1; border:2px solid var(--ag-surface);
   }
+
+  /* Tombol "titik 3" — sengaja lebih kecil dari Troli supaya jelas ini tombol
+     sekunder/opsi tambahan, bukan aksi utama. Muter 90° saat expanded jadi
+     ikon "x" secara visual (feedback jelas kalau lagi terbuka). */
+  .fab-dial-toggle{
+    width:34px; height:34px; border-radius:50%; flex-shrink:0;
+    background:var(--ag-surface); color:var(--ag-gray-500); border:1px solid var(--ag-gray-200);
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    box-shadow:0 4px 12px rgba(16,24,32,.12);
+    transition:transform .2s ease, background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .fab-dial-toggle svg{ width:16px; height:16px; transition:transform .2s ease; }
+  .fab-dial-toggle:active{ transform:scale(.92); }
+  .fab-dial-toggle.expanded{ background:var(--ag-green); color:#fff; border-color:var(--ag-green); }
+  .fab-dial-toggle.expanded svg{ transform:rotate(135deg); } /* titik-3 pakai ikon plus agar rotasi ini terlihat jadi "x" */
+
+  /* Opsi Chat: hidden secara default, muncul dari bawah dengan fade+slide saat
+     .fab-dial-wrap dapat class .expanded. pointer-events dimatikan saat hidden
+     supaya tidak bisa diklik "diam-diam" walau masih transisi keluar. */
+  .fab-dial-option{
+    display:flex; align-items:center; justify-content:flex-end; gap:8px;
+    opacity:0; transform:translateY(8px) scale(.9); pointer-events:none;
+    transition:opacity .18s ease, transform .18s ease;
+  }
+  .fab-dial-wrap.expanded .fab-dial-option{ opacity:1; transform:translateY(0) scale(1); pointer-events:auto; }
+  .fab-dial-option-label{
+    font-size:12px; font-weight:600; color:var(--ag-gray-700); background:var(--ag-surface);
+    padding:6px 12px; border-radius:999px; box-shadow:0 3px 10px rgba(16,24,32,.10); white-space:nowrap;
+  }
+  .fab-dial-option .chat-fab{
+    position:static; width:46px; height:46px; /* override posisi fixed .chat-fab lama, sekarang jadi anak flex dial */
+  }
+
+  /* Overlay tipis untuk menutup dial saat tap di luar area — supaya tidak
+     "nyangkut" terbuka dan mengganggu interaksi lain di dashboard. */
+  .fab-dial-scrim{
+    position:fixed; inset:0; z-index:54; display:none;
+  }
+  .fab-dial-wrap.expanded ~ .fab-dial-scrim{ display:block; }
 
   /* =====================================================================
      BOTTOM NAV (mobile only) — pengganti sidebar/drawer khusus di layar
@@ -2448,9 +2499,10 @@
       display:flex; align-items:center; justify-content:center; line-height:1;
     }
 
-    /* FAB Troli: di mobile digeser naik supaya tidak ketutup/kejepit Bottom Nav mengambang
-       (tinggi nav 66px + jarak mengambang 12px + sedikit jarak aman). */
-    .agent-cart-fab{ right:14px; bottom:calc(66px + 12px + 14px + env(safe-area-inset-bottom, 0px)); }
+    /* FAB Speed Dial (Troli + toggle Chat): di mobile digeser naik supaya tidak
+       ketutup/kejepit Bottom Nav mengambang (tinggi nav 66px + jarak mengambang
+       12px + sedikit jarak aman). */
+    .fab-dial-wrap{ right:14px; bottom:calc(66px + 12px + 14px + env(safe-area-inset-bottom, 0px)); }
 
     /* ---- "Lainnya" bottom sheet ---- */
     .bottom-more-sheet-overlay{
@@ -2785,30 +2837,26 @@
      ===================================================================== */
 
   /* ---------- 1. FLOATING CHAT (AGENT) ----------
-     Ditaruh di kiri-bawah (bukan kanan) supaya TIDAK numpuk dengan FAB Troli
-     (.agent-cart-fab) yang sudah menempati kanan-bawah. Dua FAB di sudut yang sama
-     dulu saling menutupi/menumpuk di layar sempit — sekarang masing-masing punya sudut
-     sendiri, jadi kelihatan jelas dan tetap mudah dijangkau ibu jari (thumb-zone). */
+     Sekarang jadi OPSI di dalam FAB Speed Dial (lihat .fab-dial-wrap di atas),
+     bukan FAB berdiri sendiri lagi — karena Live Chat jarang dipakai dibanding
+     Troli, jadi disembunyikan di balik tombol "titik 3" supaya tidak menghabiskan
+     ruang visual permanen di Dashboard. .chat-fab jadi `position:static` (lihat
+     override `.fab-dial-option .chat-fab` di atas) mengikuti flex parent-nya,
+     bukan lagi fixed sendiri ke viewport. */
   .chat-fab{
-    position:fixed; left:16px; bottom:88px; z-index:900;
-    width:56px; height:56px; border-radius:50%;
+    width:46px; height:46px; border-radius:50%;
     background:var(--ag-green); color:#fff; border:none;
     display:flex; align-items:center; justify-content:center;
     box-shadow:0 4px 14px rgba(11,61,46,.28); cursor:pointer;
-    transition:transform .15s ease;
+    transition:transform .15s ease; flex-shrink:0;
   }
   .chat-fab:hover{ transform:scale(1.06); }
   .chat-fab:active{ transform:scale(.96); }
-  .chat-fab svg{ width:26px; height:26px; }
+  .chat-fab svg{ width:22px; height:22px; }
   .chat-fab-badge{
-    position:absolute; top:-2px; right:-2px; min-width:20px; height:20px; padding:0 5px;
-    border-radius:10px; background:var(--ag-red); color:#fff; font-size:11px; font-weight:700;
+    position:absolute; top:-2px; right:-2px; min-width:18px; height:18px; padding:0 4px;
+    border-radius:9px; background:var(--ag-red); color:#fff; font-size:10px; font-weight:700;
     display:flex; align-items:center; justify-content:center; border:2px solid var(--ag-white);
-  }
-  @media (max-width:768px){
-    /* Sama seperti FAB Troli: dinaikkan supaya tidak ketutup/kejepit Bottom Nav
-       mengambang (tinggi nav 66px + jarak mengambang 12px + sedikit jarak aman). */
-    .chat-fab{ left:14px; bottom:calc(66px + 12px + 14px + env(safe-area-inset-bottom, 0px)); width:52px; height:52px; }
   }
 
   .chat-panel-overlay{
