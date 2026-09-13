@@ -8451,6 +8451,7 @@
     if(!box) return;
     if(!trend){
       box.innerHTML = emptyState_('Belum ada data', 'Tren PO akan muncul di sini.', ICONS.transactions);
+      syncDashboardPageCache_();
       return;
     }
     DASH_TREND_LAST_DATA_ = trend;
@@ -8477,6 +8478,7 @@
         '</div>' +
       '</div>' +
       '<div style="height:140px;position:relative;margin-top:12px;"><canvas id="dashTrendCanvas"></canvas></div>';
+    syncDashboardPageCache_();
 
     ensureChartJsLoaded_(function(){
       var canvas = document.getElementById('dashTrendCanvas');
@@ -8521,6 +8523,7 @@
     if(!box) return;
     if(!leaderboard || !leaderboard.length){
       box.innerHTML = emptyState_('Belum ada data', 'Leaderboard agent akan muncul di sini setelah ada PO.', ICONS.agent);
+      syncDashboardPageCache_();
       return;
     }
     var rows = leaderboard.map(function(a, i){
@@ -8533,6 +8536,7 @@
       '</div>';
     }).join('');
     box.innerHTML = '<div class="dash-leaderboard-list">' + rows + '</div>';
+    syncDashboardPageCache_();
   }
 
   var CHARTJS_LOADED_ = false;
@@ -8554,10 +8558,27 @@
     document.head.appendChild(script);
   }
 
+  /** Sinkronkan snapshot #content SAAT INI ke PAGE_HTML_CACHE['dashboard'], supaya kalau
+   *  showPage('dashboard') terpanggil lagi oleh sebab apapun (kemungkinan besar akar bug
+   *  "dashboard reload 2x setelah login" yang dilaporkan — lihat catatan panjang di
+   *  paintDashboardKpis_), versi yang di-instant-paint dari cache SUDAH lengkap dgn data
+   *  panel Tren/Status PO/PO Terbaru/Leaderboard, BUKAN skeleton basi berisi spinner kosong
+   *  dari render pertama. Sebelumnya cache HANYA disentuh oleh paintDashboardKpis_ (baris KPI
+   *  saja) — keempat fungsi renderDash...Box_ ini mengubah DOM panel masing2 SECARA LANGSUNG
+   *  tanpa pernah menuliskan hasilnya balik ke cache, jadi cache selalu ketinggalan/basi
+   *  begitu salah satu panel async selesai belakangan dari skeleton awal. */
+  function syncDashboardPageCache_(){
+    if(STATE.currentPage !== 'dashboard') return;
+    var contentEl = document.getElementById('content');
+    if(!contentEl) return;
+    PAGE_HTML_CACHE['dashboard'] = contentEl.innerHTML;
+    persistPageCache_();
+  }
+
   function renderDashPoStatusBox_(rows){
     var box = document.getElementById('dashPoStatusBox');
     if(!box) return;
-    if(!rows.length){ box.innerHTML = emptyState_('Belum ada PO', 'Data PO akan muncul di sini.', ICONS.transactions); return; }
+    if(!rows.length){ box.innerHTML = emptyState_('Belum ada PO', 'Data PO akan muncul di sini.', ICONS.transactions); syncDashboardPageCache_(); return; }
     var counts = {};
     rows.forEach(function(r){ var s = poDisplayStatus_(r); counts[s] = (counts[s]||0) + 1; });
     var max = Math.max.apply(null, Object.keys(counts).map(function(k){ return counts[k]; }));
@@ -8572,6 +8593,7 @@
         '<div class="po-status-bar-track"><div class="po-status-bar-fill" style="width:'+pct+'%;background:'+color+';"></div></div>' +
       '</div>';
     }).join('');
+    syncDashboardPageCache_();
   }
 
   /** Dipanggil saat user klik salah satu baris status di panel "Ringkasan Status PO"
@@ -8616,7 +8638,7 @@
   function renderDashRecentPoBox_(rows){
     var box = document.getElementById('dashRecentPoBox');
     if(!box) return;
-    if(!rows.length){ box.innerHTML = emptyState_('Belum ada PO', 'Data PO akan muncul di sini.', ICONS.transactions); return; }
+    if(!rows.length){ box.innerHTML = emptyState_('Belum ada PO', 'Data PO akan muncul di sini.', ICONS.transactions); syncDashboardPageCache_(); return; }
     var sorted = rows.slice().sort(function(a,b){ return new Date(b.CreatedAt) - new Date(a.CreatedAt); }).slice(0, 5);
     box.innerHTML = sorted.map(function(r){
       return '<div class="po-recent-row" onclick="goToPOWithIdFilter_(\''+escapeHtml(r.POID||'')+'\')">' +
@@ -8630,6 +8652,7 @@
         '</div>' +
       '</div>';
     }).join('');
+    syncDashboardPageCache_();
   }
 
   /** Jalankan jam & sapaan yang live-update setiap detik supaya "Selamat pagi/siang/sore/malam"
