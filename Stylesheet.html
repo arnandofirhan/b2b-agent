@@ -2895,8 +2895,12 @@
   .chat-panel-header-avatar svg{ width:20px; height:20px; }
   .chat-panel-header-info{ flex:1; min-width:0; }
   .chat-panel-header-title{ font-size:14.5px; font-weight:700; }
-  .chat-panel-header-sub{ font-size:12px; opacity:.75; display:flex; align-items:center; gap:5px; }
-  .chat-online-dot{ width:7px; height:7px; border-radius:50%; background:#4ADE80; display:inline-block; flex-shrink:0; }
+  .chat-panel-header-sub{ font-size:12px; opacity:.85; display:flex; align-items:center; gap:5px; }
+  .chat-online-dot{
+    width:7px; height:7px; border-radius:50%; background:#4ADE80; display:inline-block; flex-shrink:0;
+    box-shadow:0 0 0 2px rgba(74,222,128,.25);
+  }
+  .chat-online-dot.offline{ background:#9CA3AF; box-shadow:0 0 0 2px rgba(156,163,175,.25); }
   .chat-panel-close{
     background:rgba(255,255,255,.12); border:none; color:#fff; width:32px; height:32px;
     border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0;
@@ -2910,6 +2914,15 @@
   }
   [data-theme="dark"] .chat-messages{ background:var(--ag-surface); }
 
+  /* Divider tanggal ("Hari ini" / "Kemarin" / tanggal lengkap) — pola umum aplikasi chat
+     modern, membantu Agent/staff menavigasi percakapan panjang lintas hari. */
+  .chat-date-divider{ display:flex; align-items:center; justify-content:center; margin:6px 0 2px; }
+  .chat-date-divider span{
+    font-size:10.5px; font-weight:700; color:var(--ag-gray-500); background:var(--ag-gray-200);
+    padding:4px 12px; border-radius:999px; text-transform:uppercase; letter-spacing:.03em;
+  }
+  [data-theme="dark"] .chat-date-divider span{ background:var(--ag-gray-800); color:var(--ag-gray-400); }
+
   .chat-msg-row{ display:flex; flex-direction:column; max-width:80%; }
   .chat-msg-row.mine{ align-self:flex-end; align-items:flex-end; }
   .chat-msg-row.theirs{ align-self:flex-start; align-items:flex-start; }
@@ -2918,7 +2931,7 @@
   .chat-msg-sender{ font-size:11px; color:var(--ag-gray-500); margin-bottom:3px; padding:0 4px; }
   .chat-bubble{
     padding:9px 13px; border-radius:14px; font-size:13.5px; line-height:1.5; word-break:break-word;
-    white-space:pre-wrap;
+    white-space:pre-wrap; box-shadow:0 1px 2px rgba(16,24,32,.04);
   }
   .chat-msg-row.mine .chat-bubble{
     background:var(--ag-green); color:#fff; border-bottom-right-radius:4px;
@@ -2929,16 +2942,29 @@
   }
   .chat-msg-row.system .chat-bubble{
     background:var(--ag-gray-100); color:var(--ag-gray-500); font-size:12px; font-style:italic;
-    border-radius:12px; padding:6px 14px;
+    border-radius:12px; padding:6px 14px; box-shadow:none;
   }
-  .chat-msg-time{ font-size:10.5px; color:var(--ag-gray-400); margin-top:3px; padding:0 4px; }
+  .chat-msg-time{
+    font-size:10.5px; color:var(--ag-gray-400); margin-top:3px; padding:0 4px;
+    display:flex; align-items:center; gap:4px;
+  }
+  /* Status kirim (centang tunggal, abu-abu) vs dibaca (centang ganda, hijau) — hanya
+     dirender untuk bubble milik Agent di widget Live Chat-nya sendiri (lihat appendChatBubble_). */
+  .chat-msg-status{ display:inline-flex; align-items:center; color:var(--ag-gray-400); }
+  .chat-msg-status svg{ width:13px; height:9px; }
+  .chat-msg-status.seen{ color:#34B7F1; }
 
   .chat-empty-state{
     flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
-    gap:10px; color:var(--ag-gray-400); text-align:center; padding:24px;
+    gap:6px; color:var(--ag-gray-400); text-align:center; padding:32px 24px;
   }
-  .chat-empty-state svg{ width:44px; height:44px; opacity:.5; }
-  .chat-empty-state span{ font-size:13px; }
+  .chat-empty-icon{
+    width:64px; height:64px; border-radius:50%; background:var(--ag-green-soft,rgba(30,122,76,.1));
+    color:var(--ag-green); display:flex; align-items:center; justify-content:center; margin-bottom:6px;
+  }
+  .chat-empty-icon svg{ width:30px; height:30px; }
+  .chat-empty-title{ font-size:14px; font-weight:700; color:var(--ag-gray-700); }
+  .chat-empty-sub{ font-size:12.5px; max-width:260px; line-height:1.5; }
 
   .chat-input-bar{
     display:flex; align-items:flex-end; gap:8px; padding:12px 14px;
@@ -2995,6 +3021,68 @@
     padding:10px 14px; background:var(--ag-orange-soft); color:#8A5A22; font-size:12px;
     text-align:center; border-top:1px solid var(--ag-gray-200); flex-shrink:0;
   }
+
+  /* ---------- PENGATURAN LIVE CHAT (modal Admin: Sambutan / Jam Operasional / Quick Reply) ---------- */
+  .cs-modal-body{ padding-top:16px; }
+  .cs-tabs{
+    display:flex; gap:6px; padding:4px; background:var(--ag-gray-100); border-radius:12px;
+    margin-bottom:20px; overflow-x:auto;
+  }
+  [data-theme="dark"] .cs-tabs{ background:var(--ag-gray-800); }
+  .cs-tab{
+    flex:1; display:flex; align-items:center; justify-content:center; gap:6px; white-space:nowrap;
+    padding:9px 12px; border-radius:9px; border:none; background:transparent; color:var(--ag-gray-500);
+    font-size:12.5px; font-weight:600; cursor:pointer; transition:background .15s ease, color .15s ease;
+  }
+  .cs-tab svg{ width:15px; height:15px; }
+  .cs-tab.active{ background:var(--ag-surface); color:var(--ag-green); box-shadow:0 1px 4px rgba(16,24,32,.12); }
+  .cs-tab:not(.active):hover{ color:var(--ag-gray-700); }
+
+  .cs-panel{ display:flex; flex-direction:column; gap:16px; animation:csFadeIn .15s ease-out; }
+  @keyframes csFadeIn{ from{ opacity:0; transform:translateY(4px); } to{ opacity:1; transform:translateY(0); } }
+
+  .cs-fields-disabled{ opacity:.45; pointer-events:none; filter:grayscale(.3); transition:opacity .15s ease; }
+
+  .cs-preview{ background:var(--ag-gray-50); border-radius:12px; padding:14px; }
+  [data-theme="dark"] .cs-preview{ background:var(--ag-gray-800); }
+  .cs-preview-label{ font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--ag-gray-400); margin-bottom:10px; }
+  .cs-preview-bubble{ align-self:center; max-width:100%; }
+  .cs-preview-bubble .chat-bubble{ max-width:340px; }
+
+  .cs-day-picker{ display:flex; flex-wrap:wrap; gap:8px; }
+  .cs-day-chip{
+    width:44px; height:38px; border-radius:10px; border:1.5px solid var(--ag-gray-200); background:var(--ag-surface);
+    color:var(--ag-gray-600); font-size:12.5px; font-weight:700; cursor:pointer; transition:all .15s ease;
+  }
+  .cs-day-chip:hover{ border-color:var(--ag-green); }
+  .cs-day-chip.active{ background:var(--ag-green); border-color:var(--ag-green); color:#fff; }
+
+  .cs-time-row{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .cs-time-row input[type="time"]{
+    width:100%; padding:9px 12px; border:1px solid var(--ag-gray-200); border-radius:9px;
+    font-size:13.5px; font-family:var(--font); background:var(--ag-surface); color:var(--ag-gray-900);
+  }
+  .cs-time-row input[type="time"]:focus{ outline:none; border-color:var(--ag-green); }
+
+  .cs-qr-list{ display:flex; flex-direction:column; gap:8px; }
+  .cs-qr-item{
+    display:flex; align-items:center; gap:8px; padding:6px 8px; border:1px solid var(--ag-gray-200);
+    border-radius:10px; background:var(--ag-surface);
+  }
+  .cs-qr-drag{ color:var(--ag-gray-300); flex-shrink:0; display:flex; }
+  .cs-qr-drag svg{ width:15px; height:15px; }
+  .cs-qr-input{
+    flex:1; border:none; outline:none; font-size:13px; font-family:var(--font); background:transparent;
+    color:var(--ag-gray-900); padding:6px 2px; min-width:0;
+  }
+  .cs-qr-remove{
+    width:26px; height:26px; border-radius:50%; border:none; background:transparent; color:var(--ag-gray-300);
+    display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; transition:all .15s ease;
+  }
+  .cs-qr-remove svg{ width:13px; height:13px; }
+  .cs-qr-remove:hover{ background:var(--ag-red-soft,#FDE8E8); color:var(--ag-red,#EB5757); }
+  .cs-qr-empty{ padding:20px; text-align:center; color:var(--ag-gray-400); font-size:12.5px; border:1px dashed var(--ag-gray-200); border-radius:10px; }
+  .cs-qr-add-btn{ align-self:flex-start; }
 
   /* ---------- 2. LIVE CHAT INBOX PAGE (STAFF: ADMIN/SUPERVISOR/MANAGER) ---------- */
   .chat-inbox{
@@ -3080,6 +3168,7 @@
 
   .chat-inbox-input-bar{
     display:flex; align-items:flex-end; gap:10px; padding:14px 18px; border-top:1px solid var(--ag-gray-200); flex-shrink:0;
+    position:relative;
   }
   .chat-inbox-input-bar textarea{
     flex:1; resize:none; border:1px solid var(--ag-gray-200); border-radius:var(--radius-md);
@@ -3088,6 +3177,30 @@
   }
   .chat-inbox-input-bar textarea:focus{ outline:none; border-color:var(--ag-green); background:var(--ag-surface); }
   .chat-inbox-input-bar textarea:disabled{ opacity:.6; cursor:not-allowed; }
+
+  /* Tombol Quick Reply (petir) — sama gaya "ghost" dengan tombol lampiran di sebelahnya,
+     supaya kedua ikon sekunder ini terasa satu kelompok, kontras dengan tombol Kirim (solid). */
+  .chat-quickreply-btn{ color:var(--ag-gray-400); }
+  .chat-quickreply-btn:hover{ background:var(--ag-gray-100); color:var(--ag-amber,#D97706); }
+  .chat-quickreply-btn svg{ width:18px; height:18px; }
+
+  /* Popover daftar Quick Reply — muncul MENGAMBANG DI ATAS input bar (bukan mendorong
+     layout ke bawah), supaya posisi kolom ketik & tombol kirim tidak bergeser saat dibuka. */
+  .chat-quickreply-popover{
+    position:absolute; left:18px; right:18px; bottom:calc(100% + 8px);
+    background:var(--ag-surface); border:1px solid var(--ag-gray-200); border-radius:var(--radius-md);
+    box-shadow:var(--shadow-md); max-height:240px; overflow-y:auto;
+    display:none; flex-direction:column; padding:6px; gap:2px; z-index:10;
+  }
+  .chat-quickreply-popover.open{ display:flex; animation:chatSlideUp .15s ease-out; }
+  .chat-quickreply-item{
+    text-align:left; padding:9px 12px; border:none; background:transparent; border-radius:8px;
+    font-size:13px; color:var(--ag-gray-800); cursor:pointer; transition:background .12s ease;
+    line-height:1.4;
+  }
+  .chat-quickreply-item:hover{ background:var(--ag-gray-100); }
+  [data-theme="dark"] .chat-quickreply-item:hover{ background:var(--ag-gray-800); }
+  .chat-quickreply-empty{ padding:14px; text-align:center; font-size:12px; color:var(--ag-gray-400); }
 
   .chat-inbox-closed-banner{
     padding:10px 18px; background:var(--ag-orange-soft); color:#8A5A22; font-size:12px;
