@@ -6397,12 +6397,12 @@
           '<div class="settings-card-head">' +
             '<div class="settings-card-icon">'+CHAT_ICONS_.bubble+'</div>' +
             '<div>' +
-              '<div class="card-title">Live Chat &mdash; Auto-Reply</div>' +
-              '<div class="settings-card-desc">Atur pesan sambutan otomatis yang terkirim saat Agent pertama kali chat, sebelum dibalas manual oleh Admin/Supervisor/Manager.</div>' +
+              '<div class="card-title">Live Chat &mdash; Pengaturan</div>' +
+              '<div class="settings-card-desc">Atur pesan sambutan otomatis, jam operasional (online/offline), dan template balasan cepat (quick reply) untuk tim Admin/Supervisor/Manager.</div>' +
             '</div>' +
           '</div>' +
           '<div class="settings-card-body">' +
-            '<button class="btn btn-secondary" onclick="openChatSettingsModal_()">'+CHAT_ICONS_.bubble+' Atur Auto-Reply Live Chat</button>' +
+            '<button class="btn btn-secondary" onclick="openChatSettingsModal_()">'+CHAT_ICONS_.bubble+' Atur Live Chat</button>' +
           '</div>' +
         '</div>';
 
@@ -6421,47 +6421,231 @@
   }
 
   // =============================================================
-  // LIVE CHAT — Pengaturan Auto-Reply (modal terpisah, pola sama seperti modal
-  // Template Notifikasi di atas)
+  // LIVE CHAT — Pengaturan (modal terpisah, pola sama seperti modal
+  // Template Notifikasi di atas). Sekarang punya 3 tab: Sambutan (auto-reply),
+  // Jam Operasional (online/offline), dan Quick Reply (template balasan cepat staff).
   // =============================================================
+  var CHAT_SETTINGS_TAB_ = 'welcome'; // tab aktif saat ini: welcome | hours | quickreply
+  var CHAT_SETTINGS_QUICK_REPLIES_ = []; // working copy quick replies selagi modal terbuka
+
+  var CHAT_DAY_LABELS_ = ['Min','Sen','Sel','Rab','Kam','Jum','Sab'];
+
   function openChatSettingsModal_(){
-    var body =
-      '<div class="form-field">' +
-        '<label class="switch-row"><span class="switch"><input type="checkbox" id="chatAutoReplyEnabledEl"><span class="switch-slider"></span></span> Aktifkan auto-reply sambutan</label>' +
-        '<div class="form-hint">Kalau aktif, pesan di bawah ini otomatis terkirim (sebagai pesan sistem) saat Agent mengirim chat pertamanya di sebuah percakapan.</div>' +
-      '</div>' +
-      '<div class="form-field">' +
-        '<label>Isi Pesan Sambutan</label>' +
-        '<textarea id="chatAutoReplyTextEl" rows="4" maxlength="1000" placeholder="Contoh: Selamat datang di Live Chat Agrinesia B2B! Pesan Anda sudah kami terima..."></textarea>' +
-      '</div>';
-    openModal(
-      '<div class="modal-header"><span class="modal-title">Auto-Reply Live Chat</span><button class="modal-close" onclick="closeModal()">&times;</button></div>' +
-      '<div class="modal-body">'+body+'</div>' +
-      '<div class="modal-footer">' +
-        '<button class="btn btn-secondary" onclick="closeModal()">Batal</button>' +
-        '<button class="btn btn-primary" id="chatSettingsSaveBtn" onclick="saveChatSettingsForm_()">'+ICON_CHECK_SM+' Simpan</button>' +
-      '</div>'
-    );
+    CHAT_SETTINGS_TAB_ = 'welcome';
+    CHAT_SETTINGS_QUICK_REPLIES_ = [];
+    openModalLoading_('Pengaturan Live Chat', 'modal-lg');
     google.script.run.withSuccessHandler(function(settings){
-      var chk = document.getElementById('chatAutoReplyEnabledEl');
-      var txt = document.getElementById('chatAutoReplyTextEl');
-      if(chk) chk.checked = !!settings.autoReplyEnabled;
-      if(txt) txt.value = settings.autoReplyText || '';
+      CHAT_SETTINGS_QUICK_REPLIES_ = (settings.quickReplies || []).slice();
+      paintChatSettingsModal_(settings);
     }).withFailureHandler(function(e){ handleBackendError(e); }).getChatSettings(STATE.token);
   }
 
+  function paintChatSettingsModal_(settings){
+    var tabs = [
+      { key:'welcome', label:'Sambutan', icon:CHAT_ICONS_.bubble },
+      { key:'hours', label:'Jam Operasional', icon:CHAT_ICONS_.clock || CHAT_ICONS_.rotate },
+      { key:'quickreply', label:'Quick Reply', icon:CHAT_ICONS_.plus }
+    ];
+    var tabNavHtml = '<div class="cs-tabs">' + tabs.map(function(t){
+      return '<button type="button" class="cs-tab'+(CHAT_SETTINGS_TAB_===t.key?' active':'')+'" onclick="switchChatSettingsTab_(\''+t.key+'\')">' +
+        '<span class="cs-tab-icon">'+t.icon+'</span><span>'+t.label+'</span>' +
+      '</button>';
+    }).join('') + '</div>';
+
+    openModal(
+      '<div class="modal-header"><span class="modal-title">Pengaturan Live Chat</span><button class="modal-close" onclick="closeModal()">&times;</button></div>' +
+      '<div class="modal-body cs-modal-body">' +
+        tabNavHtml +
+        '<div id="csTabPanelWrap">' + renderChatSettingsTabPanel_(settings) + '</div>' +
+      '</div>' +
+      '<div class="modal-footer">' +
+        '<button class="btn btn-secondary" onclick="closeModal()">Batal</button>' +
+        '<button class="btn btn-primary" id="chatSettingsSaveBtn" onclick="saveChatSettingsForm_()">'+ICON_CHECK_SM+' Simpan Semua</button>' +
+      '</div>',
+      'modal-lg'
+    );
+    CHAT_SETTINGS_CACHE_ = settings; // simpan supaya bisa dipakai ulang saat pindah tab tanpa fetch lagi
+  }
+
+  var CHAT_SETTINGS_CACHE_ = null;
+
+  function switchChatSettingsTab_(tabKey){
+    // Simpan dulu input tab yang sedang aktif ke cache SEBELUM pindah, supaya perubahan
+    // Admin di tab ini tidak hilang begitu balik lagi (mis. isi teks sambutan yang sudah
+    // diketik, sebelum sempat klik Simpan).
+    collectChatSettingsFormIntoCache_();
+    CHAT_SETTINGS_TAB_ = tabKey;
+    paintChatSettingsModal_(CHAT_SETTINGS_CACHE_);
+  }
+
+  /** Baca semua input dari tab yang SAAT INI dirender di DOM, lalu tulis balik ke
+   *  CHAT_SETTINGS_CACHE_ — dipakai saat pindah tab (supaya perubahan belum ke-Simpan
+   *  tidak hilang) maupun saat submit akhir. */
+  function collectChatSettingsFormIntoCache_(){
+    if(!CHAT_SETTINGS_CACHE_) return;
+    if(CHAT_SETTINGS_TAB_ === 'welcome'){
+      var chk = document.getElementById('chatAutoReplyEnabledEl');
+      var txt = document.getElementById('chatAutoReplyTextEl');
+      if(chk) CHAT_SETTINGS_CACHE_.autoReplyEnabled = chk.checked;
+      if(txt) CHAT_SETTINGS_CACHE_.autoReplyText = txt.value;
+    } else if(CHAT_SETTINGS_TAB_ === 'hours'){
+      var ohChk = document.getElementById('chatOfficeHoursEnabledEl');
+      var startEl = document.getElementById('chatOfficeStartEl');
+      var endEl = document.getElementById('chatOfficeEndEl');
+      var offNoteEl = document.getElementById('chatOfflineNoteTextEl');
+      if(!CHAT_SETTINGS_CACHE_.officeHours) CHAT_SETTINGS_CACHE_.officeHours = {};
+      if(ohChk) CHAT_SETTINGS_CACHE_.officeHours.enabled = ohChk.checked;
+      if(startEl) CHAT_SETTINGS_CACHE_.officeHours.start = startEl.value;
+      if(endEl) CHAT_SETTINGS_CACHE_.officeHours.end = endEl.value;
+      if(offNoteEl) CHAT_SETTINGS_CACHE_.offlineNoteText = offNoteEl.value;
+      var dayChips = document.querySelectorAll('.cs-day-chip.active');
+      CHAT_SETTINGS_CACHE_.officeHours.days = Array.prototype.map.call(dayChips, function(el){ return parseInt(el.getAttribute('data-day'), 10); });
+    } else if(CHAT_SETTINGS_TAB_ === 'quickreply'){
+      var inputs = document.querySelectorAll('.cs-qr-input');
+      CHAT_SETTINGS_QUICK_REPLIES_ = Array.prototype.map.call(inputs, function(el){ return el.value; }).filter(function(v){ return v.trim(); });
+      CHAT_SETTINGS_CACHE_.quickReplies = CHAT_SETTINGS_QUICK_REPLIES_;
+    }
+  }
+
+  function renderChatSettingsTabPanel_(settings){
+    if(CHAT_SETTINGS_TAB_ === 'hours') return renderChatHoursTab_(settings);
+    if(CHAT_SETTINGS_TAB_ === 'quickreply') return renderChatQuickReplyTab_(settings);
+    return renderChatWelcomeTab_(settings);
+  }
+
+  function renderChatWelcomeTab_(settings){
+    return (
+      '<div class="cs-panel">' +
+        '<div class="form-field">' +
+          '<label class="switch-row"><span class="switch"><input type="checkbox" id="chatAutoReplyEnabledEl" '+(settings.autoReplyEnabled?'checked':'')+'><span class="switch-slider"></span></span> Aktifkan auto-reply sambutan</label>' +
+          '<div class="form-hint">Kalau aktif, pesan di bawah ini otomatis terkirim (sebagai pesan sistem) saat Agent mengirim chat pertamanya di sebuah percakapan.</div>' +
+        '</div>' +
+        '<div class="form-field">' +
+          '<label>Isi Pesan Sambutan</label>' +
+          '<textarea id="chatAutoReplyTextEl" rows="4" maxlength="1000" placeholder="Contoh: Selamat datang di Live Chat Agrinesia B2B! Pesan Anda sudah kami terima..." oninput="var pv=document.getElementById(\'csWelcomePreviewBubble\'); if(pv) pv.textContent = this.value || \'Isi pesan sambutan akan tampil di sini...\';">'+escapeHtml(settings.autoReplyText||'')+'</textarea>' +
+          '<div class="form-hint">Dikirim sekali per percakapan, sebelum staff sempat membalas manual.</div>' +
+        '</div>' +
+        '<div class="cs-preview">' +
+          '<div class="cs-preview-label">Pratinjau bubble chat</div>' +
+          '<div class="chat-msg-row system cs-preview-bubble"><div class="chat-bubble" id="csWelcomePreviewBubble">'+escapeHtml(settings.autoReplyText||'Isi pesan sambutan akan tampil di sini...')+'</div></div>' +
+        '</div>' +
+      '</div>'
+    );
+  }
+
+  function renderChatHoursTab_(settings){
+    var oh = settings.officeHours || { enabled:true, start:'08:00', end:'17:00', days:[1,2,3,4,5,6] };
+    var dayChipsHtml = CHAT_DAY_LABELS_.map(function(label, i){
+      var active = oh.days.indexOf(i) !== -1;
+      return '<button type="button" class="cs-day-chip'+(active?' active':'')+'" data-day="'+i+'" onclick="this.classList.toggle(\'active\')">'+label+'</button>';
+    }).join('');
+    return (
+      '<div class="cs-panel">' +
+        '<div class="form-field">' +
+          '<label class="switch-row"><span class="switch"><input type="checkbox" id="chatOfficeHoursEnabledEl" '+(oh.enabled?'checked':'')+' onchange="toggleChatHoursFieldsEnabled_(this.checked)"><span class="switch-slider"></span></span> Aktifkan jam operasional</label>' +
+          '<div class="form-hint">Kalau aktif, header Live Chat Agent akan menampilkan status <b>Online</b>/<b>Offline</b> mengikuti jadwal di bawah. Kalau dimatikan, status selalu ditampilkan Online.</div>' +
+        '</div>' +
+        '<div id="chatHoursFieldsWrap" class="'+(oh.enabled?'':'cs-fields-disabled')+'">' +
+          '<div class="form-field">' +
+            '<label>Hari Operasional</label>' +
+            '<div class="cs-day-picker">'+dayChipsHtml+'</div>' +
+          '</div>' +
+          '<div class="cs-time-row">' +
+            '<div class="form-field">' +
+              '<label>Jam Mulai</label>' +
+              '<input type="time" id="chatOfficeStartEl" value="'+escapeHtml(oh.start||'08:00')+'">' +
+            '</div>' +
+            '<div class="form-field">' +
+              '<label>Jam Selesai</label>' +
+              '<input type="time" id="chatOfficeEndEl" value="'+escapeHtml(oh.end||'17:00')+'">' +
+            '</div>' +
+          '</div>' +
+          '<div class="form-field">' +
+            '<label>Catatan Saat Offline</label>' +
+            '<textarea id="chatOfflineNoteTextEl" rows="3" maxlength="500" placeholder="Contoh: Saat ini di luar jam operasional kami...">'+escapeHtml(settings.offlineNoteText||'')+'</textarea>' +
+            '<div class="form-hint">Ditambahkan otomatis setelah pesan sambutan kalau Agent chat di luar jam operasional.</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>'
+    );
+  }
+
+  function toggleChatHoursFieldsEnabled_(enabled){
+    var wrap = document.getElementById('chatHoursFieldsWrap');
+    if(wrap) wrap.classList.toggle('cs-fields-disabled', !enabled);
+  }
+
+  function renderChatQuickReplyTab_(settings){
+    var list = CHAT_SETTINGS_QUICK_REPLIES_ && CHAT_SETTINGS_QUICK_REPLIES_.length ? CHAT_SETTINGS_QUICK_REPLIES_ : (settings.quickReplies || []);
+    var itemsHtml = list.map(function(txt, i){
+      return '<div class="cs-qr-item" data-idx="'+i+'">' +
+        '<span class="cs-qr-drag">'+CHAT_ICONS_.bubble+'</span>' +
+        '<input type="text" class="cs-qr-input" maxlength="300" value="'+escapeHtml(txt)+'" placeholder="Isi template balasan cepat...">' +
+        '<button type="button" class="cs-qr-remove" onclick="removeChatQuickReplyRow_(this)" title="Hapus">'+CHAT_ICONS_.close+'</button>' +
+      '</div>';
+    }).join('');
+    return (
+      '<div class="cs-panel">' +
+        '<div class="form-field">' +
+          '<label>Template Balasan Cepat (Quick Reply)</label>' +
+          '<div class="form-hint">Ditampilkan sebagai tombol pintasan di atas kolom ketik staff (Admin/Supervisor/Manager) saat membalas chat Agent — sekali tap langsung terisi ke kolom pesan.</div>' +
+        '</div>' +
+        '<div id="csQuickReplyList" class="cs-qr-list">' + (itemsHtml || '<div class="cs-qr-empty">Belum ada quick reply. Tambahkan lewat tombol di bawah.</div>') + '</div>' +
+        '<button type="button" class="btn btn-secondary cs-qr-add-btn" onclick="addChatQuickReplyRow_()">'+CHAT_ICONS_.plus+' Tambah Quick Reply</button>' +
+      '</div>'
+    );
+  }
+
+  function addChatQuickReplyRow_(){
+    var list = document.getElementById('csQuickReplyList');
+    if(!list) return;
+    var emptyEl = list.querySelector('.cs-qr-empty');
+    if(emptyEl) emptyEl.remove();
+    var idx = list.querySelectorAll('.cs-qr-item').length;
+    var row = document.createElement('div');
+    row.className = 'cs-qr-item';
+    row.setAttribute('data-idx', idx);
+    row.innerHTML = '<span class="cs-qr-drag">'+CHAT_ICONS_.bubble+'</span>' +
+      '<input type="text" class="cs-qr-input" maxlength="300" placeholder="Isi template balasan cepat...">' +
+      '<button type="button" class="cs-qr-remove" onclick="removeChatQuickReplyRow_(this)" title="Hapus">'+CHAT_ICONS_.close+'</button>';
+    list.appendChild(row);
+    row.querySelector('.cs-qr-input').focus();
+  }
+
+  function removeChatQuickReplyRow_(btn){
+    var row = btn.closest('.cs-qr-item');
+    var list = document.getElementById('csQuickReplyList');
+    if(row) row.remove();
+    if(list && !list.querySelector('.cs-qr-item')){
+      list.innerHTML = '<div class="cs-qr-empty">Belum ada quick reply. Tambahkan lewat tombol di bawah.</div>';
+    }
+  }
+
   function saveChatSettingsForm_(){
-    var enabled = document.getElementById('chatAutoReplyEnabledEl').checked;
-    var text = document.getElementById('chatAutoReplyTextEl').value.trim();
-    if(enabled && !text){ showToast('Isi pesan auto-reply tidak boleh kosong.', 'error'); return; }
+    collectChatSettingsFormIntoCache_();
+    var cfg = CHAT_SETTINGS_CACHE_ || {};
+    var enabled = !!cfg.autoReplyEnabled;
+    var text = (cfg.autoReplyText || '').trim();
+    if(enabled && !text){ showToast('Isi pesan auto-reply tidak boleh kosong.', 'error'); CHAT_SETTINGS_TAB_='welcome'; paintChatSettingsModal_(cfg); return; }
+
+    var oh = cfg.officeHours || {};
+    if(oh.enabled && (!oh.days || !oh.days.length)){ showToast('Pilih minimal satu hari operasional.', 'error'); CHAT_SETTINGS_TAB_='hours'; paintChatSettingsModal_(cfg); return; }
+    if(oh.enabled && oh.start && oh.end && oh.start >= oh.end){ showToast('Jam mulai harus lebih awal dari jam selesai.', 'error'); CHAT_SETTINGS_TAB_='hours'; paintChatSettingsModal_(cfg); return; }
+
     var btn = document.getElementById('chatSettingsSaveBtn');
     btn.disabled = true;
     google.script.run.withSuccessHandler(function(){
       btn.disabled = false;
-      showToast('Pengaturan auto-reply Live Chat disimpan.', 'success');
+      showToast('Pengaturan Live Chat disimpan.', 'success');
       closeModal();
     }).withFailureHandler(function(e){ btn.disabled = false; handleBackendError(e); })
-      .saveChatSettings(STATE.token, { autoReplyEnabled: enabled, autoReplyText: text });
+      .saveChatSettings(STATE.token, {
+        autoReplyEnabled: enabled,
+        autoReplyText: text,
+        officeHours: { enabled: !!oh.enabled, start: oh.start || '08:00', end: oh.end || '17:00', days: oh.days || [1,2,3,4,5,6] },
+        offlineNoteText: (cfg.offlineNoteText || '').trim(),
+        quickReplies: cfg.quickReplies || []
+      });
   }
 
   // =============================================================
@@ -9042,6 +9226,16 @@
     if(e.key === 'Escape' && NOTIF_DROPDOWN_OPEN_) closeNotifDropdown_();
   });
 
+  // Klik di luar popover Quick Reply (staff) menutupnya otomatis — pola UX standar untuk
+  // popover kontekstual, supaya tidak "nyangkut" terbuka menutupi pesan lain.
+  document.addEventListener('pointerdown', function(e){
+    if(!CHAT_STATE_.quickReplyPopoverOpen) return;
+    var pop = document.getElementById('chatQuickReplyPopover');
+    var btn = document.querySelector('.chat-quickreply-btn');
+    if(pop && (pop.contains(e.target) || (btn && btn.contains(e.target)))) return;
+    toggleQuickReplyPopover_();
+  });
+
   function renderNotifDropdownList_(){
     var box = document.getElementById('notifDropdownList');
     var footer = document.getElementById('notifDropdownFooter');
@@ -9127,9 +9321,10 @@
 
   var CHAT_STATE_ = {
     myRoomId: null, myRoomStatus: 'OPEN', lastMessageId: null, panelOpen: false,
-    pollInterval: null, unreadPollInterval: null,
+    pollInterval: null, unreadPollInterval: null, readStatusPollInterval: null,
+    availabilityOnline: true, myLastSeenByStaff: false,
     inboxRooms: [], inboxFilter: 'OPEN', inboxActiveRoomId: null, inboxActiveRoomStatus: 'OPEN',
-    inboxLastMessageId: null
+    inboxLastMessageId: null, quickReplies: null, quickReplyPopoverOpen: false
   };
 
   var CHAT_ICONS_ = {
@@ -9142,7 +9337,11 @@
     rotate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>',
     attach: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>',
     filePdf: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="22" height="22"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>',
-    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>'
+    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>',
+    clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>',
+    doubleCheck: '<svg viewBox="0 0 24 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 8.5 5.5 13 14 3"/><path d="M9 8.5 13.5 13 22 3"/></svg>',
+    singleCheck: '<svg viewBox="0 0 24 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8.5 9.5 13 18 3"/></svg>',
+    bolt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/></svg>'
   };
 
   /** Dipanggil dari bootApp() setelah login berhasil. Memasang floating bubble untuk Agent
@@ -9210,10 +9409,10 @@
     overlay.innerHTML =
       '<div class="chat-panel">' +
         '<div class="chat-panel-header">' +
-          '<div class="chat-panel-header-avatar">' + CHAT_ICONS_.bubble + '</div>' +
+          '<div class="chat-panel-header-avatar" id="chatHeaderAvatar">' + CHAT_ICONS_.bubble + '</div>' +
           '<div class="chat-panel-header-info">' +
             '<div class="chat-panel-header-title">Live Chat</div>' +
-            '<div class="chat-panel-header-sub"><span class="chat-online-dot"></span>Admin &amp; Supervisor siap membantu</div>' +
+            '<div class="chat-panel-header-sub" id="chatHeaderStatusSub"><span class="chat-online-dot" id="chatHeaderStatusDot"></span><span id="chatHeaderStatusText">Memeriksa status...</span></div>' +
           '</div>' +
           '<button type="button" class="chat-panel-close" onclick="closeChatPanel_()" aria-label="Tutup">' + CHAT_ICONS_.close + '</button>' +
         '</div>' +
@@ -9226,6 +9425,26 @@
         '</div>' +
       '</div>';
     document.body.appendChild(overlay);
+  }
+
+  /** Ambil status online/offline Live Chat (berdasarkan jam operasional yang diatur Admin
+   *  di Pengaturan) dan tampilkan di header panel Agent. Dipanggil tiap kali panel dibuka,
+   *  supaya statusnya selalu representasi jam SEKARANG (bukan status basi dari load awal). */
+  function refreshChatAvailability_(){
+    google.script.run.withSuccessHandler(function(res){
+      CHAT_STATE_.availabilityOnline = !!(res && res.online);
+      var dot = document.getElementById('chatHeaderStatusDot');
+      var text = document.getElementById('chatHeaderStatusText');
+      if(dot) dot.classList.toggle('offline', !CHAT_STATE_.availabilityOnline);
+      if(text){
+        text.textContent = CHAT_STATE_.availabilityOnline
+          ? 'Admin & Supervisor siap membantu'
+          : 'Sedang offline' + (res && res.officeHours && res.officeHours.enabled ? ' \u2014 kembali ' + res.officeHours.start : '');
+      }
+    }).withFailureHandler(function(){
+      // Gagal ambil status tidak boleh mengganggu chat itu sendiri — biarkan status
+      // terakhir (default "online") tetap tampil, diam-diam gagal saja.
+    }).getChatAvailability(STATE.token);
   }
 
   /** Buka/tutup speed dial (opsi Live Chat di atas tombol titik-3). Parameter
@@ -9243,6 +9462,7 @@
     var overlay = document.getElementById('chatPanelOverlay');
     overlay.classList.add('active');
     CHAT_STATE_.panelOpen = true;
+    refreshChatAvailability_();
 
     google.script.run.withSuccessHandler(function(room){
       CHAT_STATE_.myRoomId = room.roomId;
@@ -9250,6 +9470,12 @@
       loadMyChatMessages_(true);
       if(CHAT_STATE_.pollInterval) clearInterval(CHAT_STATE_.pollInterval);
       CHAT_STATE_.pollInterval = setInterval(function(){ loadMyChatMessages_(false); }, 5000);
+      // Poll ringan terpisah khusus status "sudah dibaca staff" untuk bubble milik Agent
+      // sendiri — dipisah dari poll pesan supaya panggilan ini TIDAK ikut menandai room
+      // sebagai sudah dibaca Agent (lihat getMyChatRoomReadStatus di backend).
+      if(CHAT_STATE_.readStatusPollInterval) clearInterval(CHAT_STATE_.readStatusPollInterval);
+      CHAT_STATE_.readStatusPollInterval = setInterval(refreshMyChatReadStatus_, 4000);
+      refreshMyChatReadStatus_();
     }).withFailureHandler(function(e){ handleBackendError(e); }).getOrCreateMyChatRoom(STATE.token);
   }
 
@@ -9257,18 +9483,45 @@
     document.getElementById('chatPanelOverlay').classList.remove('active');
     CHAT_STATE_.panelOpen = false;
     if(CHAT_STATE_.pollInterval){ clearInterval(CHAT_STATE_.pollInterval); CHAT_STATE_.pollInterval = null; }
+    if(CHAT_STATE_.readStatusPollInterval){ clearInterval(CHAT_STATE_.readStatusPollInterval); CHAT_STATE_.readStatusPollInterval = null; }
     refreshChatUnreadBadge_();
+  }
+
+  /** Cek apakah pesan TERAKHIR milik Agent (bubble "mine" paling bawah) sudah dibaca staff,
+   *  lalu update ikon centang di bubble itu tanpa perlu re-render seluruh daftar pesan. */
+  function refreshMyChatReadStatus_(){
+    if(!CHAT_STATE_.myRoomId || !CHAT_STATE_.panelOpen) return;
+    google.script.run.withSuccessHandler(function(res){
+      var seen = !!(res && res.seenByStaff);
+      if(seen === CHAT_STATE_.myLastSeenByStaff) return; // tidak berubah, tidak perlu sentuh DOM
+      CHAT_STATE_.myLastSeenByStaff = seen;
+      var el = document.getElementById('chatMessagesEl');
+      if(!el) return;
+      var mineRows = el.querySelectorAll('.chat-msg-row.mine .chat-msg-status');
+      if(!mineRows.length) return;
+      // Semua bubble Agent yang sudah terkirim ikut ditandai "dibaca" sekaligus — cukup akurat
+      // untuk kebutuhan indikator ringan ini (tidak perlu status per-pesan granular di backend).
+      mineRows.forEach(function(statusEl){
+        statusEl.innerHTML = seen ? CHAT_ICONS_.doubleCheck : CHAT_ICONS_.singleCheck;
+        statusEl.classList.toggle('seen', seen);
+        statusEl.title = seen ? 'Dibaca' : 'Terkirim';
+      });
+    }).withFailureHandler(function(){ /* diam-diam gagal, dicoba lagi di poll berikutnya */ }).getMyChatRoomReadStatus(STATE.token, CHAT_STATE_.myRoomId);
   }
 
   function loadMyChatMessages_(isFirstLoad){
     if(!CHAT_STATE_.myRoomId) return;
+    if(isFirstLoad) CHAT_STATE_.myLastSeenByStaff = false; // reset supaya poll status berikutnya evaluasi ulang dari nol
     google.script.run.withSuccessHandler(function(messages){
       var el = document.getElementById('chatMessagesEl');
       if(!el) return;
-      if(isFirstLoad) el.innerHTML = '';
+      if(isFirstLoad) { el.innerHTML = ''; el.removeAttribute('data-last-date-key'); }
       if(isFirstLoad && messages.length === 0){
-        el.innerHTML = '<div class="chat-empty-state">' + CHAT_ICONS_.chatEmpty +
-          '<span>Belum ada percakapan.<br>Tulis pesan untuk mulai chat dengan tim kami.</span></div>';
+        el.innerHTML = '<div class="chat-empty-state">' +
+          '<div class="chat-empty-icon">' + CHAT_ICONS_.chatEmpty + '</div>' +
+          '<span class="chat-empty-title">Belum ada percakapan</span>' +
+          '<span class="chat-empty-sub">Tulis pesan di bawah untuk mulai chat dengan tim Admin/Supervisor kami. Biasanya dibalas cepat pada jam operasional.</span>' +
+        '</div>';
       } else {
         var wasNearBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) < 60;
         messages.forEach(function(m){
@@ -9313,6 +9566,7 @@
       if(el.querySelector('.chat-empty-state')) el.innerHTML = '';
       appendChatBubble_(el, msg, true);
       CHAT_STATE_.lastMessageId = msg.messageId;
+      CHAT_STATE_.myLastSeenByStaff = false; // pesan baru terkirim, belum tentu sudah dibaca staff
       el.scrollTop = el.scrollHeight;
       if(CHAT_STATE_.myRoomStatus === 'CLOSED'){
         CHAT_STATE_.myRoomStatus = 'OPEN'; // auto-reopen sudah terjadi di backend
@@ -9384,6 +9638,18 @@
   function appendChatBubble_(container, m, isMine){
     if(m.messageId && container.querySelector('[data-message-id="' + m.messageId + '"]')) return;
 
+    // Date divider modern (mis. "Hari ini", "Kemarin", "12 September 2026") — dibandingkan
+    // dengan tanggal bubble TERAKHIR yang sudah ada di container, supaya divider baru cuma
+    // muncul saat harinya benar-benar berganti, bukan di setiap pesan.
+    var msgDateKey = formatChatDateKey_(m.createdAt);
+    if(msgDateKey && container.getAttribute('data-last-date-key') !== msgDateKey){
+      var divider = document.createElement('div');
+      divider.className = 'chat-date-divider';
+      divider.innerHTML = '<span>' + formatChatDateLabel_(m.createdAt) + '</span>';
+      container.appendChild(divider);
+      container.setAttribute('data-last-date-key', msgDateKey);
+    }
+
     var row = document.createElement('div');
     if(m.messageId) row.setAttribute('data-message-id', m.messageId);
 
@@ -9395,9 +9661,16 @@
     }
     row.className = 'chat-msg-row ' + (isMine ? 'mine' : 'theirs');
     var senderLabel = isMine ? '' : '<div class="chat-msg-sender">' + escapeHtml(m.senderName) + ' &middot; ' + roleLabel_(m.senderRole) + '</div>';
+    // Status kirim/dibaca (centang tunggal/ganda ala aplikasi chat modern) HANYA untuk bubble
+    // milik Agent di widget Live Chat-nya sendiri (container #chatMessagesEl) — bukan di
+    // inbox staff, karena di sana "isMine" berarti pesan staff yang dilihat staff itu sendiri,
+    // dan status baca staff terhadap pesan sendiri tidak relevan/tidak dihitung backend.
+    var statusHtml = (isMine && container.id === 'chatMessagesEl')
+      ? '<span class="chat-msg-status' + (CHAT_STATE_.myLastSeenByStaff ? ' seen' : '') + '" title="' + (CHAT_STATE_.myLastSeenByStaff ? 'Dibaca' : 'Terkirim') + '">' + (CHAT_STATE_.myLastSeenByStaff ? CHAT_ICONS_.doubleCheck : CHAT_ICONS_.singleCheck) + '</span>'
+      : '';
     row.innerHTML = senderLabel +
       '<div class="chat-bubble">' + renderChatBubbleContent_(m) + '</div>' +
-      '<div class="chat-msg-time">' + formatChatTime_(m.createdAt) + '</div>';
+      '<div class="chat-msg-time">' + formatChatTime_(m.createdAt) + statusHtml + '</div>';
     container.appendChild(row);
   }
 
@@ -9432,6 +9705,31 @@
     }catch(e){ return ''; }
   }
 
+  /** Key unik per-hari (YYYY-MM-DD lokal) dipakai untuk mendeteksi kapan divider tanggal
+   *  baru perlu disisipkan di antara bubble chat. */
+  function formatChatDateKey_(iso){
+    try{
+      var d = new Date(iso);
+      if(isNaN(d.getTime())) return '';
+      return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    }catch(e){ return ''; }
+  }
+
+  /** Label ramah-baca untuk divider tanggal: "Hari ini" / "Kemarin" / "12 September 2026". */
+  function formatChatDateLabel_(iso){
+    try{
+      var d = new Date(iso);
+      if(isNaN(d.getTime())) return '';
+      var today = new Date(); today.setHours(0,0,0,0);
+      var yest = new Date(today); yest.setDate(yest.getDate()-1);
+      var dOnly = new Date(d); dOnly.setHours(0,0,0,0);
+      if(dOnly.getTime() === today.getTime()) return 'Hari ini';
+      if(dOnly.getTime() === yest.getTime()) return 'Kemarin';
+      var bulan = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+      return d.getDate() + ' ' + bulan[d.getMonth()] + ' ' + d.getFullYear();
+    }catch(e){ return ''; }
+  }
+
   // ---------- STAFF (ADMIN/SUPERVISOR/MANAGER): halaman inbox "Live Chat" ----------
 
   function renderLiveChatInbox(){
@@ -9459,6 +9757,12 @@
       loadChatRoomList_();
       if(CHAT_STATE_.inboxActiveRoomId) loadInboxMessages_(false);
     }, 6000);
+    // Quick reply staff: dimuat sekali & dicache di CHAT_STATE_ (bukan per-buka room) karena
+    // isinya sama untuk semua percakapan dan jarang berubah — cukup diperbarui saat halaman
+    // Inbox dibuka ulang (mis. pindah menu lalu balik lagi).
+    google.script.run.withSuccessHandler(function(settings){
+      CHAT_STATE_.quickReplies = (settings && settings.quickReplies) || [];
+    }).withFailureHandler(function(){ CHAT_STATE_.quickReplies = []; }).getChatSettings(STATE.token);
   }
 
   function setChatRoomFilter_(filter){
@@ -9507,6 +9811,7 @@
   function openInboxRoom_(roomId){
     CHAT_STATE_.inboxActiveRoomId = roomId;
     CHAT_STATE_.inboxLastMessageId = null;
+    CHAT_STATE_.quickReplyPopoverOpen = false; // reset supaya popover tidak nyangkut terbuka dari room sebelumnya
     document.getElementById('chatInboxEl').classList.add('room-open');
 
     var room = CHAT_STATE_.inboxRooms.filter(function(r){ return r.roomId === roomId; })[0] || {};
@@ -9535,11 +9840,44 @@
       '</div>' +
       '<div class="chat-inbox-messages" id="chatInboxMessagesEl"><div class="spinner"></div></div>' +
       '<div class="chat-inbox-input-bar" id="chatInboxInputBarEl">' +
+        '<div class="chat-quickreply-popover" id="chatQuickReplyPopover"></div>' +
         '<input type="file" id="chatInboxAttachInput" accept="image/png,image/jpeg,image/webp,application/pdf" style="display:none" onchange="handleChatAttachSelected_(this,true)">' +
         '<button type="button" class="chat-attach-btn" onclick="document.getElementById(\'chatInboxAttachInput\').click()" aria-label="Lampirkan gambar/PDF" title="Lampirkan gambar atau PDF">' + CHAT_ICONS_.attach + '</button>' +
+        '<button type="button" class="chat-attach-btn chat-quickreply-btn" onclick="toggleQuickReplyPopover_()" aria-label="Quick Reply" title="Pilih template balasan cepat">' + CHAT_ICONS_.bolt + '</button>' +
         '<textarea id="chatInboxInputEl" rows="1" placeholder="Balas sebagai ' + roleLabel_(STATE.user.role) + '..." onkeydown="handleInboxInputKeydown_(event)" oninput="autoGrowChatInput_(this)"></textarea>' +
         '<button type="button" class="chat-send-btn" id="chatInboxSendBtn" onclick="sendInboxMessage_()" aria-label="Kirim">' + CHAT_ICONS_.send + '</button>' +
       '</div>';
+  }
+
+  /** Buka/tutup popover daftar Quick Reply di atas kolom ketik staff. Isi diambil dari
+   *  cache CHAT_STATE_.quickReplies (dimuat sekali saat renderLiveChatInbox). */
+  function toggleQuickReplyPopover_(){
+    var pop = document.getElementById('chatQuickReplyPopover');
+    if(!pop) return;
+    var willOpen = !CHAT_STATE_.quickReplyPopoverOpen;
+    CHAT_STATE_.quickReplyPopoverOpen = willOpen;
+    if(!willOpen){ pop.classList.remove('open'); pop.innerHTML=''; return; }
+
+    var list = CHAT_STATE_.quickReplies || [];
+    pop.innerHTML = list.length
+      ? list.map(function(txt, i){
+          return '<button type="button" class="chat-quickreply-item" onclick="applyQuickReply_(' + i + ')">' + escapeHtml(txt) + '</button>';
+        }).join('')
+      : '<div class="chat-quickreply-empty">Belum ada quick reply. Admin bisa menambahkannya di menu Pengaturan.</div>';
+    pop.classList.add('open');
+  }
+
+  function applyQuickReply_(idx){
+    var list = CHAT_STATE_.quickReplies || [];
+    var txt = list[idx];
+    if(txt === undefined) return;
+    var input = document.getElementById('chatInboxInputEl');
+    if(input){
+      input.value = txt;
+      autoGrowChatInput_(input);
+      input.focus();
+    }
+    toggleQuickReplyPopover_();
   }
 
   function closeInboxRoom_(){
@@ -9553,7 +9891,7 @@
     google.script.run.withSuccessHandler(function(messages){
       var el = document.getElementById('chatInboxMessagesEl');
       if(!el) return;
-      if(isFirstLoad) el.innerHTML = '';
+      if(isFirstLoad) { el.innerHTML = ''; el.removeAttribute('data-last-date-key'); }
       if(isFirstLoad && messages.length === 0){
         el.innerHTML = '<div class="chat-inbox-empty">' + CHAT_ICONS_.chatEmpty + '<span>Belum ada pesan di percakapan ini.</span></div>';
       } else {
