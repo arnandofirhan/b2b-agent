@@ -865,6 +865,13 @@
 
   /* ---------- Main / topbar ---------- */
   .main-area{flex:1;display:flex;flex-direction:column;min-width:0;height:100%;overflow-y:auto;scrollbar-gutter:stable;}
+  /* Halaman Live Chat mengurus scroll-nya SENDIRI lewat .chat-inbox-messages (di dalam
+     .chat-room-detail) — .main-area dikunci total (overflow:hidden) supaya browser mobile
+     tidak salah pilih PARENT INI sebagai target auto-scroll-into-view saat textarea balasan
+     difokus & keyboard muncul. Tanpa ini, seluruh halaman (termasuk topbar) ikut "naik" alih-
+     alih hanya area pesan chat yang bergulir. Ditoggle oleh JS di showPage() (lihat
+     JavaScript.html), aktif hanya selagi pageKey === 'livechat'. */
+  .main-area.chat-page-active{ overflow:hidden; }
   .topbar{
     display:flex;align-items:center;gap:12px;padding:0 24px;background:var(--ag-surface);
     border-bottom:1px solid var(--ag-gray-200);position:sticky;top:0;z-index:10;
@@ -3150,8 +3157,8 @@
        Fallback ke 100dvh (didukung browser modern) untuk kondisi sebelum JS sempat jalan. */
     .chat-inbox{
       grid-template-columns:1fr; min-height:0;
-      height:calc(100dvh - var(--topbar-height) - 110px);
-      height:calc(var(--app-vvh, 100dvh) - var(--topbar-height) - 110px);
+      height:calc(100dvh - var(--topbar-height) - 118px);
+      height:calc(var(--app-vvh, 100dvh) - var(--topbar-height) - 118px);
     }
     .chat-inbox.room-open .chat-room-list{ display:none; }
     .chat-inbox:not(.room-open) .chat-room-detail{ display:none; }
