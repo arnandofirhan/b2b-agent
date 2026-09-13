@@ -3160,6 +3160,20 @@
   .cs-qr-add-btn{ align-self:flex-start; }
 
   /* ---------- 2. LIVE CHAT INBOX PAGE (STAFF: ADMIN/SUPERVISOR/MANAGER) ---------- */
+  /* FIX "KOLOM TEXT/TOPBAR HILANG ATAU IKUT KEGESER" (desktop & mobile): .chat-room-list
+     & .chat-room-detail adalah GRID ITEM (anak .chat-inbox yg display:grid), dan
+     .chat-inbox-messages adalah FLEX ITEM (anak .chat-room-detail yg display:flex column).
+     Default browser untuk grid/flex item adalah min-height:auto — artinya item BOLEH
+     tumbuh melebihi tinggi container-nya kalau isinya (bubble-bubble chat) lebih tinggi
+     dari ruang yang tersedia, alih2 di-cap lalu di-scroll oleh overflow-y:auto miliknya
+     sendiri. Akibatnya SELURUH .chat-room-detail (header + messages + input-bar jadi satu)
+     "meluber" ke bawah, lalu bagian yang meluber itu KEPOTONG oleh overflow:hidden milik
+     .chat-inbox — persis gejala yg dikeluhkan: kolom ketik & sebagian topbar hilang/
+     kepotong, dan (sebelum overflow-nya ke-clip) header+input ikut "kegeser" seolah-olah
+     seluruh card yang discroll, bukan cuma area pesannya. FIX: min-height:0 di SETIAP
+     elemen dalam rantai grid/flex ini memaksa masing2 dibatasi tinggi container-nya, jadi
+     yang bisa/boleh discroll HANYA .chat-inbox-messages — header & input-bar jadi benar2
+     PATEN, tidak pernah ikut bergeser sedikit pun, persis seperti WhatsApp. */
   .chat-inbox{
     display:grid; grid-template-columns:300px 1fr; gap:0; height:calc(100vh - var(--topbar-height) - 48px);
     min-height:480px; background:var(--ag-surface); border:1px solid var(--ag-gray-200); border-radius:var(--radius-lg);
@@ -3207,6 +3221,7 @@
 
   .chat-room-list{
     border-right:1px solid var(--ag-gray-200); overflow-y:auto; display:flex; flex-direction:column;
+    min-height:0; /* lihat catatan panjang "FIX KOLOM TEXT/TOPBAR HILANG" di atas .chat-inbox */
   }
   .chat-room-list-header{
     padding:14px 16px; border-bottom:1px solid var(--ag-gray-200); font-size:14px; font-weight:700;
@@ -3241,7 +3256,10 @@
     font-size:10.5px; font-weight:700; display:flex; align-items:center; justify-content:center;
   }
 
-  .chat-room-detail{ display:flex; flex-direction:column; height:100%; }
+  .chat-room-detail{
+    display:flex; flex-direction:column; height:100%;
+    min-height:0; /* lihat catatan panjang "FIX KOLOM TEXT/TOPBAR HILANG" di atas .chat-inbox */
+  }
   .chat-room-detail-header{
     padding:14px 18px; border-bottom:1px solid var(--ag-gray-200); display:flex; align-items:center; gap:10px; flex-shrink:0;
   }
@@ -3265,7 +3283,10 @@
   .chat-end-btn svg{ width:14px; height:14px; }
 
   .chat-inbox-messages{
-    flex:1; overflow-y:auto; padding:18px; display:flex; flex-direction:column; gap:10px; background:var(--ag-gray-50);
+    flex:1; min-height:0; overflow-y:auto; padding:18px; display:flex; flex-direction:column; gap:10px; background:var(--ag-gray-50);
+    /* min-height:0 = SATU-SATUNYA elemen yang benar2 boleh/bisa discroll di dalam kartu chat
+       ini (lihat catatan panjang di .chat-inbox). Header & .chat-inbox-input-bar di luar
+       elemen ini flex-shrink:0 + tidak overflow, jadi PATEN, tidak pernah ikut tergeser. */
   }
   [data-theme="dark"] .chat-inbox-messages{ background:var(--ag-surface); }
 
