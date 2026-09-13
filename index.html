@@ -90,9 +90,19 @@
     // yang harus dinaikkan bersamaan supaya precache SW-nya juga ikut refresh.
     var ASSET_CACHE_BUSTER_ = '20260913-lock-mainarea-scroll-10';
 
+    // PERBAIKAN PERFORMA (masalah "device lambat banget" & "dashboard kelihatan loading 2x"):
+    // Sebelumnya JavaScript.html (700KB+) & Stylesheet.html di-fetch dengan cache:'no-store'/
+    // 'Cache-Control: no-cache' SETIAP kali app dibuka — artinya file besar itu didownload
+    // ULANG dari nol tiap kali, walau isinya belum berubah sama sekali sejak kunjungan
+    // sebelumnya (ASSET_CACHE_BUSTER_ di query string SUDAH cukup untuk memastikan versi baru
+    // ke-fetch begitu buster-nya dinaikkan — no-store/no-cache jadi redundan dan cuma
+    // memperlambat). Sekarang dibiarkan pakai HTTP cache browser normal: kalau buster sama
+    // dengan kunjungan sebelumnya, browser boleh pakai salinan yang sudah tersimpan (nyaris
+    // instan) — kalau buster berbeda (Anda baru saja deploy versi baru), otomatis fetch ulang
+    // karena URL-nya memang beda. Ini yang paling terasa bedanya di HP dengan koneksi lambat.
     function loadWrappedInclude_(url, tagName, insertTarget){
       var bustedUrl = url + (url.indexOf('?') === -1 ? '?' : '&') + 'v=' + ASSET_CACHE_BUSTER_;
-      return fetch(bustedUrl, { cache: 'no-store' }).then(function(res){
+      return fetch(bustedUrl).then(function(res){
         if(!res.ok) throw new Error('Gagal memuat ' + url + ' (HTTP ' + res.status + ')');
         return res.text();
       }).then(function(text){
@@ -107,16 +117,15 @@
     }
 
     // Muat CSS secara sinkron (XHR, bukan fetch) supaya style sudah aktif SEBELUM body
-    // dirender — mencegah "flash tanpa style" saat halaman pertama kali dibuka.
+    // dirender — mencegah "flash tanpa style" saat halaman pertama kali dibuka. XHR sync ini
+    // TETAP dipertahankan (perlu blocking supaya CSS pasti aktif sebelum body dirender), tapi
+    // sekarang boleh pakai cache HTTP normal (lihat catatan performa di atas) — buster di query
+    // string tetap menjamin versi baru selalu ke-fetch ulang saat Anda deploy.
     (function loadStylesheetSync_(){
       try{
         var xhr = new XMLHttpRequest();
         var bustedUrl = 'Stylesheet.html?v=' + ASSET_CACHE_BUSTER_;
         xhr.open('GET', bustedUrl, false); // false = synchronous
-        // Paksa skip HTTP cache — tanpa ini beberapa browser tetap bisa menyajikan
-        // response lama dari disk cache walau query string berubah (jarang, tapi terjadi
-        // di sebagian WebView Android lama).
-        xhr.setRequestHeader('Cache-Control', 'no-cache');
         xhr.send(null);
         var inner = xhr.responseText.replace(/^\s*<style[^>]*>/i, '').replace(/<\/style>\s*$/i, '');
         document.write('<style>' + inner + '<\/style>');
