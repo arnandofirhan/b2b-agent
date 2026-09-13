@@ -2511,23 +2511,51 @@
   }
   .agent-dash{ display:flex; flex-direction:column; gap:20px; }
   .agent-dash-greeting{ font-size:16px; font-weight:600; color:var(--ag-gray-900); padding:4px 2px; }
-  .agent-dash-banners{ position:relative; border-radius:16px; overflow-x:auto; overflow-y:hidden;
-    display:flex; scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+  /* Carousel banner gaya "peek" modern (mirip Shopee/Traveloka dsb): slide TIDAK selebar
+     penuh (86%) & ada padding kiri-kanan di wrapper, jadi sepotong kecil banner
+     sebelum/sesudahnya sengaja terlihat mengintip di tepi — bukan lagi nempel rata penuh
+     tanpa jarak seperti sebelumnya. Jarak antar-slide (gap) + rounded corner per-card
+     (bukan cuma di wrapper) memperjelas jadi masing-masing terlihat sebagai kartu terpisah. */
+  .agent-dash-banners{ position:relative; overflow-x:auto; overflow-y:hidden; padding:0 7%;
+    display:flex; gap:14px; scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
   .agent-dash-banners::-webkit-scrollbar{ display:none; }
   /* Rasio banner DIPATOK 16:9 (bukan min-height bebas) supaya konsisten mobile & desktop dan
      tidak ada bagian gambar yang ke-crop tidak terduga. Rekomendasi ukuran file gambar:
      1600x900px (atau kelipatannya, tetap rasio 16:9), area penting taruh di tengah karena
      tepi kiri/kanan bisa terpotong tipis oleh object-fit:cover di layar yang lebih lebar/sempit. */
-  .agent-banner-card{ position:relative; flex:0 0 100%; scroll-snap-align:start; width:100%; aspect-ratio:16/9; border-radius:16px; overflow:hidden;
-    background:linear-gradient(135deg, var(--ag-green) 0%, #14502F 100%); cursor:pointer; }
+  .agent-banner-card{ position:relative; flex:0 0 86%; scroll-snap-align:center; width:86%; aspect-ratio:16/9; border-radius:16px; overflow:hidden;
+    background:linear-gradient(135deg, var(--ag-green) 0%, #14502F 100%); cursor:pointer;
+    /* transform/opacity di-animasikan langsung dari JS (onAgentBannerScroll_) mengikuti
+       jarak tiap slide ke titik tengah track — slide yang lagi di tengah membesar & terang
+       penuh, yang di tepi sedikit mengecil & meredup, jadi geser antar-banner terasa hidup
+       (efek "carousel fokus"), bukan cuma geser polos rata kanan-kiri. */
+    transition:transform .25s cubic-bezier(.22,.61,.36,1), opacity .25s ease;
+    transform:scale(.94); opacity:.75; will-change:transform,opacity; }
+  .agent-banner-card.is-centered{ transform:scale(1); opacity:1; }
+  /* Kalau banner Admin cuma 1 (tidak ada carousel/dot sama sekali), tampilkan penuh rata
+     seperti biasa — efek "peek" & scale/opacity di atas cuma relevan kalau ada >1 banner
+     untuk digeser. */
+  .agent-dash-banners.single-banner{ padding:0; }
+  .agent-dash-banners.single-banner .agent-banner-card{ flex:0 0 100%; width:100%; transform:none; opacity:1; }
   .agent-banner-card img{ width:100%; height:100%; object-fit:cover; display:block; }
   .agent-banner-overlay{ position:absolute; left:0; bottom:0; right:0; padding:14px 16px;
     background:linear-gradient(0deg, rgba(0,0,0,.55) 0%, rgba(0,0,0,0) 100%); color:#fff; }
   .agent-banner-title{ font-size:16px; font-weight:700; }
   .agent-banner-subtitle{ font-size:12.5px; opacity:.9; margin-top:2px; }
-  .agent-banner-dots{ display:flex; justify-content:center; gap:6px; margin-top:8px; }
-  .agent-banner-dot{ width:6px; height:6px; border-radius:50%; background:var(--ag-gray-200); }
-  .agent-banner-dot.is-active{ background:var(--ag-green); width:16px; border-radius:4px; }
+  .agent-banner-dots{ display:flex; align-items:center; justify-content:center; gap:6px; margin-top:8px; }
+  /* Indikator titik gaya "dynamic dots" (ala iOS/Instagram Stories) — lihat penjelasan
+     lengkap di komentar onAgentBannerScroll_ (JavaScript.html). Titik aktif jadi pil
+     lonjong, makin jauh dari titik aktif makin kecil/pudar, dan yang terlalu jauh
+     disembunyikan — jadi total lebar indikator TETAP ringkas walau bannernya banyak
+     (tidak melebar jadi sebaris titik panjang memenuhi layar). */
+  .agent-banner-dot{
+    width:6px; height:6px; border-radius:50%; background:var(--ag-gray-200); cursor:pointer;
+    transition:width .2s ease, height .2s ease, background .2s ease, opacity .2s ease; flex-shrink:0;
+  }
+  .agent-banner-dot.is-active{ background:var(--ag-green); width:18px; border-radius:4px; }
+  .agent-banner-dot.is-near{ width:6px; height:6px; opacity:.75; }
+  .agent-banner-dot.is-far{ width:4px; height:4px; opacity:.45; }
+  .agent-banner-dot.is-hidden{ width:0; height:0; opacity:0; margin:0 -3px; }
 
   .agent-shortcut-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
   .agent-shortcut-item{ display:flex; flex-direction:column; align-items:center; gap:6px;
