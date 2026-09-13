@@ -9972,9 +9972,18 @@
     // Quick reply staff: dimuat sekali & dicache di CHAT_STATE_ (bukan per-buka room) karena
     // isinya sama untuk semua percakapan dan jarang berubah — cukup diperbarui saat halaman
     // Inbox dibuka ulang (mis. pindah menu lalu balik lagi).
-    google.script.run.withSuccessHandler(function(settings){
-      CHAT_STATE_.quickReplies = (settings && settings.quickReplies) || [];
-    }).withFailureHandler(function(){ CHAT_STATE_.quickReplies = []; }).getChatSettings(STATE.token);
+    // FIX "LEMOT BUKA CHAT DI HP": request ini TIDAK URGENT (cuma isi popover Quick Reply yang
+    // belum tentu dibuka user) tapi sebelumnya ditembak BERSAMAAN dengan loadInboxMessages_/
+    // loadChatRoomList_ di atas — di koneksi HP yang lambat, ketiganya rebutan bandwidth
+    // sekaligus sehingga isi chat (yang paling penting dilihat user duluan) ikut molor.
+    // Ditunda 900ms supaya request pesan chat & daftar percakapan dapat "jalan duluan" tanpa
+    // saingan di koneksi yang sama.
+    setTimeout(function(){
+      if(STATE.currentPage !== 'livechat') return; // user sudah pindah halaman, tidak perlu lagi
+      google.script.run.withSuccessHandler(function(settings){
+        CHAT_STATE_.quickReplies = (settings && settings.quickReplies) || [];
+      }).withFailureHandler(function(){ CHAT_STATE_.quickReplies = []; }).getChatSettings(STATE.token);
+    }, 900);
   }
 
   function setChatRoomFilter_(filter){
@@ -10040,7 +10049,13 @@
     // menyegarkan/melengkapinya dari server.
     renderInboxRoomDetailShell_(room, CHAT_STATE_.inboxMessagesCache[roomId]);
     loadInboxMessages_(true);
-    loadChatRoomList_(); // refresh supaya badge unread & highlight active ter-update
+    // FIX "LEMOT BUKA CHAT DI HP": loadChatRoomList_() (refresh badge unread & highlight list)
+    // BUKAN yang paling penting dilihat user saat ini — yang paling ditunggu adalah ISI PESAN
+    // chat yang barusan diklik (loadInboxMessages_ di atas). Ditunda dikit (400ms) supaya
+    // request pesan chat itu dapat jalan duluan tanpa rebutan koneksi di HP yang lambat.
+    setTimeout(function(){
+      if(STATE.currentPage === 'livechat') loadChatRoomList_();
+    }, 400);
   }
 
   function renderInboxRoomDetailShell_(room, cachedMessages){
