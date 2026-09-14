@@ -748,11 +748,14 @@
       (typeof netInfo.downlink === 'number' && netInfo.downlink > 0 && netInfo.downlink < 1)
     ));
     if(!isSlowConn){
-      // Tunda mulainya preload background ~1.2 detik supaya tidak langsung tabrakan dengan
-      // panggilan Dashboard sendiri yang baru saja ditembak oleh showPage('dashboard') di
-      // atas — beri jeda dulu supaya beban ke GAS di detik-detik awal boot lebih landai
-      // (mengurangi peluang redirect/echo 404 transient yang selama ini muncul di console).
-      setTimeout(preloadAllPages_, 1200);
+      // Tunda mulainya preload background supaya tidak langsung tabrakan dengan panggilan
+      // Dashboard sendiri yang baru saja ditembak oleh showPage('dashboard') di atas — beri
+      // jeda dulu supaya beban ke GAS di detik-detik awal boot lebih landai. Dinaikkan dari
+      // 1.2 detik -> 2.5 detik: kuota eksekusi paralel GAS di-SHARE lintas SEMUA device yang
+      // memanggil /exec yang sama (lihat catatan panjang di preloadAllPages_), jadi jeda yang
+      // lebih longgar di sini juga mengurangi peluang tabrakan dengan device LAIN yang
+      // kebetulan login di waktu yang berdekatan, bukan cuma dengan request dari tab ini.
+      setTimeout(preloadAllPages_, 2500);
     }
     loadNotifications_();
     if(NOTIF_POLL_INTERVAL_) clearInterval(NOTIF_POLL_INTERVAL_);
@@ -804,7 +807,25 @@
     // bertahap (trickle), bukan serentak — dan seandainya satu preload tetap gagal,
     // pageErrorEl_() di atas memastikan itu tidak pernah menimpa layar user kalau dia
     // sedang tidak melihat halaman itu.
-    var STAGGER_MS = 400;
+    // PENTING (root cause "login di 2 device dekat-dekat waktunya, yang login TERAKHIR
+    // jadi lemot"): STAGGER_MS/jumlah menu di bawah ini bukan cuma soal 1 device. GAS
+    // Web App punya kuota EKSEKUSI PARALEL yang di-SHARE lintas SEMUA pemanggil /exec,
+    // dari device manapun — bukan per-tab, bukan per-user. api-bridge.js (MAX_CONCURRENT_HI/
+    // LO) cuma membatasi request DARI TAB INI SENDIRI; dia tidak tahu device lain juga
+    // sedang menembak backend yang sama. Kalau 2 device login berdekatan, preloadAllPages_()
+    // di device A (~14 request staggered) tumpang tindih dengan punya device B (~14 request
+    // staggered lagi) — totalnya ~28 request berebut kuota paralel yang SAMA dalam window
+    // waktu yang sama. Siapapun yang requestnya kebetulan mendarat lebih belakang di kuota
+    // itu akan kena antre/timeout lebih lama — device yang login BELAKANGAN paling sering
+    // kena ini karena requestnya paling akhir masuk barisan.
+    // FIX: (1) jeda antar-preload dilebarkan 400ms -> 1500ms per halaman, memperkecil jumlah
+    // request yang overlap di window waktu manapun; (2) preload dibatasi ke PRELOAD_PAGE_LIMIT_
+    // halaman paling relevan dulu (bukan semua ~14 sekaligus) — sisanya tetap bisa dibuka
+    // manual oleh user (cuma tanpa keuntungan sudah-di-cache), tapi beban ke kuota bersama
+    // di detik-detik awal login jauh lebih kecil, di device manapun yang login belakangan.
+    var STAGGER_MS = 1500;
+    var PRELOAD_PAGE_LIMIT_ = 4;
+    keys = keys.slice(0, PRELOAD_PAGE_LIMIT_);
     keys.forEach(function(key, i){
       setTimeout(function(){
         // Guard sesi (lihat catatan SESSION_GEN_): kalau user sudah logout (atau sudah login
