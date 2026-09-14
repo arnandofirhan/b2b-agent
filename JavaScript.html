@@ -8454,6 +8454,12 @@
       2 panel tambahan di Dashboard: ringkasan jumlah PO per status (bar), dan 5 PO
       paling baru. Dipanggil setelah KPI utama tampil supaya KPI tidak ikut menunggu. */
   function loadDashboardPoInsights_(){
+    // FIX PERFORMA: sebelumnya memanggil listPO(), fungsi yang sama dipakai halaman
+    // Transaksi — ikut melakukan enrichWithPromoName_() (lookup tambahan ke sheet PROMOS)
+    // dan mengirim SEMUA kolom PO untuk SETIAP baris, padahal panel ini cuma perlu 5 field
+    // ringkas (lihat renderDashPoStatusBox_/renderDashRecentPoBox_). getDashboardPoInsights
+    // di backend mengembalikan versi ringkasnya saja, jadi panel ini tidak lagi ikut kena
+    // beban kerja milik halaman Transaksi.
     google.script.run.withSuccessHandler(function(rows){
       rows = rows || [];
       DASH_DATA_CACHE_ = DASH_DATA_CACHE_ || {};
@@ -8464,7 +8470,7 @@
       if(DASH_DATA_CACHE_ && DASH_DATA_CACHE_.poRows) return; // already showing good cached data
       var a = document.getElementById('dashPoStatusBox'); if(a) a.innerHTML = emptyState_('Gagal memuat data', 'Coba muat ulang halaman.', ICONS.warning);
       var b = document.getElementById('dashRecentPoBox'); if(b) b.innerHTML = emptyState_('Gagal memuat data', 'Coba muat ulang halaman.', ICONS.warning);
-    }).listPO(STATE.token);
+    }).getDashboardPoInsights(STATE.token);
   }
 
   /** Ambil tren PO 7 hari terakhir (dengan delta % vs 7 hari sebelumnya) dan
