@@ -649,6 +649,17 @@
   function _agBootInit_(){
     applyBrandLogo_();
     hideBootSplash_();
+    // FIX PERFORMA LOGIN: tembak ping() SEKALI di sini, diam-diam, paling awal mungkin
+    // saat app boot — supaya kalau cold-start Apps Script (lihat catatan ping() di Code.gs)
+    // memang mau terjadi, dia terjadi di request pemanasan INI (yang gagal pun tidak apa-apa,
+    // tidak ada UI yang bergantung padanya sama sekali), bukan di request login() yang
+    // sungguhan saat user klik "Masuk". Ditandai low-priority supaya tidak menyita slot
+    // MAX_CONCURRENT_HI dari aksi user yang sesungguhnya.
+    try{
+      window.__BG_LOW_PRIORITY__ = true;
+      google.script.run.withSuccessHandler(function(){}).withFailureHandler(function(){}).ping();
+      window.__BG_LOW_PRIORITY__ = false;
+    }catch(e){}
     // "Ingat saya" HANYA mengingat alamat email (bukan password — menyimpan password mentah
     // di browser tidak aman) di localStorage supaya form login sudah terisi otomatis di
     // kunjungan berikutnya, termasuk setelah logout. Kalau checkbox tidak dicentang saat
@@ -832,6 +843,20 @@
     // halaman paling relevan dulu (bukan semua ~14 sekaligus) — sisanya tetap bisa dibuka
     // manual oleh user (cuma tanpa keuntungan sudah-di-cache), tapi beban ke kuota bersama
     // di detik-detik awal login jauh lebih kecil, di device manapun yang login belakangan.
+    // FIX PERFORMA: urutan preload SEBELUMNYA cuma mengikuti urutan MENU_ITEMS apa adanya
+    // (agents, products/catalog, promo, livechat, transactions, ...) — akibatnya halaman
+    // yang PALING SERING diklik user tepat setelah login (Transaksi/PO, Order) baru
+    // ke-preload di urutan ke-4/5, sering BELUM SELESAI saat user benar-benar mengklik
+    // menu itu beberapa detik setelah login, jadi tetap kena spinner lama seolah-olah
+    // preload tidak berguna sama sekali. FIX: definisikan urutan PRIORITAS eksplisit di
+    // sini (transaksi & order didahulukan), independen dari urutan tampilan menu.
+    var PRELOAD_PRIORITY_ORDER_ = ['transactions','orders','catalog','products','commission','promo','agents','stores','reports','calendar','commission-scheme','users','settings','audit-log'];
+    keys.sort(function(a, b){
+      var ia = PRELOAD_PRIORITY_ORDER_.indexOf(a); if(ia === -1) ia = 999;
+      var ib = PRELOAD_PRIORITY_ORDER_.indexOf(b); if(ib === -1) ib = 999;
+      return ia - ib;
+    });
+
     // DITURUNKAN dari 1500ms -> 600ms, dan limit halaman dinaikkan 4 -> 6: dengan
     // MAX_CONCURRENT_LO sekarang 2 (bukan 1) di api-bridge.js, beberapa preload boleh
     // tumpang-tindih sedikit tanpa membanjiri GAS — sebelumnya 1500ms diperlukan karena
