@@ -3084,6 +3084,19 @@
     font-weight:700; font-size:15px; border-bottom:1px solid var(--ag-gray-200);
   }
   [data-theme="dark"] .chat-attach-preview-header{ border-color:var(--ag-gray-700); }
+  /* FIX "TIDAK ADA TOMBOL X UNTUK CANCEL": .chat-panel-close aslinya didesain untuk header
+     HIJAU GELAP (lihat .chat-panel-header) — warna ikon & background-nya (putih transparan
+     di atas putih transparan) jadi TIDAK TERLIHAT SAMA SEKALI di atas header modal preview
+     ini yang latarnya PUTIH. Override warna khusus di sini supaya tombolnya kelihatan jelas
+     (abu gelap di atas putih), tanpa mengubah tampilan .chat-panel-close di tempat lain. */
+  .chat-attach-preview-header .chat-panel-close{
+    background:var(--ag-gray-100,#F0F2F5); color:var(--ag-gray-700,#3A4452);
+  }
+  .chat-attach-preview-header .chat-panel-close:hover{ background:var(--ag-gray-200,#E2E5EA); }
+  [data-theme="dark"] .chat-attach-preview-header .chat-panel-close{
+    background:rgba(255,255,255,.1); color:#fff;
+  }
+  [data-theme="dark"] .chat-attach-preview-header .chat-panel-close:hover{ background:rgba(255,255,255,.18); }
   .chat-attach-preview-body{
     flex:1; min-height:0; display:flex; align-items:center; justify-content:center;
     background:#0b0f0d; padding:12px;
@@ -3114,12 +3127,22 @@
   .cs-modal-body{ padding-top:16px; }
   .cs-tabs{
     display:flex; gap:6px; padding:4px; background:var(--ag-gray-100); border-radius:12px;
-    margin-bottom:20px; overflow-x:auto;
+    margin-bottom:20px; overflow-x:auto; scrollbar-width:none; position:relative;
   }
+  .cs-tabs::-webkit-scrollbar{ display:none; }
   [data-theme="dark"] .cs-tabs{ background:var(--ag-gray-800); }
   .cs-tab{
-    flex:1; display:flex; align-items:center; justify-content:center; gap:6px; white-space:nowrap;
-    padding:9px 12px; border-radius:9px; border:none; background:transparent; color:var(--ag-gray-500);
+    /* FIX "TAB KEPOTONG DI HP" (tab ke-3 "Quick Reply" tidak kelihatan penuh & tidak bisa
+       di-scroll ke sana): sebelumnya flex:1 memaksa SEMUA tab berbagi rata lebar container,
+       jadi walau parent .cs-tabs sudah overflow-x:auto, tab-tab tetap dipaksa menyempit
+       supaya muat 1 layar (bukan overflow beneran) — di layar HP sempit, 3 label sekaligus
+       ("Sambutan"/"Jam Operasional"/"Quick Reply") tidak cukup ruang jadi yang terakhir
+       kepotong. flex:0 0 auto membuat tiap tab selebar teksnya sendiri, sehingga kalau
+       total lebar melebihi layar, overflow-x:auto di parent benar2 bisa di-scroll (geser
+       jari ke kiri) untuk melihat tab yang tersembunyi.
+    */
+    flex:0 0 auto; display:flex; align-items:center; justify-content:center; gap:6px; white-space:nowrap;
+    padding:9px 14px; border-radius:9px; border:none; background:transparent; color:var(--ag-gray-500);
     font-size:12.5px; font-weight:600; cursor:pointer; transition:background .15s ease, color .15s ease;
   }
   .cs-tab svg{ width:15px; height:15px; }
@@ -3360,6 +3383,12 @@
     flex:1; resize:none; border:1px solid var(--ag-gray-200); border-radius:var(--radius-md);
     padding:10px 14px; font-size:13.5px; font-family:var(--font); max-height:100px; min-height:42px;
     background:var(--ag-gray-50); color:var(--ag-gray-900);
+    /* FIX "GARIS VERTIKAL ANEH DI DALAM KOLOM KETIK" (screenshot report): beberapa WebView
+       Android tetap menggambar resize-handle bawaan <textarea> (garis/segitiga kecil di
+       pojok kanan bawah) SEKALIPUN resize:none sudah diset di CSS standar — properti vendor
+       di bawah ini benar2 mematikannya di WebKit/Blink (Android Chrome/WebView), sumber
+       paling mungkin dari garis aneh yang dilaporkan muncul di sisi kanan kolom ketik. */
+    -webkit-appearance:none; appearance:none;
     /* FIX BUG "TAHAN+GESER DI KOLOM TEKS IKUT NGE-SCROLL SELURUH HALAMAN": sebelumnya di sini
        dipasang touch-action:manipulation supaya tap/kursor/seleksi teks tetap terasa normal —
        TERNYATA "manipulation" itu MASIH mengizinkan gesture pan/geser (cuma mematikan double-tap
