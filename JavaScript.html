@@ -734,7 +734,18 @@
     // bertahap (trickle), bukan serentak — dan seandainya satu preload tetap gagal,
     // pageErrorEl_() di atas memastikan itu tidak pernah menimpa layar user kalau dia
     // sedang tidak melihat halaman itu.
-    var STAGGER_MS = 700;
+    // FIX "DEVICE YANG LOGIN BELAKANGAN TERASA BERAT" (saat akun yang sama/berbeda aktif di
+    // 2 device bersamaan, mis. HP & laptop): GAS Web App (/exec) punya kuota concurrent
+    // execution GLOBAL per-PROJECT (bukan per-user/per-device) — jadi kalau device A baru
+    // saja login dan preload belasan halaman miliknya SEDANG berjalan, device B yang login
+    // beberapa detik kemudian ikut rebutan kuota eksekusi backend yang SAMA, membuat request
+    // device B (termasuk render Dashboard pertamanya) terasa lambat padahal device B sendiri
+    // tidak melakukan apa-apa yang salah. STAGGER_MS dinaikkan dari 700ms ke 1200ms supaya
+    // laju request tiap device ke backend lebih landai — totalnya tetap sama (preload semua
+    // halaman tetap selesai, cuma makan waktu background sedikit lebih lama, yang TIDAK
+    // terasa oleh user karena ini murni caching diam-diam), tapi peluang 2 device saling
+    // tabrakan kuota di waktu bersamaan jadi jauh lebih kecil.
+    var STAGGER_MS = 1200;
     keys.forEach(function(key, i){
       setTimeout(function(){
         // FIX "HP LEMOT PAS LOGIN / BUKA LIVE CHAT": sebelumnya preload ini jalan TERUS
@@ -1100,6 +1111,33 @@
   }
 
   function showPage(pageKey){
+    // FIX BUG "DASHBOARD RELOAD 2X SETELAH LOGIN" (& berlaku utk halaman manapun): kalau
+    // showPage() dipanggil untuk halaman yang MEMANG SEDANG AKTIF di layar SAAT INI (bukan
+    // navigasi asli — itu selalu pindah DARI halaman lain), dan kontennya sudah ada penuh di
+    // DOM (bukan spinner kosong), JANGAN reset #content sama sekali. Sebelumnya, kalau
+    // showPage('dashboard') ter-invoke lagi oleh sebab apapun (race/duplikat event listener/
+    // dsb — sulit dilacak persis pemicunya tanpa akses device langsung) SELAGI user sudah
+    // melihat Dashboard penuh terisi, kode di bawah tetap jalan dari awal: kalau
+    // PAGE_HTML_CACHE['dashboard'] kebetulan belum lengkap ke-sync (race kecil antara render
+    // panel async & penyimpanan cache), layar sempat balik ke spinner kosong sebelum terisi
+    // lagi — persis "reload 2x" yang dilaporkan. Guard ini menghentikan pemanggilan ulang itu
+    // di titik PALING AWAL, SEBELUM #content sempat disentuh sama sekali, jadi tidak ada
+    // celah race apapun yang bisa membuat spinner sempat kelihatan.
+    // AMAN untuk fitur lain: pindah dari halaman LAIN ke pageKey yang sama tetap normal
+    // (currentPage lama ≠ pageKey baru, guard tidak nyala). Klik ulang menu yang SAMA dari
+    // sidebar (mis. re-klik "Transaksi" utk reset filter) sengaja TETAP diizinkan lewat
+    // lewat cek tambahan below: guard hanya aktif utk 'dashboard' (tidak ada semantik
+    // "klik ulang utk reset" di Dashboard, beda dgn Transaksi/Orders yg punya filter).
+    if(pageKey === 'dashboard' && STATE.currentPage === 'dashboard'){
+      var existingContent = document.getElementById('content');
+      var hasRealContent = existingContent && (
+        document.getElementById('dashKpiGrid') || existingContent.querySelector('.agent-dash')
+      );
+      if(hasRealContent){
+        console.warn('[showPage] Dicegah reload ulang Dashboard yang tidak perlu. Stack pemanggil:', new Error().stack);
+        return;
+      }
+    }
     STATE.currentPage = pageKey;
     // FIX SCROLL CHAT MOBILE: halaman Live Chat ('livechat') punya scroll AREA-NYA SENDIRI
     // (.chat-inbox-messages, di dalam .chat-room-detail) yang seharusnya jadi SATU-SATUNYA
@@ -9540,7 +9578,15 @@
       injectChatFab_();
     }
     refreshChatUnreadBadge_();
-    CHAT_STATE_.unreadPollInterval = setInterval(refreshChatUnreadBadge_, 15000);
+    // Interval dinaikkan dari 15 detik ke 25 detik: mengurangi beban total ke GAS Web App
+    // saat lebih dari satu device aktif bersamaan (mis. login akun yang sama di HP & laptop
+    // sekaligus) — GAS Web App punya kuota concurrent execution GLOBAL per-project (bukan
+    // per-user/per-device), jadi semakin banyak device yang polling terus-menerus di
+    // background, semakin besar kemungkinan device-device itu saling berebut kuota &
+    // terasa lambat satu sama lain. 25 detik masih cukup responsif untuk badge notifikasi
+    // (bukan sesuatu yang perlu real-time detik demi detik), tapi mengurangi total request
+    // per menit dari 4x jadi ~2.4x per device.
+    CHAT_STATE_.unreadPollInterval = setInterval(refreshChatUnreadBadge_, 25000);
   }
 
   function refreshChatUnreadBadge_(){
