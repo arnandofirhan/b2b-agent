@@ -10,7 +10,7 @@
  * dan perubahannya tidak muncul di HP, naikkan CACHE_VERSION di bawah
  * ini supaya service worker lama dibuang & cache diisi ulang.
  *************************************************************/
-var CACHE_VERSION = 'agrinesia-b2b-v60';
+var CACHE_VERSION = 'agrinesia-b2b-v61';
 var APP_SHELL = [
   './',
   './index.html',
@@ -58,6 +58,23 @@ self.addEventListener('fetch', function (event) {
     return; // biarkan request ini lewat network seperti biasa
   }
 
+  // FIX BUG NYATA (console error: "Failed to execute 'put' on 'Cache': Request scheme
+  // 'chrome-extension' is unsupported"): request GET yang lewat sini TERNYATA tidak selalu
+  // murni datang dari halaman kita sendiri — ekstensi browser (ad-blocker, password manager,
+  // React/Vue DevTools, dll) kadang ikut memicu fetch dengan skema URL seperti
+  // 'chrome-extension://...' (atau 'moz-extension://', 'safari-extension://' di browser lain)
+  // yang tetap ikut tertangkap oleh listener 'fetch' global ini karena scope-nya memang
+  // seluruh halaman. Cache API browser CUMA menerima skema 'http:'/'https:' — begitu
+  // caches.open(...).then(cache => cache.put(req, ...)) dipanggil untuk request berskema lain,
+  // browser melempar TypeError di console (tidak fatal untuk user, tapi tetap bug/noise nyata
+  // dan bikin promise fetch-nya reject tanpa penanganan/di-log sebagai uncaught).
+  // FIX: cek skema URL request LEBIH DULU — kalau bukan http/https, jangan disentuh sama
+  // sekali oleh Service Worker ini (biarkan lewat network seperti biasa, sama seperti
+  // permintaan ke script.google.com di atas).
+  if (req.url.indexOf('http://') !== 0 && req.url.indexOf('https://') !== 0) {
+    return;
+  }
+
   // FIX PERFORMA: index.html memuat JavaScript.html/Stylesheet.html dengan cache-buster di
   // query string (?v=...) supaya versi baru selalu ke-fetch begitu Anda deploy ulang. Tapi
   // caches.match() DEFAULT-nya cocokkan URL PERSIS termasuk query string — jadi request
@@ -69,9 +86,20 @@ self.addEventListener('fetch', function (event) {
     caches.match(req, { ignoreSearch: true }).then(function (cached) {
       var networkFetch = fetch(req)
         .then(function (res) {
+          // FIX TAMBAHAN: hanya cache response yang "basic" (same-origin, benar-benar bisa
+          // dibaca) atau "cors" yang valid — response "opaque" (mis. dari CDN pihak ketiga
+          // tanpa header CORS) tidak boleh diasumsikan status 200 dengan aman untuk logika
+          // lain di masa depan, tapi yang PALING PENTING di sini: cache.put tetap dibungkus
+          // try/catch supaya kasus tak terduga lain (skema aneh yang lolos dari pengecekan di
+          // atas, kuota storage penuh, dll) tidak pernah jadi unhandled promise rejection lagi
+          // di console — worst case gagal diam-diam, app tetap jalan normal dari network.
           if (res && res.status === 200) {
             var resClone = res.clone();
-            caches.open(CACHE_VERSION).then(function (cache) { cache.put(req, resClone); });
+            caches.open(CACHE_VERSION).then(function (cache) {
+              cache.put(req, resClone).catch(function (err) {
+                console.warn('[service-worker] Gagal menyimpan ke cache (diabaikan, tidak mengganggu app):', err);
+              });
+            });
           }
           return res;
         })
