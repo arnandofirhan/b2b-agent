@@ -706,11 +706,37 @@
     // lagi ke Dashboard) — makanya terkesan "kadang muncul kadang tidak".
     initLiveChat_();
     showPage('dashboard');
-    // Tunda mulainya preload background ~1.2 detik supaya tidak langsung tabrakan dengan
-    // panggilan Dashboard sendiri yang baru saja ditembak oleh showPage('dashboard') di
-    // atas — beri jeda dulu supaya beban ke GAS di detik-detik awal boot lebih landai
-    // (mengurangi peluang redirect/echo 404 transient yang selama ini muncul di console).
-    setTimeout(preloadAllPages_, 1200);
+    // FIX PERFORMA (laporan nyata: HP dengan sinyal lemah sering kena "TIMEOUT: server
+    // tidak merespons dalam 60 detik" tepat di Dashboard, PADAHAL Live Chat sudah dimatikan
+    // total — lihat LIVECHAT_FEATURE_ENABLED_/preloadAllPages_, jadi bukan itu biang
+    // keroknya). Penyebab sebenarnya: preloadAllPages_() tetap menembak belasan halaman lain
+    // di background cuma 1.2 detik setelah showPage('dashboard') menembak 2 request-nya
+    // sendiri (getAgentDashboardConfig + listProducts) — di koneksi BAGUS ini aman karena
+    // sudah di-stagger & dikasih prioritas rendah (lihat api-bridge.js), tapi di koneksi
+    // LEMAH (2G/3G/throughput kecil), background preload ini tetap ikut rebutan bandwidth
+    // fisik jaringan dengan request Dashboard yang sedang retry, memperparah timeout.
+    // FIX: deteksi kualitas koneksi (Network Information API — didukung Chrome/Android,
+    // browser WebView PWA kita) SEBELUM menjadwalkan preload:
+    //  - Koneksi lemah (2g/slow-2g, downlink < 1 Mbps, atau mode "Data Saver" aktif):
+    //    preload background DILEWATI SAMA SEKALI. Halaman lain tetap bisa dibuka manual
+    //    oleh user (cuma tanpa keuntungan "sudah di-cache duluan"), tapi Dashboard yang
+    //    baru saja login tidak perlu berebut bandwidth dengan 14 request preload sekaligus.
+    //  - Koneksi normal/tidak diketahui (browser lama tanpa Network Information API):
+    //    perilaku LAMA tetap dipakai (delay 1.2 detik), supaya tidak mengubah pengalaman
+    //    user yang sinyalnya memang sudah bagus.
+    var netInfo = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    var isSlowConn = !!(netInfo && (
+      netInfo.saveData ||
+      /^(slow-2g|2g)$/.test(netInfo.effectiveType || '') ||
+      (typeof netInfo.downlink === 'number' && netInfo.downlink > 0 && netInfo.downlink < 1)
+    ));
+    if(!isSlowConn){
+      // Tunda mulainya preload background ~1.2 detik supaya tidak langsung tabrakan dengan
+      // panggilan Dashboard sendiri yang baru saja ditembak oleh showPage('dashboard') di
+      // atas — beri jeda dulu supaya beban ke GAS di detik-detik awal boot lebih landai
+      // (mengurangi peluang redirect/echo 404 transient yang selama ini muncul di console).
+      setTimeout(preloadAllPages_, 1200);
+    }
     loadNotifications_();
     if(NOTIF_POLL_INTERVAL_) clearInterval(NOTIF_POLL_INTERVAL_);
     NOTIF_POLL_INTERVAL_ = setInterval(loadNotifications_, 120000); // refresh tiap 2 menit
