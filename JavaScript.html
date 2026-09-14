@@ -4459,15 +4459,18 @@
     cats.sort();
     if(!cats.length) return '';
     var tabs = [{v:null, label:'Semua'}].concat(cats.map(function(c){ return {v:c, label:c}; }));
-    // Tab "Semua" ikut ditandai aktif kalau filter sedang berisi LEBIH DARI 1 kategori
-    // (klik dari banner/kategori Dashboard yang link ke beberapa kategori sekaligus) —
-    // karena tidak ada satu tab tunggal yang cocok mewakili gabungan itu.
-    var isMulti = NEWPO_CATEGORY_FILTER_ && NEWPO_CATEGORY_FILTER_.length > 1;
-    var isSingle = NEWPO_CATEGORY_FILTER_ && NEWPO_CATEGORY_FILTER_.length === 1;
+    // FIX BUG NYATA (dilaporkan user): sebelumnya kalau filter berisi LEBIH DARI 1 kategori
+    // (klik banner/Kategori Produk Dashboard yang linknya ke beberapa kategori sekaligus),
+    // tab "Semua" ikut disorot aktif — padahal daftar produk di bawahnya SUDAH terfilter ke
+    // kategori-kategori itu saja. Ini bikin user salah kira filter tidak jalan sama sekali
+    // ("kok yang muncul kayak semua produk"). FIX: sekarang SEMUA tab kategori yang memang
+    // termasuk dalam filter ikut disorot aktif bareng-bareng (bukan cuma "Semua"), supaya
+    // user langsung lihat persis kategori mana saja yang sedang difilter.
+    var filterSet = (NEWPO_CATEGORY_FILTER_ || []).map(function(c){ return String(c).toUpperCase(); });
     return tabs.map(function(t){
       var active = t.v
-        ? (isSingle && t.v.toUpperCase() === NEWPO_CATEGORY_FILTER_[0].toUpperCase())
-        : (!isSingle); // tab "Semua" aktif kalau filter kosong ATAU berisi banyak kategori sekaligus
+        ? (filterSet.indexOf(t.v.toUpperCase()) !== -1)
+        : (!filterSet.length); // tab "Semua" aktif HANYA kalau tidak ada filter kategori sama sekali
       return '<button type="button" class="po-category-tab'+(active?' is-active':'')+'" '
         + 'onclick="switchNewPOCategory_('+(t.v?'\''+escapeHtml(t.v)+'\'':'null')+')">'+escapeHtml(t.label)+'</button>';
     }).join('');
