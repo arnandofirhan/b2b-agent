@@ -279,9 +279,22 @@
   }
 
   // =============================================================
-  // TOPBAR USER MENU (avatar dropdown: Ganti Password / Keluar)
+  // TOPBAR USER MENU (avatar dropdown: Ganti Password / Keluar) — PORTAL PATTERN
+  // -------------------------------------------------------------
+  // FIX "dropdown terpotong di halaman Live Chat": versi lama menaruh .user-menu-backdrop
+  // + .user-menu-dropdown sbg markup statis DI DALAM .user-menu (anak .main-area). Karena
+  // .main-area diberi overflow:hidden khusus saat halaman Live Chat aktif (dibutuhkan supaya
+  // area scroll chat terkunci — lihat catatan .main-area.chat-page-active di Stylesheet.html),
+  // dropdown position:absolute itu ikut TERPOTONG oleh overflow tsb: z-index tinggi (100)
+  // tidak menolong di sini karena overflow:hidden pada ancestor memotong render terlepas dari
+  // z-index berapa pun. Sekarang dropdown dibangun dari nol sbg elemen baru di #notifPortalRoot
+  // (akhir <body>, di luar .main-area sama sekali) — pola yang SAMA PERSIS dengan notif
+  // dropdown (lihat "NOTIF DROPDOWN — PORTAL PATTERN" di bawah), yang sudah terbukti bebas dari
+  // masalah clipping maupun stacking-context serupa di semua halaman termasuk Live Chat.
   // =============================================================
   var USER_MENU_CLOSED_AT_ = 0; // guard: cegah re-open seketika krn race pointerdown(backdrop)->click(avatar)
+  var USER_MENU_OPEN_ = false;
+
   function toggleUserMenu(e){
     // stopPropagation WAJIB (pola sama seperti toggleNotifDropdown_): tanpa ini klik
     // pada trigger avatar "naik" (bubble) ke listener klik-luar document di bawah PADA
@@ -289,15 +302,69 @@
     // seketika saat dibuka, atau membuat state open/close jadi tidak sinkron.
     if(e) e.stopPropagation();
     if(Date.now() - USER_MENU_CLOSED_AT_ < 300) return; // baru saja ditutup via tap-di-luar, abaikan
-    var menu = document.getElementById('userMenu');
-    if(!menu) return;
-    var willOpen = !menu.classList.contains('open');
-    closeNotifDropdown_(); // 2 dropdown topbar tidak pernah tumpang tindih terbuka bareng
-    if(willOpen) menu.classList.add('open'); else closeUserMenu();
+    if(USER_MENU_OPEN_){ closeUserMenu(); return; }
+    openUserMenu_();
   }
+
+  /** Bangun backdrop + dropdown dari nol sbg child #notifPortalRoot (bukan di dalam
+      .topbar/.user-menu sama sekali), supaya selalu jadi elemen paling atas tanpa terjebak
+      overflow/stacking-context .main-area manapun (lihat catatan PORTAL PATTERN di atas). */
+  function openUserMenu_(){
+    closeNotifDropdown_(); // 2 dropdown topbar tidak pernah tumpang tindih terbuka bareng
+    var root = document.getElementById('notifPortalRoot');
+    var trigger = document.getElementById('userMenuTrigger');
+    if(!root || !trigger) return;
+    root.innerHTML =
+      '<div class="user-menu-backdrop show" id="userMenuBackdropPortal"></div>' +
+      '<div class="user-menu-dropdown show" id="userMenuDropdownPortal" role="menu" aria-label="Menu pengguna">' +
+        '<button type="button" class="user-menu-item" id="userMenuChangePwBtn">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>' +
+          '<span>Ganti Password</span>' +
+        '</button>' +
+        '<button type="button" class="user-menu-item danger" id="userMenuLogoutBtn">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>' +
+          '<span>Keluar</span>' +
+        '</button>' +
+      '</div>';
+    positionUserMenuPortal_();
+    var backdrop = document.getElementById('userMenuBackdropPortal');
+    var changePwBtn = document.getElementById('userMenuChangePwBtn');
+    var logoutBtn = document.getElementById('userMenuLogoutBtn');
+    if(backdrop) backdrop.addEventListener('pointerdown', function(ev){ ev.stopPropagation(); closeUserMenu(); });
+    if(changePwBtn) changePwBtn.addEventListener('click', function(ev){ handleUserMenuAction_(ev, openChangePasswordModal); });
+    if(logoutBtn) logoutBtn.addEventListener('click', function(ev){ handleUserMenuAction_(ev, confirmLogout); });
+    window.addEventListener('resize', positionUserMenuPortal_);
+    var caret = document.getElementById('userMenuCaret');
+    if(caret) caret.style.transform = 'rotate(180deg)';
+    USER_MENU_OPEN_ = true;
+  }
+
+  /** Posisikan dropdown persis di bawah avatar/trigger, menempel ke sisi kanan — sama
+      persis dengan positionNotifPortal_ untuk lonceng notifikasi. */
+  function positionUserMenuPortal_(){
+    var dd = document.getElementById('userMenuDropdownPortal');
+    var trigger = document.getElementById('userMenuTrigger');
+    if(!dd || !trigger) return;
+    var r = trigger.getBoundingClientRect();
+    dd.style.position = 'fixed';
+    dd.style.top = (r.bottom + 8) + 'px';
+    dd.style.right = (window.innerWidth - r.right) + 'px';
+    dd.style.left = 'auto';
+  }
+
+  /** Satu-satunya cara menutup user menu: KOSONGKAN #notifPortalRoot (kalau memang isinya
+      dropdown ini — dicek via USER_MENU_OPEN_ supaya tidak menghapus notif dropdown yang
+      mungkin baru saja dibuka menimpanya). Tidak ada lagi classList.remove('open') / sisa
+      elemen tersembunyi yang masih bisa menerima/menyalurkan sentuhan berikutnya. */
   function closeUserMenu(){
-    var menu = document.getElementById('userMenu');
-    if(menu) menu.classList.remove('open');
+    if(USER_MENU_OPEN_){
+      var root = document.getElementById('notifPortalRoot');
+      if(root) root.innerHTML = '';
+      window.removeEventListener('resize', positionUserMenuPortal_);
+    }
+    var caret = document.getElementById('userMenuCaret');
+    if(caret) caret.style.transform = '';
+    USER_MENU_OPEN_ = false;
     USER_MENU_CLOSED_AT_ = Date.now();
   }
 
@@ -382,9 +449,10 @@
   // paling bawah file: "listener klik-global terpisah dihapus karena rawan race/double-trigger
   // di mobile"), dan bug itu jugalah yg bikin tombol "Ganti Password" kadang tidak merespons
   // DAN "menular" bikin tombol lain (Keluar, Buat PO, Tambah Promo) ikut tidak bisa diklik
-  // sampai layar disentuh ulang. Sekarang tutup-saat-tap-di-luar ditangani oleh elemen fisik
-  // .user-menu-backdrop (lihat markup #userMenuBackdrop di index.html) — jauh lebih stabil di
-  // Android WebView krn tidak bergantung pada urutan bubbling event klik.
+  // sampai layar disentuh ulang. Sekarang tutup-saat-tap-di-luar ditangani oleh backdrop
+  // portal #userMenuBackdropPortal (dibangun oleh openUserMenu_(), lihat blok PORTAL PATTERN
+  // di atas) — jauh lebih stabil di Android WebView krn tidak bergantung pada urutan bubbling
+  // event klik, dan sekaligus bebas dari masalah clipping .main-area overflow:hidden.
 
   // =============================================================
   // MY SIGNATURE (Admin/Supervisor/Manager) — auto-stamped on Approve PO
