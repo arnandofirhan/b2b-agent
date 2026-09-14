@@ -3387,7 +3387,16 @@
     var grid = document.getElementById('catalogGrid');
     var tabsEl = document.getElementById('catalogCategoryTabs');
     if(!grid || !CATALOG_PRODUCTS_CACHE_) return;
-    if(tabsEl && !tabsEl.innerHTML) tabsEl.innerHTML = catalogCategoryTabsHtml_(CATALOG_PRODUCTS_CACHE_);
+    // FIX BUG NYATA ("klik tab kategori BKT, produk kefilter benar, tapi notif hijau
+    // aktifnya tetap nyangkut di 'Semua'"): sebelumnya tabsEl.innerHTML cuma diisi SEKALI
+    // (guard `!tabsEl.innerHTML`, dimaksudkan biar tab tidak ikut re-render tiap ngetik di
+    // search box) — tapi guard yang sama itu juga mencegah tab di-render ULANG setelah tab
+    // LAIN diklik, jadi class 'is-active' di markup lama tidak pernah ikut pindah walau
+    // CATALOG_FILTER_.category di variabel JS sudah benar berubah (makanya grid-nya sendiri
+    // sudah kefilter dengan benar, cuma tombolnya yang kelihatan diam). FIX: selalu bangun
+    // ulang tabsHtml_ setiap renderCatalogGrid_ dipanggil — ringan (cuma beberapa tombol
+    // kecil), jadi highlight aktif selalu sinkron dengan CATALOG_FILTER_.category saat ini.
+    if(tabsEl) tabsEl.innerHTML = catalogCategoryTabsHtml_(CATALOG_PRODUCTS_CACHE_);
 
     // Produk INACTIVE tetap disembunyikan dari Katalog Agent — konsisten dengan grid Buat PO,
     // karena produk yang sudah dinonaktifkan Admin memang tidak lagi relevan utk dilihat Agent.
