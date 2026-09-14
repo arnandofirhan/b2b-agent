@@ -75,13 +75,44 @@ self.addEventListener('fetch', function (event) {
     return;
   }
 
-  // FIX PERFORMA: index.html memuat JavaScript.html/Stylesheet.html dengan cache-buster di
-  // query string (?v=...) supaya versi baru selalu ke-fetch begitu Anda deploy ulang. Tapi
-  // caches.match() DEFAULT-nya cocokkan URL PERSIS termasuk query string — jadi request
-  // "JavaScript.html?v=XXXX" tidak pernah ketemu entri precache "./JavaScript.html" (tanpa
-  // query), dan app-shell jadi SELALU diambil dari network (lambat, terutama file 700KB+ di
-  // koneksi HP yang lemah). ignoreSearch:true membuat pencocokan mengabaikan query string,
-  // sehingga precache app-shell benar-benar terpakai untuk file-file ini.
+  // FIX BUG NYATA (root cause "PWA di HP tetap lemot walau sinyal lancar & sudah update
+  // kode"): ignoreSearch:true di atas membuat "JavaScript.html?v=XXXX" (versi BARU, beda
+  // query string tiap kali ASSET_CACHE_BUSTER_ di index.html dinaikkan) dianggap SAMA
+  // dengan entri precache lama "./JavaScript.html" — jadi versi LAMA yang selalu dikirim
+  // duluan (cache-first), update-nya cuma menyusul diam-diam di background untuk load
+  // BERIKUTNYA. Di browser desktop biasanya tidak kerasa (sering ke-hard-refresh/banyak
+  // tab/DevTools kebuka), tapi PWA yang sudah di-install di HP nyaris tidak pernah
+  // "fresh start" — jadi bisa STUCK bertahun-tahun jalan di kode lama walau sudah berkali-
+  // kali di-update & di-deploy ulang, PADAHAL sinyalnya lancar (bukan soal jaringan sama
+  // sekali, ini soal cache yang salah strategi).
+  // FIX: index.html (dokumen utama/navigasi) & file yang memang sengaja dikasih cache-buster
+  // query string (?v=..., yaitu JavaScript.html/Stylesheet.html) sekarang pakai NETWORK-FIRST
+  // — coba network dulu (supaya versi TERBARU yang dipakai), cache cuma jadi fallback kalau
+  // offline/network gagal. Asset statis lain (ikon, manifest, dll, yang memang jarang/tidak
+  // pernah berubah) TETAP cache-first seperti sebelumnya supaya buka app tetap terasa instan.
+  var isVersionedShellFile = req.url.indexOf('v=') !== -1 &&
+    (req.url.indexOf('JavaScript.html') !== -1 || req.url.indexOf('Stylesheet.html') !== -1);
+  var isNavigationOrIndex = req.mode === 'navigate' || /\/index\.html($|\?)/.test(req.url) || /\/$/.test(req.url.split('?')[0]);
+
+  if (isVersionedShellFile || isNavigationOrIndex) {
+    event.respondWith(
+      fetch(req).then(function (res) {
+        if (res && res.status === 200) {
+          var resClone = res.clone();
+          caches.open(CACHE_VERSION).then(function (cache) {
+            cache.put(req, resClone).catch(function () {});
+          });
+        }
+        return res;
+      }).catch(function () {
+        // Offline / network gagal total — baru jatuh ke cache (kalau ada) sebagai fallback,
+        // lebih baik dari layar putih kosong.
+        return caches.match(req, { ignoreSearch: true });
+      })
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(req, { ignoreSearch: true }).then(function (cached) {
       var networkFetch = fetch(req)
