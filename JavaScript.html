@@ -1111,48 +1111,19 @@
   }
 
   // =============================================================
-  // LOGGER DEBUG SEMENTARA untuk bug "Dashboard reload 2x setelah login"
-  // =============================================================
-  // Tidak pakai console.log/alert (gampang lewat/mengganggu) — setiap event dicatat ke
-  // sessionStorage, jadi begitu bug kejadian, BUKA DevTools (Chrome: titik tiga > Tools
-  // lainnya > Alat developer, atau chrome://inspect via USB) kapan saja SETELAHNYA (tidak
-  // harus pas kejadian), lalu di tab Console ketik:  copy(sessionStorage.getItem('ag_debug_log'))
-  // lalu paste hasilnya ke chat ini. HAPUS seluruh blok ini + semua pemanggilan dbgLog_()
-  // setelah bug ini benar-benar ketemu akarnya.
-  function dbgLog_(msg){
-    try{
-      var log = sessionStorage.getItem('ag_debug_log') || '';
-      var line = '[' + new Date().toISOString().slice(11,23) + '] ' + msg + '\n';
-      sessionStorage.setItem('ag_debug_log', (log + line).slice(-8000)); // cap ukuran
-    }catch(e){}
-  }
-  window.__printDebugLog = function(){
-    console.log(sessionStorage.getItem('ag_debug_log') || '(kosong)');
-  };
-
   function showPage(pageKey){
-    dbgLog_('showPage("'+pageKey+'") dipanggil. currentPage sebelumnya="'+STATE.currentPage+'". dashKpiGrid ada? '+(!!document.getElementById('dashKpiGrid'))+'. Stack: '+String(new Error().stack).split('\n').slice(1,4).join(' | '));
-    // FIX BUG "DASHBOARD RELOAD 2X SETELAH LOGIN" (& berlaku utk halaman manapun): kalau
-    // showPage() dipanggil untuk halaman yang MEMANG SEDANG AKTIF di layar SAAT INI (bukan
-    // navigasi asli — itu selalu pindah DARI halaman lain), dan kontennya sudah ada penuh di
-    // DOM (bukan spinner kosong), JANGAN reset #content sama sekali.
-    if(pageKey === 'dashboard' && STATE.currentPage === 'dashboard'){
-      var existingContent = document.getElementById('content');
-      var hasRealContent = existingContent && (
-        document.getElementById('dashKpiGrid') || existingContent.querySelector('.agent-dash')
-      );
-      if(hasRealContent){
-        dbgLog_('  -> DICEGAH oleh guard showPage (hasRealContent=true).');
-        return;
-      }
-      dbgLog_('  -> guard TIDAK mencegah (hasRealContent=false) — dashboard akan di-reset ke spinner!');
-      // Supaya Anda TIDAK PERLU DevTools/USB debugging di HP: begitu bug ini kedeteksi
-      // terjadi, otomatis tampilkan log-nya lewat prompt() (bisa di-copy manual dari situ)
-      // supaya bisa langsung di-screenshot atau paste ke chat.
-      setTimeout(function(){
-        try{ window.prompt('[DEBUG] Dashboard ke-reset! Copy teks di bawah ini & kirim ke saya:', sessionStorage.getItem('ag_debug_log') || ''); }catch(e){}
-      }, 50);
-    }
+    // FIX BUG "DASHBOARD RELOAD 2X SETELAH LOGIN" — AKAR MASALAH DIPASTIKAN LEWAT LOG DEBUG:
+    // showPage('dashboard') ternyata benar2 dipicu oleh event click SUNGGUHAN pada tombol
+    // Dashboard di bottom-nav (stack trace: "at el.onclick"), BUKAN oleh preload/race
+    // condition di kode ini — kemungkinan besar "ghost click"/touch event yang di-replay oleh
+    // WebView Android beberapa puluh detik setelah tap awal (fenomena dikenal terjadi saat
+    // main thread sempat sibuk, mis. selagi preloadAllPages_ berjalan di background), BUKAN
+    // dari sentuhan/klik yang disengaja user. Karena Dashboard TIDAK punya semantik "klik
+    // ulang utk reset" (beda dgn Transaksi/Orders yg punya filter yg sengaja direset saat
+    // re-entry), klik ke Dashboard SELAGI SUDAH di Dashboard cukup di-no-op TOTAL — tidak ada
+    // downside, karena tidak ada state apapun di Dashboard yang perlu/boleh direset oleh
+    // re-klik menunya sendiri.
+    if(pageKey === 'dashboard' && STATE.currentPage === 'dashboard') return;
     STATE.currentPage = pageKey;
     // FIX SCROLL CHAT MOBILE: halaman Live Chat ('livechat') punya scroll AREA-NYA SENDIRI
     // (.chat-inbox-messages, di dalam .chat-room-detail) yang seharusnya jadi SATU-SATUNYA
@@ -1263,7 +1234,6 @@
   var LAST_PAINTED_PAGE_ = null; // pageKey whose HTML is actually sitting in #content right now
   var CONTENT_LOCK_SAFETY_TIMER_ = null;
   function paintPage_(pageKey, html){
-    dbgLog_('paintPage_("'+pageKey+'") dipanggil. currentPage="'+STATE.currentPage+'". html length='+html.length);
     PAGE_HTML_CACHE[pageKey] = html;
     persistPageCache_();
     // FAB Troli ditempel di #agentCartFabSlot (di dalam FAB Speed Dial, document.body —
@@ -7362,7 +7332,6 @@
                                 // revisit while a fresh fetch happens quietly in the background.
 
   function renderDashboard(){
-    dbgLog_('renderDashboard() dipanggil. role='+(STATE.user&&STATE.user.role)+'. DASH_DATA_CACHE_ ada? '+(!!DASH_DATA_CACHE_));
     if(STATE.user && STATE.user.role === 'AGENT'){
       return renderAgentDashboard();
     }
@@ -8322,7 +8291,6 @@
   }
 
   function paintDashboardKpis_(data){
-    dbgLog_('paintDashboardKpis_() dipanggil. currentPage="'+STATE.currentPage+'"');
     if(STATE.currentPage !== 'dashboard') return;
     var isAgent = data.role === 'AGENT';
     var kpis = isAgent
@@ -8355,7 +8323,6 @@
     // fungsi masing2 kalau memang ada data baru) — jadi tidak pernah ada kedipan
     // "kosong lalu terisi lagi" yang terlihat seperti reload.
     var existingKpiGrid = document.getElementById('dashKpiGrid');
-    dbgLog_('  paintDashboardKpis_: existingKpiGrid ada? '+(!!existingKpiGrid));
     if(existingKpiGrid){
       existingKpiGrid.innerHTML = kpis;
       startDashboardClock_();
