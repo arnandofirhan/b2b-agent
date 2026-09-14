@@ -143,26 +143,7 @@
 
   .content-loading-lock{pointer-events:none;}
   *{box-sizing:border-box;}
-  /* FIX TOPBAR/CHAT IKUT TERGESER SAAT KEYBOARD MOBILE MUNCUL: html & body TIDAK PERNAH
-     boleh jadi elemen yang discroll browser (satu-satunya scroll owner di app ini adalah
-     .main-area / .chat-inbox-messages / container internal lain yang punya overflow:auto
-     sendiri). Tanpa overflow:hidden eksplisit di sini, sebagian browser Android tetap
-     memaksa scroll level dokumen supaya elemen yang difokus (textarea chat) "kelihatan",
-     walau secara visual elemen itu sebenarnya sudah di atas keyboard karena position:fixed
-     — scroll paksa inilah yang membuat topbar & panel chat seolah ikut tergeser/hilang.
-     Dibantu juga oleh snapWindowScrollToZero_() di JavaScript.html yang memaksa window
-     balik ke (0,0) kalau tetap ada browser yang ngeyel scroll dokumen. */
-  html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none;}
-  /* FIX "TOPBAR & KOLOM KETIK LIVE CHAT MASIH BISA DITARIK NAIK-TURUN DENGAN JARI":
-     overflow:hidden di atas ternyata TIDAK cukup mencegah drag-scroll oleh SENTUHAN JARI di
-     Android/Chrome — itu cuma memblokir scroll terprogram/wheel, bukan touch gesture. Class
-     "chat-page-lock" ditempel ke <html> oleh showPage() (lihat JavaScript.html) HANYA selagi
-     halaman aktif adalah Live Chat, dan mematikan SEMUA gesture pan/scroll di level dokumen
-     lewat touch-action:none. Kalau tidak dikecualikan, ini juga akan mematikan scroll di
-     dalam area pesan chat itu sendiri — makanya .chat-inbox-messages & .chat-room-list diberi
-     touch-action:pan-y secara eksplisit di bawah supaya TETAP bisa digeser jari buat baca chat
-     lama, sementara topbar & kolom ketik (di luar kedua elemen itu) jadi benar2 PATEN. */
-  html.chat-page-lock, html.chat-page-lock body{ touch-action:none; overscroll-behavior:none; }
+  html,body{height:100%;margin:0;}
   body{
     font-family:var(--font);
     background:var(--ag-gray-50);
@@ -916,19 +897,17 @@
   .content{padding:24px;flex:1;}
 
   /* ---------- Topbar user menu ---------- */
-  /* FIX "dropdown Ganti Password/Keluar terpotong di halaman Live Chat": dropdown ini
-     SEBELUMNYA position:absolute, anak .user-menu di dalam .main-area — begitu .main-area
-     diberi overflow:hidden khusus halaman Live Chat (lihat .main-area.chat-page-active di
-     bawah), dropdown itu ikut TERPOTONG walau z-index-nya tinggi (overflow:hidden pada
-     ancestor memotong render terlepas dari z-index berapa pun elemen di dalamnya).
-     FIX: dropdown ini sekarang PORTAL — dibangun sbg child #notifPortalRoot (akhir <body>,
-     di luar .main-area sama sekali) oleh openUserMenu_()/closeUserMenu() di JavaScript.html,
-     pola yang sama persis dengan .notif-dropdown/.notif-backdrop di atas. position:fixed
-     (bukan absolute) karena posisinya di-set inline oleh positionUserMenuPortal_() setiap
-     kali dibuka, relatif ke viewport — top/right di sini cuma fallback awal. z-index:1100
-     (sama dgn notif-dropdown) aman karena keduanya tidak pernah dibuka bersamaan
-     (openUserMenu_/openNotifDropdown_ saling menutup satu sama lain lebih dulu). */
-  .user-menu{position:relative;}
+  /* FIX: .user-menu HARUS punya z-index eksplisit sendiri (bukan cuma position:relative)
+     supaya ia membentuk stacking context yang jelas di atas SEMUA elemen fixed lain di
+     halaman (termasuk #bottomNav z-index:60 dan .bottom-more-sheet-overlay z-index:69 di
+     mobile). Tanpa ini, karena .topbar sendiri position:sticky + z-index:10, backdrop &
+     dropdown-nya (walau z-index 29/30 relatif ke .user-menu) secara EFEKTIF tetap
+     "terjebak" di layer z-index:10 milik .topbar saat dibandingkan dgn elemen root lain
+     spt #bottomNav — itulah kenapa tombol "Ganti Password" kadang tidak bisa di-tap di
+     HP: backdrop transparan dari elemen lain (atau area di luar dropdown) memenangkan
+     hit-test di atasnya. z-index:100 di sini memastikan seluruh .user-menu (avatar,
+     backdrop, dropdown) selalu menang dari #bottomNav (60) dan sheet-nya (69-70). */
+  .user-menu{position:relative;z-index:100;}
   .user-menu-trigger{
     display:flex;align-items:center;gap:9px;background:none;border:1px solid transparent;cursor:pointer;
     padding:5px 8px 5px 5px;border-radius:999px;transition:background .12s ease, border-color .12s ease;
@@ -947,16 +926,28 @@
   .user-agentid{display:none;} /* default tersembunyi; ditampilkan khusus mobile role AGENT, lihat @media max-width:860px .topbar.agent-topbar */
   .user-greeting{display:none;} /* default tersembunyi; ditampilkan khusus mobile role AGENT, lihat @media max-width:860px .topbar.agent-topbar */
   .user-menu-caret{color:var(--ag-gray-500);transition:transform .15s ease;flex-shrink:0;}
-  .user-menu-backdrop{
-    display:none;position:fixed;inset:0;background:transparent;z-index:1099;
-  }
-  .user-menu-backdrop.show{display:block;}
+  .user-menu.open .user-menu-caret{transform:rotate(180deg);}
+  /* Backdrop TRANSPARAN full-layar dipakai utk menutup dropdown saat tap di luar — dipasang
+     sbg elemen DOM sungguhan (bukan cuma listener klik-di-document) supaya konsisten dgn pola
+     notif-backdrop, yang sudah TERBUKTI lebih andal di beberapa Android WebView drpd listener
+     klik global. Listener klik global sebelumnya kadang membuat tap PERTAMA pada item menu
+     (mis. "Ganti Password") "kebentur" logika tutup-menu pada siklus event yg sama, membuat
+     WebView kehilangan jejak sentuhan itu — efeknya aksi tidak jalan DAN sentuhan berikutnya
+     di tombol lain (Keluar, Buat PO, Tambah Promo, dst) ikut tidak terdaftar sampai layar
+     disentuh/reflow ulang. Backdrop fisik ini menghindari race tsb sepenuhnya. */
+  .user-menu-backdrop{display:none;position:fixed;inset:0;background:transparent;z-index:29;}
+  .user-menu.open .user-menu-backdrop{display:block;}
   .user-menu-dropdown{
-    display:none;position:fixed;top:70px;right:24px;min-width:190px;max-width:calc(100vw - 24px);background:var(--ag-surface);
+    display:none;position:absolute;top:calc(100% + 8px);right:0;min-width:190px;background:var(--ag-surface);
     border:1px solid var(--ag-gray-200);border-radius:var(--radius-md);box-shadow:0 12px 28px rgba(16,24,32,.14);
-    padding:6px;z-index:1100;isolation:isolate;
+    padding:6px;z-index:30;
+    /* FIX: isolation:isolate memaksa dropdown ini jadi stacking context baru yang independen
+       dari elemen manapun di luar .user-menu, sehingga tombol2 di dalamnya (Ganti Password,
+       Keluar) selalu bisa menerima tap/click walau ada elemen fixed lain (bottom nav, sheet,
+       dsb) dengan z-index tinggi di tempat lain pada halaman. */
+    isolation:isolate;
   }
-  .user-menu-dropdown.show{display:block;}
+  .user-menu.open .user-menu-dropdown{display:block;}
   .user-menu-item{
     display:flex;align-items:center;gap:10px;width:100%;background:none;border:none;text-align:left;
     padding:9px 10px;border-radius:var(--radius-sm);font-size:13px;font-weight:500;color:var(--ag-gray-700);cursor:pointer;
@@ -2399,7 +2390,7 @@
      override posisi khusus mobile di blok itu (yang menaikkan `bottom` biar
      tidak ketutup Bottom Nav mengambang) benar2 MENANG di cascade. */
   .fab-dial-wrap{
-    position:fixed; right:16px; bottom:24px; z-index:55;
+    position:fixed; right:16px; bottom:24px; z-index:65;
     display:flex; flex-direction:column; align-items:flex-end; gap:10px;
   }
   .fab-dial-row{ display:flex; align-items:center; gap:8px; }
@@ -2409,7 +2400,15 @@
     background:var(--ag-green); color:#fff; border:none; cursor:pointer;
     display:flex; align-items:center; justify-content:center; position:relative; flex-shrink:0;
     box-shadow:0 6px 18px rgba(30,122,76,.38), 0 2px 6px rgba(16,24,32,.12);
-    transition:transform .15s ease, box-shadow .15s ease;
+    transition:transform .15s ease, box-shadow .15s ease, opacity .15s ease, visibility .15s ease;
+  }
+  /* Toggle tampil/sembunyi TANPA remove dari DOM (lihat refreshAgentCartFab_) — pakai
+     opacity+visibility+scale alih-alih display:none supaya ada transisi halus sekaligus
+     tombol benar-benar tidak bisa diklik & tidak ikut mempengaruhi layout gap flex saat
+     tersembunyi (width/height tetap 0 secara efektif via scale). */
+  .agent-cart-fab.cart-fab-hidden{
+    opacity:0; visibility:hidden; transform:scale(.6); width:0; height:0; pointer-events:none;
+    margin:0;
   }
   .agent-cart-fab:active{ transform:scale(.93); }
   .agent-cart-fab svg{ width:20px; height:20px; }
@@ -2500,18 +2499,6 @@
     #bottomNav.nav-hidden-for-keyboard{
       transform:translateY(120%); opacity:0; pointer-events:none;
     }
-
-    /* FIX BUG KEPOTONG/GAP KOSONG LIVE CHAT MOBILE: .content punya padding-bottom:92px
-       (reservasi bottom-nav mengambang) + padding-top 14px. Tapi tinggi .chat-inbox SUDAH
-       menghitung sendiri ruang itu lewat calc(var(--app-vvh) - topbar - 118px/12px) di
-       bagian "LIVE CHAT INBOX PAGE" di bawah. Kalau padding .content menumpuk DI ATAS
-       pengurangan itu, ruang yang "dimakan" jadi DOBEL: kolom ketik balasan ter-dorong
-       turun sampai kepotong bottom-nav (keluhan #1), dan saat keyboard muncul & bottom-nav
-       disembunyikan, sisa 92px yang tidak dipakai apa-apa itu jadi CELAH KOSONG PUTIH di
-       bawah kolom ketik, tepat di atas keyboard (keluhan #2). Nolkan padding .content
-       KHUSUS saat Live Chat aktif — ruang untuk bottom-nav & keyboard sudah diurus sendiri
-       oleh .chat-inbox lewat flex. */
-    .main-area.chat-page-active .content{ padding:0 !important; }
     html[data-theme="dark"] #bottomNav{ background:#0f1e18; border-color:rgba(255,255,255,.08); }
 
     .bottom-nav-item{
@@ -3040,8 +3027,8 @@
   /* Lampiran gambar di dalam bubble */
   .chat-attachment-image-link{ display:block; }
   .chat-attachment-image{
-    display:block; max-width:100%; width:280px; max-height:360px; object-fit:contain;
-    border-radius:10px; margin-bottom:2px; background:rgba(0,0,0,.04);
+    display:block; max-width:100%; width:220px; max-height:220px; object-fit:cover;
+    border-radius:10px; margin-bottom:2px;
   }
   /* Lampiran file (PDF) di dalam bubble, gaya "chip" dengan ikon dokumen */
   .chat-attachment-file{
@@ -3056,58 +3043,6 @@
   }
   .chat-attachment-caption{ margin-top:6px; }
 
-  /* ---------- Modal preview lampiran sebelum kirim (ala WhatsApp) ---------- */
-  .chat-attach-preview-overlay{
-    position:fixed; inset:0; background:rgba(15,23,20,.72); z-index:10050;
-    display:flex; align-items:center; justify-content:center; padding:20px;
-    opacity:0; transition:opacity .18s ease;
-  }
-  .chat-attach-preview-overlay.open{ opacity:1; }
-  .chat-attach-preview-modal{
-    width:100%; max-width:420px; background:var(--ag-card-bg,#fff); border-radius:16px;
-    overflow:hidden; display:flex; flex-direction:column; max-height:90vh;
-    box-shadow:0 20px 60px rgba(0,0,0,.35);
-  }
-  [data-theme="dark"] .chat-attach-preview-modal{ background:var(--ag-gray-800); }
-  .chat-attach-preview-header{
-    display:flex; align-items:center; justify-content:space-between; padding:14px 16px;
-    font-weight:700; font-size:15px; border-bottom:1px solid var(--ag-gray-200);
-  }
-  [data-theme="dark"] .chat-attach-preview-header{ border-color:var(--ag-gray-700); }
-  /* FIX "TIDAK ADA TOMBOL X UNTUK CANCEL": .chat-panel-close aslinya didesain untuk header
-     HIJAU GELAP (lihat .chat-panel-header) — warna ikon & background-nya (putih transparan
-     di atas putih transparan) jadi TIDAK TERLIHAT SAMA SEKALI di atas header modal preview
-     ini yang latarnya PUTIH. Override warna khusus di sini supaya tombolnya kelihatan jelas
-     (abu gelap di atas putih), tanpa mengubah tampilan .chat-panel-close di tempat lain. */
-  .chat-attach-preview-header .chat-panel-close{
-    background:var(--ag-gray-100,#F0F2F5); color:var(--ag-gray-700,#3A4452);
-  }
-  .chat-attach-preview-header .chat-panel-close:hover{ background:var(--ag-gray-200,#E2E5EA); }
-  [data-theme="dark"] .chat-attach-preview-header .chat-panel-close{
-    background:rgba(255,255,255,.1); color:#fff;
-  }
-  [data-theme="dark"] .chat-attach-preview-header .chat-panel-close:hover{ background:rgba(255,255,255,.18); }
-  .chat-attach-preview-body{
-    flex:1; min-height:0; display:flex; align-items:center; justify-content:center;
-    background:#0b0f0d; padding:12px;
-  }
-  .chat-attach-preview-img{ max-width:100%; max-height:60vh; object-fit:contain; border-radius:8px; }
-  .chat-attach-preview-file{ max-width:none; background:rgba(255,255,255,.08); color:#fff; }
-  .chat-attach-preview-footer{
-    display:flex; align-items:center; gap:8px; padding:12px 14px;
-    border-top:1px solid var(--ag-gray-200);
-  }
-  [data-theme="dark"] .chat-attach-preview-footer{ border-color:var(--ag-gray-700); }
-  .chat-attach-preview-footer input{
-    flex:1; border:1px solid var(--ag-gray-300); border-radius:20px; padding:10px 16px;
-    font-size:14px; outline:none; background:transparent; color:inherit;
-  }
-  .chat-attach-preview-footer input:focus{ border-color:var(--ag-green); }
-  [data-theme="dark"] .chat-attach-preview-footer input{ border-color:var(--ag-gray-600); }
-
-  /* Fallback kartu saat thumbnail gambar gagal dimuat (lihat onerror di renderChatBubbleContent_) */
-  .chat-attachment-image-broken .chat-attachment-file{ max-width:220px; }
-
   .chat-closed-banner{
     padding:10px 14px; background:var(--ag-orange-soft); color:#8A5A22; font-size:12px;
     text-align:center; border-top:1px solid var(--ag-gray-200); flex-shrink:0;
@@ -3117,22 +3052,12 @@
   .cs-modal-body{ padding-top:16px; }
   .cs-tabs{
     display:flex; gap:6px; padding:4px; background:var(--ag-gray-100); border-radius:12px;
-    margin-bottom:20px; overflow-x:auto; scrollbar-width:none; position:relative;
+    margin-bottom:20px; overflow-x:auto;
   }
-  .cs-tabs::-webkit-scrollbar{ display:none; }
   [data-theme="dark"] .cs-tabs{ background:var(--ag-gray-800); }
   .cs-tab{
-    /* FIX "TAB KEPOTONG DI HP" (tab ke-3 "Quick Reply" tidak kelihatan penuh & tidak bisa
-       di-scroll ke sana): sebelumnya flex:1 memaksa SEMUA tab berbagi rata lebar container,
-       jadi walau parent .cs-tabs sudah overflow-x:auto, tab-tab tetap dipaksa menyempit
-       supaya muat 1 layar (bukan overflow beneran) — di layar HP sempit, 3 label sekaligus
-       ("Sambutan"/"Jam Operasional"/"Quick Reply") tidak cukup ruang jadi yang terakhir
-       kepotong. flex:0 0 auto membuat tiap tab selebar teksnya sendiri, sehingga kalau
-       total lebar melebihi layar, overflow-x:auto di parent benar2 bisa di-scroll (geser
-       jari ke kiri) untuk melihat tab yang tersembunyi.
-    */
-    flex:0 0 auto; display:flex; align-items:center; justify-content:center; gap:6px; white-space:nowrap;
-    padding:9px 14px; border-radius:9px; border:none; background:transparent; color:var(--ag-gray-500);
+    flex:1; display:flex; align-items:center; justify-content:center; gap:6px; white-space:nowrap;
+    padding:9px 12px; border-radius:9px; border:none; background:transparent; color:var(--ag-gray-500);
     font-size:12.5px; font-weight:600; cursor:pointer; transition:background .15s ease, color .15s ease;
   }
   .cs-tab svg{ width:15px; height:15px; }
@@ -3222,69 +3147,40 @@
   .cs-qr-add-btn{ align-self:flex-start; }
 
   /* ---------- 2. LIVE CHAT INBOX PAGE (STAFF: ADMIN/SUPERVISOR/MANAGER) ---------- */
-  /* FIX "KOLOM TEXT/TOPBAR HILANG ATAU IKUT KEGESER" (desktop & mobile): .chat-room-list
-     & .chat-room-detail adalah GRID ITEM (anak .chat-inbox yg display:grid), dan
-     .chat-inbox-messages adalah FLEX ITEM (anak .chat-room-detail yg display:flex column).
-     Default browser untuk grid/flex item adalah min-height:auto — artinya item BOLEH
-     tumbuh melebihi tinggi container-nya kalau isinya (bubble-bubble chat) lebih tinggi
-     dari ruang yang tersedia, alih2 di-cap lalu di-scroll oleh overflow-y:auto miliknya
-     sendiri. Akibatnya SELURUH .chat-room-detail (header + messages + input-bar jadi satu)
-     "meluber" ke bawah, lalu bagian yang meluber itu KEPOTONG oleh overflow:hidden milik
-     .chat-inbox — persis gejala yg dikeluhkan: kolom ketik & sebagian topbar hilang/
-     kepotong, dan (sebelum overflow-nya ke-clip) header+input ikut "kegeser" seolah-olah
-     seluruh card yang discroll, bukan cuma area pesannya. FIX: min-height:0 di SETIAP
-     elemen dalam rantai grid/flex ini memaksa masing2 dibatasi tinggi container-nya, jadi
-     yang bisa/boleh discroll HANYA .chat-inbox-messages — header & input-bar jadi benar2
-     PATEN, tidak pernah ikut bergeser sedikit pun, persis seperti WhatsApp. */
   .chat-inbox{
     display:grid; grid-template-columns:300px 1fr; gap:0; height:calc(100vh - var(--topbar-height) - 48px);
     min-height:480px; background:var(--ag-surface); border:1px solid var(--ag-gray-200); border-radius:var(--radius-lg);
     overflow:hidden;
   }
   @media (max-width:900px){
-    /* REWRITE LAYOUT CHAT MOBILE (v3): .chat-inbox dilepas dari flow .content via
-       position:fixed dipatok LANGSUNG ke viewport (top = bawah topbar), supaya tinggi/posisi
-       nya TIDAK PERNAH kebawa dobel-hitung oleh padding .content dsb (lihat histori bug di
-       versi-versi sebelumnya). BEDA dari v2: bottom-nav TETAP TAMPIL normal di halaman ini
-       (permintaan user) — jadi .chat-inbox menyisakan --chat-nav-space di bawah utk jatah
-       bottom-nav, dan HANYA melebar penuh sampai dasar layar (chat-inbox.keyboard-open)
-       begitu keyboard balasan benar-benar terbuka & bottom-nav ikut disembunyikan sementara
-       (lihat toggleBottomNavForKeyboard_ di JavaScript.html) — pola standar app chat. */
+    /* FIX LAYOUT CHAT MOBILE: sebelumnya height:auto membuat tinggi .chat-inbox mengikuti
+       tinggi KONTEN (jumlah pesan), bukan tinggi LAYAR — akibatnya kalau pesan cuma sedikit,
+       kolom ketik nampak "menempel pas-pasan" tepat di bawah bubble terakhir alih-alih di
+       dasar layar, jauh sebelum keyboard bahkan muncul (ini keluhan #1). Sekarang dipatok ke
+       --app-vvh (dikelola JS lewat visualViewport, lihat syncMobileViewportHeight_ di
+       JavaScript.html) dikurangi tinggi topbar + margin bottom-nav mengambang, supaya
+       .chat-inbox SELALU mengisi persis sisa layar yang benar-benar terlihat — baik sebelum
+       maupun sesudah keyboard muncul — dan kolom ketik konsisten menempel di dasarnya lewat
+       flex (.chat-room-detail column + .chat-inbox-messages flex:1).
+       Fallback ke 100dvh (didukung browser modern) untuk kondisi sebelum JS sempat jalan. */
     .chat-inbox{
-      position:fixed; left:0; right:0; top:var(--topbar-height);
-      --chat-nav-space: calc(78px + env(safe-area-inset-bottom, 0px)); /* tinggi pill 66px + margin bawah 12px */
-      height:calc(100dvh - var(--topbar-height) - var(--chat-nav-space));
-      height:calc(var(--app-vvh, 100dvh) - var(--topbar-height) - var(--chat-nav-space));
       grid-template-columns:1fr; min-height:0;
-      border:none; border-radius:0; z-index:12; /* di atas .content, di bawah dropdown topbar (100) & bottom-nav (60 > 12? nav 60 > chat 12, jadi nav tetap di atas — sengaja, chat tidak sampai menutupinya) */
+      height:calc(100dvh - var(--topbar-height) - 118px);
+      height:calc(var(--app-vvh, 100dvh) - var(--topbar-height) - 118px);
     }
     .chat-inbox.room-open .chat-room-list{ display:none; }
     .chat-inbox:not(.room-open) .chat-room-detail{ display:none; }
-    /* Keyboard balasan terbuka: bottom-nav disembunyikan (lihat JS), jadi ruang yang
-       tadinya disisakan utk nav dipakai penuh oleh chat — kolom ketik pas persis di atas
-       keyboard, tidak ada celah kosong. */
+    /* Saat sedang mengetik balasan (textarea fokus), bottom-nav disembunyikan (lihat JS)
+       supaya area chat bisa memakai ruang tambahan itu — dipatok penuh ke sisa viewport
+       tanpa perlu menyisakan jarak untuk bottom-nav yang sedang tidak tampil. */
     .chat-inbox.keyboard-open{
-      height:calc(100dvh - var(--topbar-height));
-      height:calc(var(--app-vvh, 100dvh) - var(--topbar-height));
+      height:calc(100dvh - var(--topbar-height) - 12px);
+      height:calc(var(--app-vvh, 100dvh) - var(--topbar-height) - 12px);
     }
-  }
-
-  /* Header detail room (nama Agent + badge status + tombol Selesaikan) — dirapikan khusus
-     mobile: nama dipaksa SATU BARIS (ellipsis, bukan wrap 2 baris yg bikin badge & tombol
-     jadi berantakan sejajar setengah-setengah), badge tetap nempel di sebelah nama, dan
-     tombol "Selesaikan"/"Buka Lagi" pindah ke baris sendiri di kanan supaya tidak berebut
-     ruang sempit dengan nama+badge pada lebar layar HP. */
-  @media (max-width:900px){
-    .chat-room-detail-header{ flex-wrap:wrap; row-gap:6px; }
-    .chat-room-detail-title-wrap{ flex:1 1 auto; min-width:0; }
-    .chat-room-detail-name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .chat-end-btn{ margin-left:auto; }
   }
 
   .chat-room-list{
     border-right:1px solid var(--ag-gray-200); overflow-y:auto; display:flex; flex-direction:column;
-    min-height:0; /* lihat catatan panjang "FIX KOLOM TEXT/TOPBAR HILANG" di atas .chat-inbox */
-    touch-action:pan-y; /* pengecualian dari html.chat-page-lock (lihat catatan di awal file) — daftar percakapan tetap bisa digeser jari */
   }
   .chat-room-list-header{
     padding:14px 16px; border-bottom:1px solid var(--ag-gray-200); font-size:14px; font-weight:700;
@@ -3319,13 +3215,9 @@
     font-size:10.5px; font-weight:700; display:flex; align-items:center; justify-content:center;
   }
 
-  .chat-room-detail{
-    display:flex; flex-direction:column; height:100%;
-    min-height:0; /* lihat catatan panjang "FIX KOLOM TEXT/TOPBAR HILANG" di atas .chat-inbox */
-  }
+  .chat-room-detail{ display:flex; flex-direction:column; height:100%; }
   .chat-room-detail-header{
     padding:14px 18px; border-bottom:1px solid var(--ag-gray-200); display:flex; align-items:center; gap:10px; flex-shrink:0;
-    touch-action:none; /* topbar detail chat — PATEN, tidak boleh ikut ke-drag sama sekali (lihat catatan di .chat-inbox-input-bar) */
   }
   .chat-room-detail-back{ display:none; background:none; border:none; cursor:pointer; color:var(--ag-gray-600); padding:4px; }
   @media (max-width:900px){ .chat-room-detail-back{ display:flex; } }
@@ -3347,11 +3239,7 @@
   .chat-end-btn svg{ width:14px; height:14px; }
 
   .chat-inbox-messages{
-    flex:1; min-height:0; overflow-y:auto; padding:18px; display:flex; flex-direction:column; gap:10px; background:var(--ag-gray-50);
-    touch-action:pan-y; /* pengecualian dari html.chat-page-lock — SATU-SATUNYA area yang boleh digeser jari */
-    /* min-height:0 = SATU-SATUNYA elemen yang benar2 boleh/bisa discroll di dalam kartu chat
-       ini (lihat catatan panjang di .chat-inbox). Header & .chat-inbox-input-bar di luar
-       elemen ini flex-shrink:0 + tidak overflow, jadi PATEN, tidak pernah ikut tergeser. */
+    flex:1; overflow-y:auto; padding:18px; display:flex; flex-direction:column; gap:10px; background:var(--ag-gray-50);
   }
   [data-theme="dark"] .chat-inbox-messages{ background:var(--ag-surface); }
 
@@ -3364,33 +3252,11 @@
   .chat-inbox-input-bar{
     display:flex; align-items:flex-end; gap:10px; padding:14px 18px; border-top:1px solid var(--ag-gray-200); flex-shrink:0;
     position:relative;
-    touch-action:none; /* FIX BUG: tahan+geser jari di kolom ketik sempat ikut men-scroll seluruh
-      halaman (lihat catatan lengkap di textarea di bawah) — dikunci none di sini juga supaya
-      area di SEKITAR textarea (padding kiri-kanan-atas-bawah kolom ketik) ikut kena kunci yang
-      sama, bukan cuma textarea-nya sendiri. */
   }
   .chat-inbox-input-bar textarea{
     flex:1; resize:none; border:1px solid var(--ag-gray-200); border-radius:var(--radius-md);
     padding:10px 14px; font-size:13.5px; font-family:var(--font); max-height:100px; min-height:42px;
     background:var(--ag-gray-50); color:var(--ag-gray-900);
-    /* FIX "GARIS VERTIKAL ANEH DI DALAM KOLOM KETIK" (screenshot report): beberapa WebView
-       Android tetap menggambar resize-handle bawaan <textarea> (garis/segitiga kecil di
-       pojok kanan bawah) SEKALIPUN resize:none sudah diset di CSS standar — properti vendor
-       di bawah ini benar2 mematikannya di WebKit/Blink (Android Chrome/WebView), sumber
-       paling mungkin dari garis aneh yang dilaporkan muncul di sisi kanan kolom ketik. */
-    -webkit-appearance:none; appearance:none;
-    /* FIX BUG "TAHAN+GESER DI KOLOM TEKS IKUT NGE-SCROLL SELURUH HALAMAN": sebelumnya di sini
-       dipasang touch-action:manipulation supaya tap/kursor/seleksi teks tetap terasa normal —
-       TERNYATA "manipulation" itu MASIH mengizinkan gesture pan/geser (cuma mematikan double-tap
-       zoom). Begitu jari menekan-lalu-geser di textarea, Android menganggapnya gesture scroll;
-       karena textarea sendiri tidak punya isi yang bisa digeser, browser melimpahkannya ke
-       ancestor terdekat yang "bisa" digeser — yang ternyata jatuh ke WINDOW/dokumen itu sendiri
-       (persis bug yang dilaporkan: kolom ketik & topbar ikut ketarik). touch-action:none di sini
-       benar2 MEMATIKAN gesture pan di textarea — tap-untuk-fokus, ketik lewat keyboard, dan
-       long-press untuk pindah kursor/pilih teks TETAP jalan normal (itu bukan gesture "pan",
-       jadi tidak kena block), tapi drag-untuk-scroll-halaman sekarang benar2 tidak bisa lagi.
-       Ini pengaturan yang sama dipakai app chat besar (WhatsApp dst) untuk kolom ketik mereka. */
-    touch-action:none;
   }
   .chat-inbox-input-bar textarea:focus{ outline:none; border-color:var(--ag-green); background:var(--ag-surface); }
   .chat-inbox-input-bar textarea:disabled{ opacity:.6; cursor:not-allowed; }
