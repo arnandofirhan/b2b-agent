@@ -52,7 +52,12 @@
   // sibuk retry. FIX: pisahkan jatah slot hi & lo jadi 2 counter independen supaya job
   // hi-priority PASTI selalu dapat slot sendiri, tidak pernah terblokir oleh proses
   // background yang sedang retry.
-  var MAX_CONCURRENT_HI = 2; // klik user / submit form — jatah sendiri, tidak pernah nunggu background
+  // Diturunkan sementara dari 2 -> 1: Console user menunjukkan login + listPO (2 request
+  // hi-priority) menembak BERSAMAAN persis saat boot pertama dan sama-sama gagal
+  // (404/ERR_CONNECTION_CLOSED) — pola ini cocok dengan kuota eksekusi SIMULTAN Apps
+  // Script yang terlampaui (bukan CORS beneran). Menjadikan hi-priority strictly
+  // sequential menghilangkan burst 2x-simultan itu tanpa mengubah urutan/prioritas logikanya.
+  var MAX_CONCURRENT_HI = 1; // klik user / submit form — jatah sendiri, tidak pernah nunggu background
   var MAX_CONCURRENT_LO = 1; // preload/polling background — sengaja dibatasi 1 spy beban ke GAS makin halus
   var activeHi_ = 0;
   var activeLo_ = 0;
