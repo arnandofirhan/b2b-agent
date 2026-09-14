@@ -23,6 +23,22 @@
   var LIVECHAT_FEATURE_ENABLED_ = false;
 
   // ---------- Global client state ----------
+  // FIX BUG NYATA (dilaporkan user): "Error: Cannot read properties of null (reading 'role')"
+  // muncul TEPAT setelah klik Logout. Root cause: preloadAllPages_() menjadwalkan sampai
+  // belasan setTimeout() ber-tahap (STAGGER_MS * jumlah menu) yang masing-masing akan
+  // memanggil sebuah renderXxx() yang membaca STATE.user.role — dan panggilan
+  // google.script.run yang SUDAH terkirim sebelum logout juga masih bisa pulang & memanggil
+  // successHandler-nya SETELAH logout. handleLogout() men-set STATE.user = null, tapi timer
+  // preload & callback yang sudah berjalan/terjadwal itu TIDAK PERNAH dibatalkan — begitu
+  // salah satu dari mereka akhirnya jalan, dia membaca STATE.user.role padahal STATE.user
+  // sudah null -> crash persis seperti yang dilaporkan. FIX: SESSION_GEN_ dinaikkan setiap
+  // logout; setiap callback background (preload & polling) merekam generasi sesi saat
+  // dijadwalkan, dan mengecek generasi itu masih sama SEBELUM menyentuh STATE.user — kalau
+  // sudah berbeda (berarti sudah logout, atau bahkan sudah login lagi sebagai akun lain di
+  // antara saat callback dijadwalkan dan saat dia akhirnya jalan), callback itu dibatalkan
+  // dengan aman, tidak pernah mencoba merender apa pun.
+  var SESSION_GEN_ = 0;
+
   var STATE = {
     token: null,
     user: null,       // {userId, name, email, role, agentId}
@@ -204,6 +220,7 @@
     google.script.run.logout(STATE.token);
     sessionStorage_remove('ag_token');
     sessionStorage_remove('ag_user');
+    SESSION_GEN_++; // lihat catatan di deklarasinya: membatalkan-secara-logis semua preload timer / callback background yang masih tertunda dari sesi ini
     STATE.token = null; STATE.user = null;
     APP_HISTORY_READY_ = false; // supaya initAppHistory_ pasang baseline baru saat login berikutnya, bukan numpuk di history sesi lama
     PAGE_HTML_CACHE = {};
@@ -751,6 +768,8 @@
       adanya di sini. Dijalankan setelah dashboard tampil supaya halaman pertama tetap terasa
       instan, baru menyusul memuat sisanya di background. */
   function preloadAllPages_(){
+    var myGen = SESSION_GEN_; // lihat catatan SESSION_GEN_ di atas dekat deklarasi STATE
+    if(!STATE.user) return; // sudah logout sebelum preload ini sempat mulai — jangan lanjut
     var renderers = {
       agents: renderAgents,
       products: renderProducts,
@@ -788,6 +807,11 @@
     var STAGGER_MS = 400;
     keys.forEach(function(key, i){
       setTimeout(function(){
+        // Guard sesi (lihat catatan SESSION_GEN_): kalau user sudah logout (atau sudah login
+        // ulang sebagai akun lain) SEJAK preloadAllPages_ ini mulai dijadwalkan, myGen tidak
+        // akan cocok lagi dengan SESSION_GEN_ saat ini — batalkan diam-diam, jangan sentuh
+        // STATE.user sama sekali (mencegah "Cannot read properties of null (reading 'role')").
+        if(myGen !== SESSION_GEN_ || !STATE.user) return;
         // Tandai request ini sebagai background/low-priority (lihat catatan di api-bridge.js)
         // supaya kalau user keburu klik menu lain, request klik itu SELALU didahulukan
         // antrian, bukan ikut ngantre di belakang sisa preload.
@@ -9349,10 +9373,16 @@
   var NOTIF_STATE_ = { items: [] };
 
   function loadNotifications_(){
+    var myGen = SESSION_GEN_; // lihat catatan SESSION_GEN_ dekat deklarasi STATE
     // Notifikasi (ikon lonceng) bukan sesuatu yang user tunggu secara aktif — selalu
     // tandai low-priority supaya tidak menyalip request yang dipicu langsung oleh klik user.
     window.__BG_LOW_PRIORITY__ = true;
     google.script.run.withSuccessHandler(function(list){
+      // Guard sesi: request ini bisa saja SUDAH terkirim sebelum user klik Logout, dan baru
+      // "pulang" (callback ini jalan) SETELAH logout selesai — kalau begitu, myGen tidak lagi
+      // cocok dengan SESSION_GEN_ saat ini, batalkan diam-diam alih-alih memanggil
+      // renderSidebar()/renderBottomNav() yang akan membaca STATE.user.role saat sudah null.
+      if(myGen !== SESSION_GEN_ || !STATE.user) return;
       NOTIF_STATE_.items = list || [];
       renderNotifBadge_();
       recomputeNavBadgeCounts_();
