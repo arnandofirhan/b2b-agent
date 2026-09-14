@@ -1112,6 +1112,22 @@
       pageKey = 'dashboard';
     }
     STATE.currentPage = pageKey;
+    // FIX BUG NYATA ("Troli masih tembus/kelihatan di menu lain"): sebelumnya
+    // refreshAgentCartFab_() (yang mensyaratkan STATE.currentPage === 'dashboard' sebelum
+    // menampilkan FAB) HANYA dipanggil dari paintPage_() — jalur render yang dipakai kalau
+    // halaman itu butuh fetch data baru ke server. Tapi showPage() juga punya 2 jalur render
+    // LAIN yang sama sekali tidak lewat paintPage_(): (1) instant-paint dari PAGE_HTML_CACHE
+    // untuk halaman yang sudah pernah dibuka sebelumnya, dan (2) render sinkron khusus
+    // Transaksi/PO kalau datanya sudah ada di memori (PO_LAST_RENDER_ARGS_). Di kedua jalur
+    // itu refreshAgentCartFab_() TIDAK PERNAH terpanggil, jadi status FAB dari halaman
+    // sebelumnya (mis. Dashboard, sedang "enabled") tetap nyangkut kelihatan walau Agent
+    // sudah pindah ke halaman lain. FIX: panggil di sini, SEKALI, tepat setelah
+    // STATE.currentPage berubah — supaya visibilitas FAB langsung sinkron ke halaman yang
+    // dituju di jalur render manapun, tanpa perlu duplikasi panggilan di tiap jalur.
+    // Panggilan yang sudah ada di paintPage_() dibiarkan (aman/idempotent) karena tetap
+    // diperlukan untuk kasus badge jumlah troli berubah setelah data Dashboard baru selesai
+    // di-fetch.
+    refreshAgentCartFab_();
     // FIX SCROLL CHAT MOBILE: halaman Live Chat ('livechat') punya scroll AREA-NYA SENDIRI
     // (.chat-inbox-messages, di dalam .chat-room-detail) yang seharusnya jadi SATU-SATUNYA
     // bagian yang bisa di-scroll saat sedang membalas chat. Sebelumnya .main-area (scroll
@@ -7582,29 +7598,31 @@
       // tanpa animasi.
       //
       // BUG NYATA (dilaporkan: "tiap hard refresh/login yang muncul duluan malah banner
-      // urutan TERAKHIR"): sebelumnya jump ini dibungkus SATU requestAnimationFrame saja.
-      // Satu rAF cuma menjamin "sebelum browser paint berikutnya" — pada hard
-      // refresh/login (CSS/font/gambar banner masih fresh dari cache dingin, belum tentu
-      // langsung sempurna sebelum tick itu), track kadang BELUM benar-benar selesai
-      // layout (mis. clientWidth masih 0 sesaat) tepat saat baris ini jalan. Kalau itu
-      // terjadi, perhitungan pusat/pindah slide jadi tidak berarti apa-apa (lebar 0 =
-      // tidak ada yang perlu digeser) dan scrollLeft track TETAP di 0 — yang artinya
-      // slot 0 (KLON banner TERAKHIR, ditempel di paling depan track untuk loop tak
-      // berujung — lihat pembuatan slideList) itulah yang kebetulan pertama terlihat,
-      // persis gejala "banner urutan terakhir muncul duluan" yang dilaporkan.
-      // FIX: bungkus dengan DUA requestAnimationFrame bersarang (pola yang sama persis
-      // dipakai di onAgentBannerScroll_ untuk lompatan loop tak berujung) supaya baris ini
-      // pasti jalan SETELAH satu siklus layout+paint penuh selesai, bukan cuma "sebelum
-      // paint berikutnya". Sekaligus ganti scrollIntoView(...) jadi scrollAgentBannerToSlot_
-      // (scrollTo pada track sendiri) — konsisten dengan fix bug "halaman ikut ketarik"
-      // sebelumnya, supaya jump awal ini juga tidak berisiko menggeser scroll halaman.
-      requestAnimationFrame(function(){
-        requestAnimationFrame(function(){
-          var track = document.getElementById('agentBannerTrack');
-          if(track) scrollAgentBannerToSlot_(track, 1, true);
+      // urutan TERAKHIR", masih terjadi walau sudah dicoba dibungkus 2x requestAnimationFrame):
+      // menunggu SEJUMLAH TETAP frame (1x atau 2x rAF) itu cuma tebakan — di hard refresh yang
+      // koneksinya lebih lambat (CSS/font/gambar belum settle), 2 frame kadang MASIH belum
+      // cukup, jadi baris pemindah slide tetap jalan sebelum track.clientWidth benar-benar
+      // terbentuk, scrollLeft tetap di 0, dan yang kelihatan pertama jadi slot 0 (KLON banner
+      // TERAKHIR yang ditempel di depan track untuk loop tak berujung — lihat slideList).
+      // FIX SEBENARNYA: JANGAN menebak jumlah frame sama sekali — POLL tiap frame sampai
+      // track BENAR-BENAR punya ukuran (clientWidth > 0 dan slide asli pertama juga sudah
+      // punya lebar), baru pindahkan slide. Ini benar di kondisi selambat apapun, karena
+      // syaratnya "layout sudah siap", bukan "sudah menunggu sekian lama". Ada batas 90 tick
+      // (~1.5 detik di 60fps) murni sebagai jaring pengaman kalau track ternyata memang tidak
+      // pernah punya ukuran (mis. halaman sudah dipindah sebelum sempat siap) — supaya tidak
+      // polling selamanya.
+      (function positionInitialBannerSlot(attempt){
+        var track = document.getElementById('agentBannerTrack');
+        if(!track || !document.body.contains(track)) return; // Agent sudah pindah halaman, batalkan diam-diam
+        var firstRealSlide = track.children[1];
+        var ready = track.clientWidth > 0 && firstRealSlide && firstRealSlide.offsetWidth > 0;
+        if(ready || attempt >= 90){
+          scrollAgentBannerToSlot_(track, 1, true);
           onAgentBannerScroll_();
-        });
-      });
+          return;
+        }
+        requestAnimationFrame(function(){ positionInitialBannerSlot(attempt + 1); });
+      })(0);
       startAgentBannerAutoplay_(banners.length);
       wireAgentBannerTouchPause_();
     }
@@ -9157,7 +9175,7 @@
       // (mana yang sudah/belum) baru terlihat begitu popup harian dibuka.
       var undeliveredDot = undeliveredCount > 0 ? '<span class="cal-cell-undelivered-dot" title="'+undeliveredCount+' dari '+items.length+' PO belum terkirim"></span>' : '';
       var holidayLabelHtml = holidayName ? '<div class="cal-cell-holiday" title="'+escapeHtml(holidayName)+'">'+escapeHtml(holidayName)+'</div>' : '';
-      cells += '<div class="cal-cell'+(isToday?' cal-cell-today':'')+(isRedDate?' cal-cell-weekend':'')+(items.length?' cal-cell-has-items':'')+(hasRejected?' cal-cell-danger':'')+'" onclick="'+(items.length?('openCalendarDayModal_('+d+')'):'')+'"'+(holidayName?(' title="'+escapeHtml(holidayName)+'"'):'')+'>' +
+      cells += '<div class="cal-cell cal-cell-clickable'+(isToday?' cal-cell-today':'')+(isRedDate?' cal-cell-weekend':'')+(items.length?' cal-cell-has-items':'')+(hasRejected?' cal-cell-danger':'')+'" onclick="openCalendarDayModal_('+d+')"'+(holidayName?(' title="'+escapeHtml(holidayName)+'"'):'')+'>' +
         undeliveredDot +
         '<div class="cal-cell-day">'+d+'</div>' +
         holidayLabelHtml +
@@ -9372,13 +9390,24 @@
 
   // Klik di luar popover Quick Reply (staff) menutupnya otomatis — pola UX standar untuk
   // popover kontekstual, supaya tidak "nyangkut" terbuka menutupi pesan lain.
-  document.addEventListener('pointerdown', function(e){
-    if(!CHAT_STATE_.quickReplyPopoverOpen) return;
-    var pop = document.getElementById('chatQuickReplyPopover');
-    var btn = document.querySelector('.chat-quickreply-btn');
-    if(pop && (pop.contains(e.target) || (btn && btn.contains(e.target)))) return;
-    toggleQuickReplyPopover_();
-  });
+  // AUDIT LIVE CHAT (dipicu laporan "app terasa berat karena Live Chat"): listener global ini
+  // sebelumnya SELALU dipasang di document, tidak peduli LIVECHAT_FEATURE_ENABLED_ — jadi tetap
+  // ikut jalan di SETIAP pointerdown di seluruh app (walau langsung `return` karena
+  // quickReplyPopoverOpen memang selalu false kalau chat mati, jadi bukan sumber lambat yang
+  // berarti, tapi tetap kode yang tidak perlu ada sama sekali kalau fiturnya nonaktif). FIX:
+  // listener ini sekarang HANYA dipasang kalau LIVECHAT_FEATURE_ENABLED_ = true, konsisten
+  // dengan seluruh bagian chat lain yang sudah di-gate di initLiveChat_/openChatPanel_/
+  // renderLiveChatInbox — supaya kalau fitur mati, benar-benar NOL jejak chat yang jalan di
+  // background, sampai ke listener sekecil apapun.
+  if(LIVECHAT_FEATURE_ENABLED_){
+    document.addEventListener('pointerdown', function(e){
+      if(!CHAT_STATE_.quickReplyPopoverOpen) return;
+      var pop = document.getElementById('chatQuickReplyPopover');
+      var btn = document.querySelector('.chat-quickreply-btn');
+      if(pop && (pop.contains(e.target) || (btn && btn.contains(e.target)))) return;
+      toggleQuickReplyPopover_();
+    });
+  }
 
   function renderNotifDropdownList_(){
     var box = document.getElementById('notifDropdownList');
