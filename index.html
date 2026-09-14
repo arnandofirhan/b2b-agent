@@ -88,7 +88,7 @@
     // Diganti nilainya (mis. ke tanggal rilis) setiap kali Stylesheet.html atau
     // JavaScript.html diubah dan di-push — lihat juga CACHE_VERSION_ di service-worker.js
     // yang harus dinaikkan bersamaan supaya precache SW-nya juga ikut refresh.
-    var ASSET_CACHE_BUSTER_ = '20260913-lock-mainarea-scroll-11';
+    var ASSET_CACHE_BUSTER_ = '20260913-lock-mainarea-scroll-10';
 
     // PERBAIKAN PERFORMA (masalah "device lambat banget" & "dashboard kelihatan loading 2x"):
     // Sebelumnya JavaScript.html (700KB+) & Stylesheet.html di-fetch dengan cache:'no-store'/
@@ -416,17 +416,18 @@
             </div>
             <svg class="user-menu-caret" id="userMenuCaret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="m6 9 6 6 6-6"/></svg>
           </button>
-          <div class="user-menu-backdrop" id="userMenuBackdrop" onpointerdown="closeUserMenu()"></div>
-          <div class="user-menu-dropdown" id="userMenuDropdown">
-            <button class="user-menu-item" onclick="handleUserMenuAction_(event, openChangePasswordModal)">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              <span>Ganti Password</span>
-            </button>
-            <button class="user-menu-item danger" onclick="handleUserMenuAction_(event, confirmLogout)">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
-              <span>Keluar</span>
-            </button>
-          </div>
+          <!-- FIX "dropdown Ganti Password/Keluar terpotong di halaman Live Chat": dropdown ini
+               SEBELUMNYA statis di sini (anak .user-menu, yang ada di dalam .main-area). Karena
+               .main-area diberi overflow:hidden khusus saat halaman Live Chat aktif (lihat
+               .main-area.chat-page-active di Stylesheet.html, dibutuhkan supaya area scroll chat
+               terkunci), dropdown position:absolute ini ikut TERPOTONG oleh overflow itu — z-index
+               tinggi tidak menolong karena overflow:hidden pada ancestor memotong render terlepas
+               dari z-index. FIX: dropdown ini sekarang dibangun sbg PORTAL ke #notifPortalRoot
+               (akhir <body>, di luar .main-area sama sekali) oleh toggleUserMenu()/closeUserMenu()
+               di JavaScript.html — pola yang sama persis dengan notif dropdown (lihat catatan
+               "NOTIF DROPDOWN — PORTAL PATTERN" di sana), yang sudah terbukti bebas dari masalah
+               clipping maupun stacking-context serupa. Markup statis dihapus dari sini karena
+               sekarang dibangun dari nol tiap kali dibuka. -->
         </div>
         <div class="topbar-title-wrap">
           <div class="topbar-title" id="pageTitle">Dashboard</div>
