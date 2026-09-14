@@ -1158,12 +1158,34 @@
       Agent (yang notifnya bertipe success/danger/info) hasilnya selalu 0, badge tidak
       pernah muncul sama sekali. Sekarang backend menandai tiap notif dengan `page`
       ('transactions'/'orders') dan `actionable` (perlu dilihat/ditindaklanjuti atau cuma
-      info pasif) secara eksplisit per-role — jadi di sini tinggal hitung berdasarkan 2
-      field itu, otomatis benar untuk STAFF maupun AGENT tanpa perlu tahu detail type-nya. */
+      info pasif) secara eksplisit per-role.
+      FIX TAMBAHAN (regresi nyata: "badge yang tadinya ada di desktop malah ikut hilang"):
+      kalau JavaScript.html ini sudah versi baru TAPI Code.gs yang ke-deploy masih versi
+      LAMA (belum punya field page/actionable — mis. salah deploy versi/nyangkut cache
+      Apps Script), semua notif jadi `n.page===undefined` & `n.actionable===undefined`,
+      sehingga filter di bawah SELALU 0 untuk SEMUA role, termasuk Staff yang sebelumnya
+      sudah jalan normal. Supaya tidak pernah "total blank" walau ada rawan mismatch versi
+      frontend/backend begini, field baru dipakai KALAU ADA, tapi kalau tidak ada sama
+      sekali di respons (backend lama), otomatis jatuh ke cara hitung LAMA (type-based)
+      sebagai fallback — jadi badge tetap jalan di kedua kondisi sambil menunggu Code.gs
+      versi terbaru benar-benar ter-deploy. */
   function recomputeNavBadgeCounts_(){
-    var actionable = NOTIF_STATE_.items.filter(function(n){ return n.actionable; });
-    NAV_BADGE_COUNTS_.transactions = actionable.filter(function(n){ return n.page === 'transactions'; }).length;
-    NAV_BADGE_COUNTS_.orders = actionable.filter(function(n){ return n.page === 'orders'; }).length;
+    var hasNewFields = NOTIF_STATE_.items.some(function(n){ return n.page !== undefined; });
+    if(hasNewFields){
+      var actionable = NOTIF_STATE_.items.filter(function(n){ return n.actionable; });
+      NAV_BADGE_COUNTS_.transactions = actionable.filter(function(n){ return n.page === 'transactions'; }).length;
+      NAV_BADGE_COUNTS_.orders = actionable.filter(function(n){ return n.page === 'orders'; }).length;
+    } else {
+      // Fallback lama — dipakai kalau Code.gs yang lagi jalan belum versi terbaru.
+      var poActionable = NOTIF_STATE_.items.filter(function(n){
+        return (n.type === 'warning' || n.type === 'orange') && n.poId && !n.orderId;
+      });
+      var orderActionable = NOTIF_STATE_.items.filter(function(n){
+        return n.type === 'orange' && n.orderId;
+      });
+      NAV_BADGE_COUNTS_.transactions = poActionable.length;
+      NAV_BADGE_COUNTS_.orders = orderActionable.length;
+    }
   }
 
   function toggleSidebar(){
