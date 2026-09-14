@@ -10,7 +10,7 @@
  * dan perubahannya tidak muncul di HP, naikkan CACHE_VERSION di bawah
  * ini supaya service worker lama dibuang & cache diisi ulang.
  *************************************************************/
-var CACHE_VERSION = 'agrinesia-b2b-v52';
+var CACHE_VERSION = 'agrinesia-b2b-v55';
 var APP_SHELL = [
   './',
   './index.html',
