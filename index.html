@@ -82,12 +82,13 @@
     // membuang pembungkusnya, lalu menyuntikkannya ke halaman — supaya KEDUA file itu
      // tetap satu-satunya sumber (tidak perlu disalin/diduplikasi) baik untuk versi statis
     // (GitHub Pages) ini maupun versi Apps Script (doGet + include()).
-    // Cache-buster global: satu token dipakai di KEDUA include (Stylesheet.html &
-    // JavaScript.html) di bawah, supaya browser/CDN GitHub Pages/Service Worker tidak
-    // pernah menyajikan versi lama file-file ini dari cache setelah di-deploy ulang.
-    // Diganti nilainya (mis. ke tanggal rilis) setiap kali Stylesheet.html atau
-    // JavaScript.html diubah dan di-push — lihat juga CACHE_VERSION_ di service-worker.js
-    // yang harus dinaikkan bersamaan supaya precache SW-nya juga ikut refresh.
+    // Cache-buster: dulu WAJIB dinaikkan tiap ganti Stylesheet.html/JavaScript.html supaya
+    // Service Worker tidak menyajikan versi lama. SEKARANG TIDAK WAJIB LAGI — service-worker.js
+    // sudah pakai strategi network-first khusus untuk kedua file ini (lihat komentar
+    // "FIX BUG NYATA" di service-worker.js), jadi versi TERBARU selalu diambil dari server
+    // setiap kali dibuka, apapun angka di bawah ini. Token ini sekarang cuma dipakai sebagai
+    // penanda/label "versi apa yang lagi jalan" (enak buat debugging lewat Network tab), boleh
+    // diganti sesuka hati atau dibiarkan saja — tidak akan bikin HP nyangkut di versi lama lagi.
     var ASSET_CACHE_BUSTER_ = '20260914-perf-fix-2-swnetfirst';
 
     function loadWrappedInclude_(url, tagName, insertTarget){
