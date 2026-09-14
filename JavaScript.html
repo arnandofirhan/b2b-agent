@@ -1150,21 +1150,20 @@
   var NAV_BADGE_COUNTS_ = {};
 
   /** Menghitung ulang NAV_BADGE_COUNTS_ berdasarkan data notifikasi PO yang sudah dimuat
-      (NOTIF_STATE_.items). Notifikasi bertipe "warning"/"orange" merepresentasikan PO yang
-      butuh tindakan (menunggu review Supervisor / menunggu konfirmasi pembayaran), sedangkan
-      "success"/"info"/"danger" bersifat informasional saja — jadi hanya yang actionable yang
-      dihitung ke badge sidebar. Dipanggil setiap kali notifikasi selesai dimuat/diperbarui. */
+      (NOTIF_STATE_.items). Dipakai baik oleh Sidebar (Admin/Supervisor/Manager) MAUPUN
+      Bottom Nav (Agent) — keduanya baca dari NAV_BADGE_COUNTS_ yang sama.
+      FIX BUG NYATA ("kenapa Transaksi/Order Agent gak ada badge angka kayak sidebar Admin"):
+      sebelumnya di sini cuma menghitung notif dengan type 'warning'/'orange' — dua tipe itu
+      CUMA dipakai backend utk cabang STAFF (lihat getNotifications() di Code.gs), jadi utk
+      Agent (yang notifnya bertipe success/danger/info) hasilnya selalu 0, badge tidak
+      pernah muncul sama sekali. Sekarang backend menandai tiap notif dengan `page`
+      ('transactions'/'orders') dan `actionable` (perlu dilihat/ditindaklanjuti atau cuma
+      info pasif) secara eksplisit per-role — jadi di sini tinggal hitung berdasarkan 2
+      field itu, otomatis benar untuk STAFF maupun AGENT tanpa perlu tahu detail type-nya. */
   function recomputeNavBadgeCounts_(){
-    var poActionable = NOTIF_STATE_.items.filter(function(n){
-      // PO yang menunggu review Supervisor / menunggu konfirmasi pembayaran.
-      return (n.type === 'warning' || n.type === 'orange') && n.poId && !n.orderId;
-    });
-    var orderActionable = NOTIF_STATE_.items.filter(function(n){
-      // Order yang sudah dibuat tapi belum dikirim (menunggu Surat Jalan).
-      return n.type === 'orange' && n.orderId;
-    });
-    NAV_BADGE_COUNTS_.transactions = poActionable.length;
-    NAV_BADGE_COUNTS_.orders = orderActionable.length;
+    var actionable = NOTIF_STATE_.items.filter(function(n){ return n.actionable; });
+    NAV_BADGE_COUNTS_.transactions = actionable.filter(function(n){ return n.page === 'transactions'; }).length;
+    NAV_BADGE_COUNTS_.orders = actionable.filter(function(n){ return n.page === 'orders'; }).length;
   }
 
   function toggleSidebar(){
@@ -4970,6 +4969,12 @@
         closeModal();
         if(resubmitId) invalidateDetailModalCache_('po:'+resubmitId);
         invalidateDashboardCache_();
+        // FIX: badge angka Transaksi/Order (lihat recomputeNavBadgeCounts_) sebelumnya cuma
+        // di-refresh oleh polling 2 menit (NOTIF_POLL_INTERVAL_) — jadi begitu status PO
+        // berubah lewat aksi di sini, badge yang relevan TERLIHAT NYANGKUT ke angka lama
+        // sampai polling berikutnya kebetulan lewat. Panggil sekarang juga supaya badge
+        // langsung sinkron di detik yang sama dengan aksinya, bukan nunggu refresh manual.
+        loadNotifications_();
         showToast(resubmitId ? ('PO '+res.poId+' diajukan ulang.') : ('PO '+res.poId+' terkirim.'), 'success');
         renderPO();
       } else {
@@ -5114,7 +5119,7 @@
     var originalLabel = primaryBtn ? primaryBtn.textContent : '';
     if(decision === 'APPROVED' && primaryBtn){ primaryBtn.innerHTML = '<span class="btn-spinner"></span> Memproses...'; }
     google.script.run.withSuccessHandler(function(res){
-      if(res.success){ closeModal(); invalidateDetailModalCache_('po:'+poId); invalidateDashboardCache_(); showToast('PO diperbarui.','success'); renderPO(); offerWaNotif_(res.waLink); }
+      if(res.success){ closeModal(); invalidateDetailModalCache_('po:'+poId); invalidateDashboardCache_(); loadNotifications_(); showToast('PO diperbarui.','success'); renderPO(); offerWaNotif_(res.waLink); }
       else {
         actionButtons.forEach(function(b){ b.disabled = false; });
         if(primaryBtn) primaryBtn.textContent = originalLabel;
@@ -5616,6 +5621,7 @@
         closeModal();
         invalidateDetailModalCache_('order:'+orderId);
         invalidateOrderDocListCache_(orderId);
+        loadNotifications_(); // badge "Order" (Menunggu Pengiriman) langsung berkurang, tidak nunggu poll 2 menit
         showToast(res.count > 1 ? (res.count+' Surat Jalan berhasil diupload.') : 'Surat Jalan berhasil diupload.','success');
         renderOrders();
       } else {
