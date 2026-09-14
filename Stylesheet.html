@@ -2703,7 +2703,12 @@
   .agent-section-subtitle{ font-size:11.5px; font-weight:500; color:var(--ag-gray-400); }
 
   .agent-category-row-wrap{ position:relative; }
-  .agent-category-row{ display:flex; gap:16px; overflow-x:auto; padding-bottom:4px; scrollbar-width:none; -ms-overflow-style:none; }
+  /* RAPIKAN KATEGORI PRODUK (dilaporkan berantakan): sebelumnya row ini tidak punya padding
+     kiri/kanan sama sekali — item paling kanan jadi mepet PERSIS di ujung viewport (kelihatan
+     "terpotong paksa", bukan "masih bisa digeser lagi"), dan item paling kiri juga langsung
+     nempel ke tepi kartu tanpa jarak napas. Ditambah padding kecil di kedua sisi supaya ada
+     jarak visual yang konsisten dengan section lain. */
+  .agent-category-row{ display:flex; gap:16px; overflow-x:auto; padding:0 2px 4px; scrollbar-width:none; -ms-overflow-style:none; }
   .agent-category-row::-webkit-scrollbar{ display:none; height:0; }
   /* Fade halus di kanan sebagai sinyal "masih bisa digeser" — modern & tidak mengandalkan
      scrollbar bawaan browser yang tampilannya beda-beda tiap device/OS. Disembunyikan
@@ -2722,13 +2727,23 @@
     background:linear-gradient(270deg, transparent 0%, var(--ag-gray-50) 100%); opacity:0; transition:opacity .2s ease;
   }
   .agent-category-row-wrap:not(.is-at-start)::before{ opacity:1; }
-  .agent-category-item{ flex:0 0 auto; display:flex; flex-direction:column; align-items:center; gap:7px; width:66px; cursor:pointer; }
-  .agent-category-thumb{ width:58px; height:58px; border-radius:50%; overflow:hidden;
+  /* RAPIKAN: lebar item dinaikkan sedikit (66px -> 74px) supaya nama kategori yang agak
+     panjang (mis. "Bakpia Kukus Tugu Jogja") tidak langsung pecah jadi 3-4 baris sempit. */
+  .agent-category-item{ flex:0 0 auto; display:flex; flex-direction:column; align-items:center; gap:7px; width:74px; cursor:pointer; }
+  .agent-category-thumb{ width:58px; height:58px; border-radius:50%; overflow:hidden; flex-shrink:0;
     background:linear-gradient(135deg, var(--ag-green-soft) 0%, var(--ag-orange-soft) 100%);
     border:2px solid var(--ag-surface); box-shadow:0 2px 8px rgba(16,24,32,.08); transition:transform .15s ease; }
   .agent-category-item:active .agent-category-thumb{ transform:scale(.94); }
   .agent-category-thumb img{ width:100%; height:100%; object-fit:cover; }
-  .agent-category-label{ font-size:11px; text-align:center; font-weight:600; }
+  /* RAPIKAN: sebelumnya label tidak dibatasi tinggi/jumlah barisnya sama sekali, jadi nama
+     kategori panjang bisa wrap 3-4 baris dan bikin tinggi tiap item beda-beda (row jadi
+     zig-zag, tidak rata). Sekarang dikunci maksimal 2 baris (line-clamp) dengan tinggi tetap
+     (min-height dihitung dari line-height x 2 baris) supaya SEMUA item — pendek atau panjang
+     namanya — punya tinggi label yang sama persis, baris tetap rapi sejajar. */
+  .agent-category-label{ font-size:11px; text-align:center; font-weight:600; line-height:1.3;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+    min-height:28.6px; word-break:break-word; }
+
 
   .agent-product-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
   /* "Sedang Banyak Dipesan" — geser samping (bukan grid), supaya beda gaya dari "Produk
