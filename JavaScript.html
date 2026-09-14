@@ -714,7 +714,7 @@
     // dipanggil — ini yang membuat reload di desktop terasa instan seperti buka
     // ulang PWA di HP (lihat catatan panjang di deklarasi PAGE_HTML_CACHE di atas).
     restorePageCache_();
-    restoreAgentDashCfgCache_(); // lihat catatan di deklarasi AGENT_DASH_CFG_CACHE_ — supaya "+" troli langsung responsif walau Dashboard baru dituang dari cache HTML
+    restoreProductsPromosCache_();
     document.getElementById('loginScreen').style.display = 'none';
     document.getElementById('appShell').style.display = 'flex';
     document.getElementById('userNameLabel').textContent = STATE.user.name;
@@ -1571,15 +1571,6 @@
     saveBtn.onclick = function(){
       saveBtn.disabled = true;
       saveBtn.innerHTML = '<span class="btn-spinner"></span> Menyimpan...';
-      // FIX: sebelumnya kalau onSave() menutup modal (closeModal()) SEBELUM request server
-      // selesai/sebelum halaman di belakangnya sempat re-render, layar sempat kelihatan
-      // "blank"/diam sesaat seolah-olah macet/error — padahal proses simpan masih jalan.
-      // Nyalakan overlay loading full-page yang sudah ada (setPageLoading_) di titik yang
-      // sama persis dengan klik Simpan, supaya begitu modal tertutup, overlay ini yang
-      // menutupi transisi (bukan layar kosong). Fungsi onSave (mis. submitPO) yang
-      // memanggil closeModal() + render ulang halaman bertanggung jawab mematikannya lagi
-      // lewat setPageLoading_(false) di success/failure handler-nya masing-masing.
-      setPageLoading_(true, 'Menyimpan');
       onSave();
       // Safety net: if the modal is STILL open after a while (e.g. onSave returned early
       // after a validation toast, or the request genuinely failed silently), re-enable the
@@ -1590,7 +1581,6 @@
       // the rare "something went wrong silently" case, not the normal happy path.
       setTimeout(function(){
         if(document.body.contains(saveBtn)){ saveBtn.disabled = false; saveBtn.innerHTML = '<span class="btn-save-label">'+originalLabel+'</span>'; }
-        setPageLoading_(false); // jaring pengaman: pastikan overlay tidak nyangkut kalau onSave lupa mematikannya
       }, 20000);
     };
   }
@@ -3242,6 +3232,49 @@
   var CATALOG_PRODUCTS_CACHE_ = null;
   var CATALOG_FILTER_ = { q:'', category:null };
 
+  // =============================================================
+  // FIX ROOT CAUSE ("Troli/nama produk lama banget nunggu loading, dan tidak auto
+  // tampil dari cache walau logout-login/reopen app"): CATALOG_PRODUCTS_CACHE_ dan
+  // NEWPO_PRODUCTS_CACHE_/NEWPO_PROMOS_CACHE_ di bawah SEBELUMNYA cuma variabel JS
+  // biasa (persis PAGE_HTML_CACHE dulu SEBELUM dibikin persist) — otomatis KOSONG
+  // LAGI setiap reload/app ditutup, jadi Troli & modal "Buat PO" SELALU nunggu 1
+  // round-trip penuh ke GAS (listProducts/listPromos) tiap kali dibuka pertama kali
+  // pasca reload, walau datanya sendiri jarang berubah. Ini akar masalah kenapa
+  // Troli/Katalog kelihatan lemot padahal koneksi lancar — bukan soal jaringan,
+  // tapi cache yang tidak pernah disimpan.
+  // FIX: simpan produk & promo ke localStorage (sama seperti PAGE_HTML_CACHE, lewat
+  // sessionStorage_set/get yang sudah berbasis localStorage), dipulihkan SEBELUM
+  // Agent buka Katalog/Troli/Buat PO manapun (lihat restoreProductsPromosCache_() di
+  // bootApp()) — jadi begitu app dibuka (termasuk pasca logout-login/reopen), data
+  // LAMA langsung tampil instan dari cache, sambil listProducts/listPromos tetap
+  // jalan diam-diam di background utk refresh (stale-while-revalidate, sama pola
+  // dgn PAGE_HTML_CACHE) — tidak pernah nunggu network utk first paint lagi.
+  var PRODUCTS_LS_KEY_ = 'ag_products_cache_v1';
+  var PROMOS_LS_KEY_ = 'ag_promos_cache_v1';
+  function persistProductsCache_(rows){
+    try{ sessionStorage_set(PRODUCTS_LS_KEY_, JSON.stringify(rows)); }catch(e){}
+  }
+  function persistPromosCache_(rows){
+    try{ sessionStorage_set(PROMOS_LS_KEY_, JSON.stringify(rows)); }catch(e){}
+  }
+  function restoreProductsPromosCache_(){
+    try{
+      var p = sessionStorage_get(PRODUCTS_LS_KEY_);
+      if(p){
+        var rows = JSON.parse(p);
+        if(rows && rows.length){
+          CATALOG_PRODUCTS_CACHE_ = rows;
+          NEWPO_PRODUCTS_CACHE_ = rows;
+        }
+      }
+      var pr = sessionStorage_get(PROMOS_LS_KEY_);
+      if(pr){
+        var promoRows = JSON.parse(pr);
+        if(promoRows) NEWPO_PROMOS_CACHE_ = promoRows;
+      }
+    }catch(e){ /* cache korup/kosong — biarkan jalan normal tanpa cache */ }
+  }
+
   function renderCatalog(){
     if(CATALOG_PRODUCTS_CACHE_){
       paintPage_('catalog', catalogPageHtml_());
@@ -3250,12 +3283,13 @@
     google.script.run
       .withSuccessHandler(function(rows){
         CATALOG_PRODUCTS_CACHE_ = rows;
+        persistProductsCache_(rows);
         if(!document.getElementById('catalogGrid')){
           paintPage_('catalog', catalogPageHtml_());
         }
         renderCatalogGrid_();
       })
-      .withFailureHandler(function(e){ handleBackendError(e, pageErrorEl_('catalog')); })
+      .withFailureHandler(function(e){ if(!CATALOG_PRODUCTS_CACHE_) handleBackendError(e, pageErrorEl_('catalog')); })
       .listProducts(STATE.token);
   }
 
@@ -4437,14 +4471,6 @@
       NEWPO_PRODUCTS_ = NEWPO_PRODUCTS_CACHE_;
       renderNewPOForm_(NEWPO_PRODUCTS_CACHE_, NEWPO_PROMOS_CACHE_);
       applyNewPOPreselect_();
-    } else {
-      // FIX: pembukaan PERTAMA (belum ada cache) sebelumnya tidak menampilkan apa-apa sama
-      // sekali sampai listProducts()+listPromos() selesai — di koneksi lambat modal terasa
-      // "lemot/nge-freeze" karena user klik Troli/"Buat PO" tapi popup baru muncul detik
-      // kemudian tanpa indikasi apapun sedang diproses. Tampilkan modal dengan spinner
-      // SEKARANG JUGA (pola yang sama dipakai modal lain lewat openModalLoading_), lalu
-      // tryFinish() di bawah akan menimpanya dengan isi form asli begitu data datang.
-      openModalLoading_('Buat PO Baru', 'modal-lg');
     }
 
     // Fetch products & promos in parallel (instead of one after another) so first-open latency
@@ -4457,6 +4483,8 @@
       if(myModalGeneration !== MODAL_GENERATION_) return;
       NEWPO_PRODUCTS_CACHE_ = got.products;
       NEWPO_PROMOS_CACHE_ = got.promos;
+      persistProductsCache_(got.products);
+      persistPromosCache_(got.promos);
       NEWPO_PRODUCTS_ = got.products;
       NEWPO_CART_ = NEWPO_CART_ || {};
       // Only (re)paint from scratch if we hadn't already painted from cache above.
@@ -4822,7 +4850,7 @@
     // item PO (Detail PO, Review PO, dst) langsung ikut rapi karena mereka membaca
     // urutan item persis seperti tersimpan.
     var ids = sortByCategoryThenName_(Object.keys(NEWPO_CART_), function(pid){ return findNewPOProduct_(pid); });
-    if(!ids.length){ setPageLoading_(false); showToast('Tambahkan minimal 1 produk ke keranjang.','error'); return; }
+    if(!ids.length){ showToast('Tambahkan minimal 1 produk ke keranjang.','error'); return; }
 
     if(NEWPO_EDIT_APPROVED_ID_){
       var editId = NEWPO_EDIT_APPROVED_ID_;
@@ -4835,16 +4863,11 @@
           closeModal();
           invalidateDetailModalCache_('po:'+editId);
           showToast('PO '+editId+' diperbarui. Surat Penawaran otomatis dibuat ulang.', 'success');
-          // FIX: matikan overlay loading SETELAH renderPO() sempat mulai mengisi ulang
-          // konten (bukan sebelumnya) supaya tidak ada momen blank antara modal tertutup
-          // dan data PO baru benar-benar tampil.
           renderPO();
-          setPageLoading_(false);
         } else {
-          setPageLoading_(false);
           showToast(res.message,'error');
         }
-      }).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).editApprovedPO(STATE.token, editId, approvedDisc, items);
+      }).withFailureHandler(function(e){ handleBackendError(e); }).editApprovedPO(STATE.token, editId, approvedDisc, items);
       return;
     }
 
@@ -4870,21 +4893,15 @@
         if(resubmitId) invalidateDetailModalCache_('po:'+resubmitId);
         invalidateDashboardCache_();
         showToast(resubmitId ? ('PO '+res.poId+' diajukan ulang.') : ('PO '+res.poId+' terkirim.'), 'success');
-        // FIX: renderPO() dipanggil DULU supaya data PO baru mulai dituangkan ke layar,
-        // baru overlay loading dimatikan setelahnya — sebelumnya overlay sudah lepas
-        // (via handler di openFormModal) sebelum renderPO() sempat memberi apa pun untuk
-        // ditampilkan, jadi sempat kelihatan blank putih sesaat seperti macet/error.
         renderPO();
-        setPageLoading_(false);
       } else {
-        setPageLoading_(false);
         showToast(res.message,'error');
       }
     };
     if(resubmitId){
-      google.script.run.withSuccessHandler(onDone).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).resubmitPO(STATE.token, resubmitId, payload);
+      google.script.run.withSuccessHandler(onDone).withFailureHandler(function(e){ handleBackendError(e); }).resubmitPO(STATE.token, resubmitId, payload);
     } else {
-      google.script.run.withSuccessHandler(onDone).withFailureHandler(function(e){ setPageLoading_(false); handleBackendError(e); }).createPO(STATE.token, payload);
+      google.script.run.withSuccessHandler(onDone).withFailureHandler(function(e){ handleBackendError(e); }).createPO(STATE.token, payload);
     }
   }
 
@@ -7533,28 +7550,7 @@
   // yang datanya diatur Admin lewat menu "Dashboard Settings" — TIDAK ADA yang di-hardcode
   // di sini, jadi Admin bisa ubah tanpa perlu edit kode/deploy ulang.
   // =============================================================
-  // FIX ("+" troli tidak respon beberapa detik setelah reopen app): PAGE_HTML_CACHE (HTML
-  // Dashboard) dipulihkan dari sessionStorage saat boot sehingga tombol "+"/"-" LANGSUNG
-  // kelihatan di layar begitu app dibuka lagi — tapi AGENT_DASH_CFG_CACHE_ (data JS di
-  // belakangnya, dipakai changeAgentDashCartQty_() utk re-render cepat) SEBELUMNYA cuma
-  // variabel in-memory biasa yang selalu null lagi tiap reload/reopen. Akibatnya tombol
-  // "+" yang sudah kelihatan itu klik-nya diam saja (changeAgentDashCartQty_ cuma jalan
-  // "if(AGENT_DASH_CFG_CACHE_)") sampai request getAgentDashboardConfig() ke server
-  // selesai beberapa detik kemudian. FIX: persist juga ke sessionStorage sama seperti
-  // PAGE_HTML_CACHE, dipulihkan di boot SEBELUM showPage('dashboard') dipanggil.
-  var AGENT_DASH_CFG_STORAGE_KEY_ = 'ag_dash_cfg_cache_v1';
   var AGENT_DASH_CFG_CACHE_ = null; // config terakhir dari getAgentDashboardConfig, dipakai untuk re-render cepat saat qty troli berubah
-  function persistAgentDashCfgCache_(){
-    try{
-      if(AGENT_DASH_CFG_CACHE_) sessionStorage_set(AGENT_DASH_CFG_STORAGE_KEY_, JSON.stringify(AGENT_DASH_CFG_CACHE_));
-    }catch(e){ /* quota/serialize gagal — abaikan, cache tetap jalan in-memory utk sesi ini */ }
-  }
-  function restoreAgentDashCfgCache_(){
-    try{
-      var raw = sessionStorage_get(AGENT_DASH_CFG_STORAGE_KEY_);
-      if(raw) AGENT_DASH_CFG_CACHE_ = JSON.parse(raw);
-    }catch(e){ /* cache korup/kosong — biarkan null, fallback ke perilaku lama (nunggu fetch) */ }
-  }
 
   function renderAgentDashboard(){
     var content = document.getElementById('content');
@@ -7588,7 +7584,6 @@
 
   function paintAgentDashboard_(cfg){
     AGENT_DASH_CFG_CACHE_ = cfg;
-    persistAgentDashCfgCache_();
     var content = document.getElementById('content');
     var name = (STATE.user && STATE.user.name) ? STATE.user.name : '';
     var banners = cfg.banners || [];
@@ -7795,12 +7790,22 @@
         if(ready || attempt >= 90){
           scrollAgentBannerToSlot_(track, 1, true);
           onAgentBannerScroll_();
+          // Baru sekarang track dimunculkan (lihat .agent-dash-banners{opacity:0} di
+          // Stylesheet.html) — posisinya sudah pasti benar, jadi banner yang salah/klon
+          // tidak pernah sempat "kelip" kelihatan sama sekali.
+          track.classList.add('banner-positioned');
           return;
         }
         requestAnimationFrame(function(){ positionInitialBannerSlot(attempt + 1); });
       })(0);
       startAgentBannerAutoplay_(banners.length);
       wireAgentBannerTouchPause_();
+    } else {
+      // Cuma 1 banner (atau tidak ada carousel/loop sama sekali) — tidak lewat
+      // positionInitialBannerSlot(), jadi harus dimunculkan langsung di sini supaya
+      // tidak nyangkut tersembunyi (opacity:0) selamanya.
+      var singleTrack = document.getElementById('agentBannerTrack');
+      if(singleTrack) singleTrack.classList.add('banner-positioned');
     }
     onAgentCategoryRowScroll_(); // cek sekali di awal — kalau kategori dikit & muat tanpa scroll, fade langsung disembunyikan
     onAgentTrendRowScroll_(); // sama, untuk row "Sedang Banyak Dipesan"
