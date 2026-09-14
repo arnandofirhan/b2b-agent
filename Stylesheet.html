@@ -2625,7 +2625,20 @@
      tanpa jarak seperti sebelumnya. Jarak antar-slide (gap) + rounded corner per-card
      (bukan cuma di wrapper) memperjelas jadi masing-masing terlihat sebagai kartu terpisah. */
   .agent-dash-banners{ position:relative; overflow-x:auto; overflow-y:hidden; padding:0 7%;
-    display:flex; gap:14px; scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+    display:flex; gap:14px; scroll-snap-type:x proximity; -webkit-overflow-scrolling:touch; scrollbar-width:none;
+    /* FIX BUG ("banner urutan terakhir/salah kelihatan sekilas pas reload"): sebelum posisi
+       awal dihitung & di-set oleh positionInitialBannerSlot() di JS (nunggu layout siap),
+       track dulu render apa adanya di scrollLeft:0 — yaitu klon banner TERAKHIR (dipasang di
+       depan track utk loop tak-berujung, lihat slideList) — jadi sempat "kelip" salah sesaat
+       sebelum JS sempat pindah ke slot yang benar. FIX: track disembunyikan (opacity:0) dan
+       baru dimunculkan halus begitu class .banner-positioned ditambahkan JS SETELAH posisi
+       awal benar, jadi banner yang salah itu tidak pernah sempat kelihatan sama sekali.
+       scroll-snap-type juga diturunkan dari 'mandatory' ke 'proximity': 'mandatory' membuat
+       browser "ikut menarik" scrollTo({behavior:'smooth'}) yang dikirim JS (autoplay/loop)
+       ke titik snap terdekatnya sendiri di tengah animasi, dobel dengan animasi JS-nya —
+       inilah penyebab geser terasa patah-patah, terutama pas loop balik ke slide awal. */
+    opacity:0; transition:opacity .18s ease; }
+  .agent-dash-banners.banner-positioned{ opacity:1; }
   .agent-dash-banners::-webkit-scrollbar{ display:none; }
   /* Rasio banner DIPATOK 16:9 (bukan min-height bebas) supaya konsisten mobile & desktop dan
      tidak ada bagian gambar yang ke-crop tidak terduga. Rekomendasi ukuran file gambar:
