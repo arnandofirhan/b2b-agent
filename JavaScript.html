@@ -4361,8 +4361,8 @@
         '</div>' +
         (isApprovedEdit ? '' :
           '<div class="form-group" style="margin-top:14px;">' +
-            '<label>Deskripsi</label>' +
-            '<textarea id="poDescription" rows="2" placeholder="Contoh: Untuk kegiatan jalan sehat"></textarea>' +
+            '<label>Deskripsi<span class="required-mark">*</span></label>' +
+            '<textarea id="poDescription" class="req-field" rows="2" placeholder="Contoh: Untuk kegiatan jalan sehat" oninput="updateModalSaveState_()"></textarea>' +
           '</div>'
         ) +
         '<div class="field-row-2">' +
@@ -4371,8 +4371,8 @@
         '</div>' +
         (isApprovedEdit ? '' :
           '<div class="form-group">' +
-            '<label>Tanggal Rencana Pengambilan</label>' +
-            '<div class="date-field-wrap has-placeholder-ghost">'+ICONS.calendar+'<input type="date" id="poPickupDate" min="'+todayISO_()+'" onchange="this.nextElementSibling.style.display=this.value?\'none\':\'\';this.parentElement.classList.toggle(\'has-value\',!!this.value)"><span class="date-field-ghost">Pilih tanggal</span></div>' +
+            '<label>Tanggal Rencana Pengambilan<span class="required-mark">*</span></label>' +
+            '<div class="date-field-wrap has-placeholder-ghost">'+ICONS.calendar+'<input type="date" id="poPickupDate" class="req-field" min="'+todayISO_()+'" onchange="this.nextElementSibling.style.display=this.value?\'none\':\'\';this.parentElement.classList.toggle(\'has-value\',!!this.value);updateModalSaveState_()"><span class="date-field-ghost">Pilih tanggal</span></div>' +
           '</div>'
         ) +
         '<div class="po-estimate-box" id="poEstimateBox">Estimasi Total: <strong id="poEstimateValue">Rp0</strong></div>' +
