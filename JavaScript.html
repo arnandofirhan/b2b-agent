@@ -1124,6 +1124,26 @@
     // downside, karena tidak ada state apapun di Dashboard yang perlu/boleh direset oleh
     // re-klik menunya sendiri.
     if(pageKey === 'dashboard' && STATE.currentPage === 'dashboard') return;
+    // FIX "HARUS PINDAH MENU LALU BALIK BARU MUNCUL": sebelumnya, kalau user klik ulang
+    // menu yang SAMA PERSIS dengan yang sedang di-load (mis. klik Dashboard lagi sesaat
+    // setelah login, sementara getDashboardData/getAgentDashboardConfig yang PERTAMA masih
+    // dalam perjalanan ke server — bisa makan beberapa detik di jaringan lambat), showPage()
+    // ini SELALU reset #content balik ke spinner dan membiarkan request lama itu tetap
+    // jalan sendirian di background. Begitu request lama itu AKHIRNYA selesai, success
+    // handler-nya cek `if(STATE.currentPage !== 'dashboard') return;` (lihat renderDashboard/
+    // renderAgentDashboard) — kalau pas itu user MASIH di halaman yang sama, harusnya tetap
+    // ke-render, TAPI karena innerHTML sempat direset ke spinner oleh navigasi kedua tadi,
+    // hasil dari request pertama itu terpasang, sedangkan mata user sempat melihat spinner
+    // "muter lagi dari nol" seolah gagal — sehingga muncul pola: pindah ke menu lain lalu
+    // balik lagi baru kelihatan (karena saat balik itu request KEDUA yang ditembak biasanya
+    // lebih cepat, kena cache 5 menit di backend).
+    // FIX: kalau halaman yang diminta SAMA dengan yang masih PENDING (belum selesai loading),
+    // jangan reset apapun dan jangan tembak request baru — cukup tunggu request yang sudah
+    // berjalan itu selesai secara alami.
+    if(pageKey === PAGE_LOADING_ && pageKey === STATE.currentPage){
+      return;
+    }
+    PAGE_LOADING_ = pageKey;
     STATE.currentPage = pageKey;
     // FIX SCROLL CHAT MOBILE: halaman Live Chat ('livechat') punya scroll AREA-NYA SENDIRI
     // (.chat-inbox-messages, di dalam .chat-room-detail) yang seharusnya jadi SATU-SATUNYA
@@ -1188,11 +1208,13 @@
     if(pageKey === 'transactions' && PO_LAST_RENDER_ARGS_){
       renderPOTable_(PO_LAST_RENDER_ARGS_.rows, PO_LAST_RENDER_ARGS_.canCreatePO, PO_LAST_RENDER_ARGS_.agentMap);
       content.classList.remove('content-loading-lock');
+      PAGE_LOADING_ = null;
     } else if(PAGE_HTML_CACHE[pageKey]){
       // Instant paint from cache if we've visited this page before — no spinner/flash.
       content.innerHTML = PAGE_HTML_CACHE[pageKey];
       LAST_PAINTED_PAGE_ = pageKey;
       content.classList.remove('content-loading-lock');
+      PAGE_LOADING_ = null;
     } else {
       content.innerHTML = '<div class="spinner"></div>';
       LAST_PAINTED_PAGE_ = pageKey; // spinner is page-agnostic markup, but this IS now what pageKey's slot shows
@@ -1232,8 +1254,10 @@
 
   /** Call after building a page's innerHTML to (a) paint it and (b) cache it for instant revisit. */
   var LAST_PAINTED_PAGE_ = null; // pageKey whose HTML is actually sitting in #content right now
+  var PAGE_LOADING_ = null; // pageKey currently waiting on a backend request (see showPage guard above)
   var CONTENT_LOCK_SAFETY_TIMER_ = null;
   function paintPage_(pageKey, html){
+    if(PAGE_LOADING_ === pageKey) PAGE_LOADING_ = null;
     PAGE_HTML_CACHE[pageKey] = html;
     persistPageCache_();
     // FAB Troli ditempel di #agentCartFabSlot (di dalam FAB Speed Dial, document.body —
@@ -8866,6 +8890,11 @@
 
   function handleBackendError(err, contentEl){
     var msg = err && err.message ? err.message : String(err);
+    // FIX terkait guard PAGE_LOADING_ di showPage(): kalau request yang gagal ini yang
+    // sedang di-tunggu (pageKey masih PAGE_LOADING_), lepaskan supaya user BISA klik ulang
+    // menu yang sama untuk mencoba lagi — tanpa ini, sekali gagal, guard "sedang loading"
+    // akan menganggapnya masih pending selamanya dan memblokir percobaan ulang berikutnya.
+    PAGE_LOADING_ = null;
     if(msg.indexOf('SESSION_EXPIRED') !== -1){
       showToast('Sesi berakhir, silakan login kembali.', 'error');
       handleLogout();
