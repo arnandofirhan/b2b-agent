@@ -157,10 +157,49 @@
       return;
     }
 
+    // FIX BUG NYATA #1 (ditemukan saat audit — dedup TERNYATA cuma didefinisikan tapi TIDAK
+    // PERNAH dipakai sebelumnya di sini, walau komentar & fungsi helper-nya sudah lengkap
+    // sejak awal). Akibatnya: kalau user pindah halaman lalu balik lagi ke Dashboard SAAT
+    // request lama untuk fungsi+argumen yang SAMA PERSIS masih jalan di background (umum
+    // terjadi di koneksi lambat, request lama bisa >30 detik belum selesai), 2 request
+    // identik menembak backend SEKALIGUS — pas persis dengan gejala di laporan: 2 toast
+    // "TIMEOUT" muncul bersamaan begitu Dashboard dibuka. FIX: request baru untuk
+    // fnName+args yang sama PERSIS dengan yang sedang berjalan cukup "menumpang" hasil yang
+    // lama (dapat callback yang sama), tidak menembak request baru ke server sama sekali.
+    var dedupKey = isDedupableFn_(fnName) ? inFlightKey_(fnName, args) : null;
+    if (dedupKey && inFlight_[dedupKey]) {
+      inFlight_[dedupKey].push({ onSuccess: onSuccess, onFailure: onFailure });
+      return; // numpang — tidak menambah beban request baru ke backend
+    }
+    if (dedupKey) inFlight_[dedupKey] = [{ onSuccess: onSuccess, onFailure: onFailure }];
+
+    // Semua waiter (pemanggil asli + yang numpang lewat dedup di atas) diberi tahu bareng
+    // lewat sini, sekali jadi hasilnya keluar (sukses ATAU gagal) — dan entri dedup langsung
+    // dibersihkan supaya panggilan identik BERIKUTNYA (setelah request ini selesai) menembak
+    // request baru seperti biasa, bukan ikut numpang ke hasil yang sudah basi.
+    function notifyAll_(isSuccess, payload) {
+      var waiters = dedupKey ? inFlight_[dedupKey] : [{ onSuccess: onSuccess, onFailure: onFailure }];
+      if (dedupKey) delete inFlight_[dedupKey];
+      waiters.forEach(function (w) {
+        if (isSuccess) { if (w.onSuccess) w.onSuccess(payload); }
+        else { if (w.onFailure) w.onFailure(payload); else console.error('[api-bridge] ' + fnName + ' gagal:', payload); }
+      });
+    }
+
     // RETRY OTOMATIS hanya untuk error jaringan murni (bukan error
     // deployment/akses — itu tidak akan hilang dengan diulang).
     var MAX_ATTEMPTS = 4; // dinaikkan dari 3 — glitch redirect/echo GAS kadang butuh >2x percobaan utk pulih
     var RETRY_DELAY_MS = 700;
+    // FIX BUG NYATA #2 (ditemukan saat audit): TIMEOUT (AbortError, request tidak dijawab
+    // sama sekali dalam REQUEST_TIMEOUT_MS) sebelumnya LANGSUNG dianggap gagal permanen,
+    // TIDAK PERNAH masuk jalur retry di atas — padahal timeout di koneksi lambat sering
+    // cuma glitch sesaat (paket lambat/hilang), justru salah satu kasus yang PALING
+    // diuntungkan kalau dicoba ulang. FIX: timeout sekarang boleh di-retry, TAPI dibatasi
+    // cuma 1x percobaan ulang saja (bukan sampai MAX_ATTEMPTS penuh) — kalau timeout tetap
+    // dipaksa retry 4x penuh, user di koneksi lemah bisa menunggu sampai ~4 menit
+    // (4 x REQUEST_TIMEOUT_MS) untuk satu tombol yang akhirnya tetap gagal, yang jauh lebih
+    // menyiksa daripada gagal cepat dengan pesan jelas.
+    var MAX_TIMEOUT_RETRIES = 1;
 
     enqueue_(function (jobDone) {
       function attempt(attemptNo) {
@@ -214,19 +253,22 @@
             }
             jobDone();
             if (data && data.ok) {
-              if (onSuccess) onSuccess(data.result);
+              notifyAll_(true, data.result);
             } else {
               var msg = (data && data.error) ? data.error : 'Terjadi kesalahan pada server.';
-              if (onFailure) onFailure(new Error(msg));
-              else console.error('[api-bridge] ' + fnName + ' gagal:', msg);
+              notifyAll_(false, new Error(msg));
             }
           })
           .catch(function (err) {
             if (timer) clearTimeout(timer);
             if (err && err.name === 'AbortError') {
+              if (attemptNo <= MAX_TIMEOUT_RETRIES) {
+                console.warn('[api-bridge] ' + fnName + ' percobaan ' + attemptNo + ' TIMEOUT, coba sekali lagi...', err);
+                attempt(attemptNo + 1); // langsung coba lagi, tanpa delay tambahan (sudah nunggu REQUEST_TIMEOUT_MS penuh)
+                return;
+              }
               jobDone();
-              if (onFailure) onFailure(new Error('TIMEOUT: server tidak merespons dalam ' + (REQUEST_TIMEOUT_MS / 1000) + ' detik.'));
-              else console.error('[api-bridge] ' + fnName + ' timeout.');
+              notifyAll_(false, new Error('TIMEOUT: server tidak merespons dalam ' + (REQUEST_TIMEOUT_MS / 1000) + ' detik.'));
               return;
             }
 
@@ -237,8 +279,7 @@
               return;
             }
             jobDone();
-            if (onFailure) onFailure(err);
-            else console.error('[api-bridge] ' + fnName + ' error jaringan:', err);
+            notifyAll_(false, err);
           });
       }
 
