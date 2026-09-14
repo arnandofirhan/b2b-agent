@@ -197,6 +197,7 @@
           STATE.user = res.user;
           sessionStorage_set('ag_token', res.token);
           sessionStorage_set('ag_user', JSON.stringify(res.user));
+          document.documentElement.classList.add('ag-has-session'); // sinkron dengan gate flash-login di index.html
           try{
             var rememberEl = document.getElementById('loginRemember');
             if(rememberEl && rememberEl.checked){ localStorage.setItem('ag_remembered_email', email); }
@@ -254,6 +255,7 @@
     });
     CHAT_STATE_.myRoomId = null; CHAT_STATE_.lastMessageId = null; CHAT_STATE_.panelOpen = false;
     CHAT_STATE_.myLastSeenByStaff = false;
+    document.documentElement.classList.remove('ag-has-session'); // sinkron dengan gate flash-login di index.html
     document.getElementById('appShell').style.display = 'none';
     document.getElementById('loginScreen').style.display = 'flex';
   }
@@ -592,9 +594,13 @@
   // Note: GAS webapps in an iframe can restrict localStorage/sessionStorage
   // in some contexts — wrap safely and fall back to in-memory var.
   var MEM_STORE = {};
-  function sessionStorage_set(k,v){ try{ sessionStorage.setItem(k,v); }catch(e){ MEM_STORE[k]=v; } }
-  function sessionStorage_get(k){ try{ return sessionStorage.getItem(k); }catch(e){ return MEM_STORE[k]||null; } }
-  function sessionStorage_remove(k){ try{ sessionStorage.removeItem(k); }catch(e){ delete MEM_STORE[k]; } }
+  // FIX: dipindah dari sessionStorage -> localStorage. sessionStorage bisa hilang saat PWA
+  // Android di-background lalu proses-nya di-kill Android (umum di HP RAM kecil), memaksa
+  // user login ulang dari nol tiap buka app (bagian dari kenapa "loading awal lama").
+  // Nama fungsi SENGAJA tidak diubah supaya semua pemanggil yang sudah ada tidak perlu disentuh.
+  function sessionStorage_set(k,v){ try{ localStorage.setItem(k,v); }catch(e){ MEM_STORE[k]=v; } }
+  function sessionStorage_get(k){ try{ return localStorage.getItem(k); }catch(e){ return MEM_STORE[k]||null; } }
+  function sessionStorage_remove(k){ try{ localStorage.removeItem(k); }catch(e){ delete MEM_STORE[k]; } }
 
   // =============================================================
   // BOOT
