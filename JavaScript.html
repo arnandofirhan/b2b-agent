@@ -9774,19 +9774,39 @@
     var btn = document.getElementById('chatSendBtn');
     btn.disabled = true;
 
+    // FIX "CHAT LAMBAT MUNCUL": bubble OPTIMISTIC ditambahkan LANGSUNG begitu tombol kirim
+    // ditekan (id sementara), bukan menunggu sendChatMessage() pulang dari server dulu — lihat
+    // catatan panjang yang sama di sendInboxMessage_ (versi staff). Ditukar diam-diam dengan
+    // data resmi begitu server konfirmasi sukses; dihapus + teks dikembalikan kalau gagal.
+    var tempId = 'temp-' + Date.now();
+    var el = document.getElementById('chatMessagesEl');
+    if(el.querySelector('.chat-empty-state')) el.innerHTML = '';
+    var optimisticMsg = {
+      messageId: tempId, senderRole: STATE.user.role, senderName: STATE.user.name,
+      messageText: text, createdAt: new Date().toISOString(),
+      attachmentUrl: attachment ? attachment.url : '', attachmentType: attachment ? (attachment.type || 'file') : '',
+      attachmentName: attachment ? (attachment.name || '') : ''
+    };
+    appendChatBubble_(el, optimisticMsg, true);
+    el.scrollTop = el.scrollHeight;
+
     google.script.run.withSuccessHandler(function(msg){
       btn.disabled = false;
-      var el = document.getElementById('chatMessagesEl');
-      if(el.querySelector('.chat-empty-state')) el.innerHTML = '';
-      appendChatBubble_(el, msg, true);
+      var tempEl = el.querySelector('[data-message-id="'+tempId+'"]');
+      if(tempEl) tempEl.setAttribute('data-message-id', msg.messageId);
       CHAT_STATE_.lastMessageId = msg.messageId;
       CHAT_STATE_.myLastSeenByStaff = false; // pesan baru terkirim, belum tentu sudah dibaca staff
-      el.scrollTop = el.scrollHeight;
       if(CHAT_STATE_.myRoomStatus === 'CLOSED'){
         CHAT_STATE_.myRoomStatus = 'OPEN'; // auto-reopen sudah terjadi di backend
         updateMyChatInputState_();
       }
-    }).withFailureHandler(function(e){ btn.disabled = false; input.value = text; handleBackendError(e); }).sendChatMessage(STATE.token, CHAT_STATE_.myRoomId, text, attachment || null);
+    }).withFailureHandler(function(e){
+      btn.disabled = false;
+      input.value = text;
+      var tempEl = el.querySelector('[data-message-id="'+tempId+'"]');
+      if(tempEl) tempEl.remove();
+      handleBackendError(e);
+    }).sendChatMessage(STATE.token, CHAT_STATE_.myRoomId, text, attachment || null);
   }
 
   function handleChatInputKeydown_(e){
@@ -9850,6 +9870,14 @@
         '</div>' +
       '</div>';
     document.body.appendChild(overlay);
+    // FIX "KLIK DI LUAR GAMBAR TIDAK BISA TUTUP": sebelumnya modal ini cuma bisa ditutup
+    // lewat tombol X (yang ternyata juga tidak kelihatan — lihat fix CSS terkait) atau
+    // tombol Kirim, jadi kalau user berubah pikiran, tidak ada jalan keluar sama sekali
+    // selain paksa reload halaman. Klik di area gelap overlay (bukan di dalam modal
+    // putihnya) sekarang menutup modal, seperti pola modal lain di app ini.
+    overlay.addEventListener('click', function(e){
+      if(e.target === overlay) closeChatAttachPreview_();
+    });
     setTimeout(function(){
       overlay.classList.add('open');
       var capEl = document.getElementById('chatAttachCaptionInput');
@@ -10295,16 +10323,41 @@
     var btn = document.getElementById('chatInboxSendBtn');
     btn.disabled = true;
 
+    // FIX "CHAT LAMBAT MUNCUL": sebelumnya bubble baru ditambahkan ke layar SETELAH
+    // sendChatMessage() pulang dari server (nunggu full round-trip GAS — bisa 1-3 detik
+    // di koneksi biasa), jadi ada jeda kelihatan "kosong" antara klik kirim dan bubble
+    // muncul. Sekarang bubble OPTIMISTIC ditambahkan LANGSUNG begitu tombol kirim ditekan
+    // (pakai id sementara), memberi kesan instan seperti WhatsApp — begitu server benar2
+    // konfirmasi sukses, bubble sementara itu ditukar diam-diam dengan data asli (messageId
+    // & timestamp resmi dari server); kalau gagal, bubble sementara dihapus & teks
+    // dikembalikan ke kolom supaya user tahu harus kirim ulang.
+    var tempId = 'temp-' + Date.now();
+    var el = document.getElementById('chatInboxMessagesEl');
+    if(el.querySelector('.chat-inbox-empty')) el.innerHTML = '';
+    var optimisticMsg = {
+      messageId: tempId, senderRole: STATE.user.role, senderName: STATE.user.name,
+      messageText: text, createdAt: new Date().toISOString(),
+      attachmentUrl: attachment ? attachment.url : '', attachmentType: attachment ? (attachment.type || 'file') : '',
+      attachmentName: attachment ? (attachment.name || '') : ''
+    };
+    appendChatBubble_(el, optimisticMsg, true);
+    el.scrollTop = el.scrollHeight;
+
     google.script.run.withSuccessHandler(function(msg){
       btn.disabled = false;
-      var el = document.getElementById('chatInboxMessagesEl');
-      if(el.querySelector('.chat-inbox-empty')) el.innerHTML = '';
-      appendChatBubble_(el, msg, true);
+      // Tukar bubble sementara (temp-...) dengan versi resmi dari server (messageId asli).
+      var tempEl = el.querySelector('[data-message-id="'+tempId+'"]');
+      if(tempEl) tempEl.setAttribute('data-message-id', msg.messageId);
       CHAT_STATE_.inboxLastMessageId = msg.messageId;
       CHAT_STATE_.inboxMessagesCache[roomId] = (CHAT_STATE_.inboxMessagesCache[roomId] || []).concat([msg]);
-      el.scrollTop = el.scrollHeight;
       loadChatRoomList_();
-    }).withFailureHandler(function(e){ btn.disabled = false; input.value = text; handleBackendError(e); }).sendChatMessage(STATE.token, roomId, text, attachment || null);
+    }).withFailureHandler(function(e){
+      btn.disabled = false;
+      input.value = text;
+      var tempEl = el.querySelector('[data-message-id="'+tempId+'"]');
+      if(tempEl) tempEl.remove();
+      handleBackendError(e);
+    }).sendChatMessage(STATE.token, roomId, text, attachment || null);
   }
 
   function handleInboxInputKeydown_(e){
