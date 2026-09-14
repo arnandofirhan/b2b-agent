@@ -88,7 +88,7 @@
     // Diganti nilainya (mis. ke tanggal rilis) setiap kali Stylesheet.html atau
     // JavaScript.html diubah dan di-push — lihat juga CACHE_VERSION_ di service-worker.js
     // yang harus dinaikkan bersamaan supaya precache SW-nya juga ikut refresh.
-    var ASSET_CACHE_BUSTER_ = '20260913-livechat-disabled-9';
+    var ASSET_CACHE_BUSTER_ = '20260913-livechat-disabled-15';
 
     function loadWrappedInclude_(url, tagName, insertTarget){
       var bustedUrl = url + (url.indexOf('?') === -1 ? '?' : '&') + 'v=' + ASSET_CACHE_BUSTER_;
