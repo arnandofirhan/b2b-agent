@@ -916,17 +916,19 @@
   .content{padding:24px;flex:1;}
 
   /* ---------- Topbar user menu ---------- */
-  /* FIX: .user-menu HARUS punya z-index eksplisit sendiri (bukan cuma position:relative)
-     supaya ia membentuk stacking context yang jelas di atas SEMUA elemen fixed lain di
-     halaman (termasuk #bottomNav z-index:60 dan .bottom-more-sheet-overlay z-index:69 di
-     mobile). Tanpa ini, karena .topbar sendiri position:sticky + z-index:10, backdrop &
-     dropdown-nya (walau z-index 29/30 relatif ke .user-menu) secara EFEKTIF tetap
-     "terjebak" di layer z-index:10 milik .topbar saat dibandingkan dgn elemen root lain
-     spt #bottomNav — itulah kenapa tombol "Ganti Password" kadang tidak bisa di-tap di
-     HP: backdrop transparan dari elemen lain (atau area di luar dropdown) memenangkan
-     hit-test di atasnya. z-index:100 di sini memastikan seluruh .user-menu (avatar,
-     backdrop, dropdown) selalu menang dari #bottomNav (60) dan sheet-nya (69-70). */
-  .user-menu{position:relative;z-index:100;}
+  /* FIX "dropdown Ganti Password/Keluar terpotong di halaman Live Chat": dropdown ini
+     SEBELUMNYA position:absolute, anak .user-menu di dalam .main-area — begitu .main-area
+     diberi overflow:hidden khusus halaman Live Chat (lihat .main-area.chat-page-active di
+     bawah), dropdown itu ikut TERPOTONG walau z-index-nya tinggi (overflow:hidden pada
+     ancestor memotong render terlepas dari z-index berapa pun elemen di dalamnya).
+     FIX: dropdown ini sekarang PORTAL — dibangun sbg child #notifPortalRoot (akhir <body>,
+     di luar .main-area sama sekali) oleh openUserMenu_()/closeUserMenu() di JavaScript.html,
+     pola yang sama persis dengan .notif-dropdown/.notif-backdrop di atas. position:fixed
+     (bukan absolute) karena posisinya di-set inline oleh positionUserMenuPortal_() setiap
+     kali dibuka, relatif ke viewport — top/right di sini cuma fallback awal. z-index:1100
+     (sama dgn notif-dropdown) aman karena keduanya tidak pernah dibuka bersamaan
+     (openUserMenu_/openNotifDropdown_ saling menutup satu sama lain lebih dulu). */
+  .user-menu{position:relative;}
   .user-menu-trigger{
     display:flex;align-items:center;gap:9px;background:none;border:1px solid transparent;cursor:pointer;
     padding:5px 8px 5px 5px;border-radius:999px;transition:background .12s ease, border-color .12s ease;
@@ -945,28 +947,16 @@
   .user-agentid{display:none;} /* default tersembunyi; ditampilkan khusus mobile role AGENT, lihat @media max-width:860px .topbar.agent-topbar */
   .user-greeting{display:none;} /* default tersembunyi; ditampilkan khusus mobile role AGENT, lihat @media max-width:860px .topbar.agent-topbar */
   .user-menu-caret{color:var(--ag-gray-500);transition:transform .15s ease;flex-shrink:0;}
-  .user-menu.open .user-menu-caret{transform:rotate(180deg);}
-  /* Backdrop TRANSPARAN full-layar dipakai utk menutup dropdown saat tap di luar — dipasang
-     sbg elemen DOM sungguhan (bukan cuma listener klik-di-document) supaya konsisten dgn pola
-     notif-backdrop, yang sudah TERBUKTI lebih andal di beberapa Android WebView drpd listener
-     klik global. Listener klik global sebelumnya kadang membuat tap PERTAMA pada item menu
-     (mis. "Ganti Password") "kebentur" logika tutup-menu pada siklus event yg sama, membuat
-     WebView kehilangan jejak sentuhan itu — efeknya aksi tidak jalan DAN sentuhan berikutnya
-     di tombol lain (Keluar, Buat PO, Tambah Promo, dst) ikut tidak terdaftar sampai layar
-     disentuh/reflow ulang. Backdrop fisik ini menghindari race tsb sepenuhnya. */
-  .user-menu-backdrop{display:none;position:fixed;inset:0;background:transparent;z-index:29;}
-  .user-menu.open .user-menu-backdrop{display:block;}
-  .user-menu-dropdown{
-    display:none;position:absolute;top:calc(100% + 8px);right:0;min-width:190px;background:var(--ag-surface);
-    border:1px solid var(--ag-gray-200);border-radius:var(--radius-md);box-shadow:0 12px 28px rgba(16,24,32,.14);
-    padding:6px;z-index:30;
-    /* FIX: isolation:isolate memaksa dropdown ini jadi stacking context baru yang independen
-       dari elemen manapun di luar .user-menu, sehingga tombol2 di dalamnya (Ganti Password,
-       Keluar) selalu bisa menerima tap/click walau ada elemen fixed lain (bottom nav, sheet,
-       dsb) dengan z-index tinggi di tempat lain pada halaman. */
-    isolation:isolate;
+  .user-menu-backdrop{
+    display:none;position:fixed;inset:0;background:transparent;z-index:1099;
   }
-  .user-menu.open .user-menu-dropdown{display:block;}
+  .user-menu-backdrop.show{display:block;}
+  .user-menu-dropdown{
+    display:none;position:fixed;top:70px;right:24px;min-width:190px;max-width:calc(100vw - 24px);background:var(--ag-surface);
+    border:1px solid var(--ag-gray-200);border-radius:var(--radius-md);box-shadow:0 12px 28px rgba(16,24,32,.14);
+    padding:6px;z-index:1100;isolation:isolate;
+  }
+  .user-menu-dropdown.show{display:block;}
   .user-menu-item{
     display:flex;align-items:center;gap:10px;width:100%;background:none;border:none;text-align:left;
     padding:9px 10px;border-radius:var(--radius-sm);font-size:13px;font-weight:500;color:var(--ag-gray-700);cursor:pointer;
