@@ -27,8 +27,31 @@
        script di bawah) supaya body tetap dimunculkan walau CSS gagal total dimuat, daripada
        user terjebak lihat layar kosong selamanya. */
     html.ag-preload body{ visibility:hidden; }
+    /* ===== FIX FLASH LOGIN SAAT RELOAD =====
+       Class ag-has-session diset SINKRON oleh script kecil tepat di bawah, SEBELUM body
+       sempat diparse/dirender — berdasarkan token yang sudah ada di localStorage, TANPA
+       menunggu JavaScript.html (10rb+ baris, dimuat ASYNC lewat fetch) selesai dijalankan.
+       Tanpa gate ini, #loginScreen (default visible di Stylesheet.html, tidak ada
+       display:none bawaan) sempat kelihatan dulu sesaat sebelum bootApp() di
+       JavaScript.html akhirnya menyembunyikannya — itulah "flash" Login yang dilaporkan.
+       !important dipakai karena appShell/loginScreen juga diatur lewat inline style oleh
+       bootApp()/handleLogout() belakangan; begitu JavaScript.html jalan, class ini
+       dilepas/dipasang ulang oleh handleLogin()/handleLogout() supaya kembali dikontrol
+       JS seperti biasa. */
+    html.ag-has-session #loginScreen{ display:none !important; }
+    html.ag-has-session #appShell{ display:flex !important; }
   </style>
   <script>document.documentElement.classList.add('ag-preload');</script>
+  <script>
+    // Cek session SINKRON, sebelum apa pun lain (termasuk fetch CSS) dimulai.
+    (function(){
+      try{
+        if(localStorage.getItem('ag_token') && localStorage.getItem('ag_user')){
+          document.documentElement.classList.add('ag-has-session');
+        }
+      }catch(e){}
+    })();
+  </script>
   <!-- ===== "Add to Home Screen" (Android/Chrome + iOS/Safari) =====
        Apps Script tidak bisa menyajikan manifest.json / service-worker.js sebagai
        file statis di scope yang tepat, jadi Chrome TIDAK akan memunculkan prompt
