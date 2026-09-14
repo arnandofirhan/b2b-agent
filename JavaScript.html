@@ -222,6 +222,10 @@
     sessionStorage_remove('ag_token');
     sessionStorage_remove('ag_user');
     SESSION_GEN_++; // lihat catatan di deklarasinya: membatalkan-secara-logis semua preload timer / callback background yang masih tertunda dari sesi ini
+    // FIX: buang juga antrian request api-bridge.js yang mungkin masih tertunda dari sesi
+    // ini (lihat catatan resetQueue_ di api-bridge.js) — supaya begitu login lagi, sesi baru
+    // dapat slot MAX_CONCURRENT_HI/LO yang benar-benar kosong, bukan masih dipakai job lama.
+    if(typeof window.__apiBridgeResetQueue__ === 'function'){ window.__apiBridgeResetQueue__(); }
     STATE.token = null; STATE.user = null;
     APP_HISTORY_READY_ = false; // supaya initAppHistory_ pasang baseline baru saat login berikutnya, bukan numpuk di history sesi lama
     PAGE_HTML_CACHE = {};
@@ -754,14 +758,13 @@
       (typeof netInfo.downlink === 'number' && netInfo.downlink > 0 && netInfo.downlink < 1)
     ));
     if(!isSlowConn){
-      // Tunda mulainya preload background supaya tidak langsung tabrakan dengan panggilan
-      // Dashboard sendiri yang baru saja ditembak oleh showPage('dashboard') di atas — beri
-      // jeda dulu supaya beban ke GAS di detik-detik awal boot lebih landai. Dinaikkan dari
-      // 1.2 detik -> 2.5 detik: kuota eksekusi paralel GAS di-SHARE lintas SEMUA device yang
-      // memanggil /exec yang sama (lihat catatan panjang di preloadAllPages_), jadi jeda yang
-      // lebih longgar di sini juga mengurangi peluang tabrakan dengan device LAIN yang
-      // kebetulan login di waktu yang berdekatan, bukan cuma dengan request dari tab ini.
-      setTimeout(preloadAllPages_, 2500);
+      // DITURUNKAN dari 2.5 detik -> 1 detik: sekarang HI dan LO punya jatah slot masing-
+      // masing yang lebih dari 1 (lihat MAX_CONCURRENT_HI/LO di api-bridge.js), jadi preload
+      // background TIDAK LAGI bisa menyita satu-satunya slot yang dipakai request Dashboard
+      // sendiri — keduanya bisa jalan bersamaan tanpa saling memblokir. Jeda 1 detik masih
+      // disisakan sekadar supaya request Dashboard (2 request) sempat berangkat duluan,
+      // bukan lagi untuk menghindari rebutan slot tunggal.
+      setTimeout(preloadAllPages_, 1000);
     }
     loadNotifications_();
     if(NOTIF_POLL_INTERVAL_) clearInterval(NOTIF_POLL_INTERVAL_);
@@ -829,8 +832,12 @@
     // halaman paling relevan dulu (bukan semua ~14 sekaligus) — sisanya tetap bisa dibuka
     // manual oleh user (cuma tanpa keuntungan sudah-di-cache), tapi beban ke kuota bersama
     // di detik-detik awal login jauh lebih kecil, di device manapun yang login belakangan.
-    var STAGGER_MS = 1500;
-    var PRELOAD_PAGE_LIMIT_ = 4;
+    // DITURUNKAN dari 1500ms -> 600ms, dan limit halaman dinaikkan 4 -> 6: dengan
+    // MAX_CONCURRENT_LO sekarang 2 (bukan 1) di api-bridge.js, beberapa preload boleh
+    // tumpang-tindih sedikit tanpa membanjiri GAS — sebelumnya 1500ms diperlukan karena
+    // LO cuma py 1 slot, jadi tiap preload HARUS selesai total dulu baru boleh mulai lagi.
+    var STAGGER_MS = 600;
+    var PRELOAD_PAGE_LIMIT_ = 6;
     keys = keys.slice(0, PRELOAD_PAGE_LIMIT_);
     keys.forEach(function(key, i){
       setTimeout(function(){
