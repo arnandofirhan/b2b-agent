@@ -4,6 +4,24 @@
    * SPA router (showPage), auth, sidebar per role, dashboard.
    *************************************************************/
 
+  // =============================================================
+  // MASTER SWITCH — LIVE CHAT (dimatikan total atas permintaan; ubah ke `true` untuk
+  // menyalakan kembali fitur Live Chat tanpa perlu membongkar kode satu-satu).
+  // Saat false, SEMUA hal berikut ikut mati:
+  //  - Menu "Live Chat" hilang dari sidebar & bottom-nav mobile (staff) — lihat MENU_ITEMS
+  //    yang di-filter di bawah.
+  //  - FAB "Live Chat" (bubble hijau mengambang) untuk Agent TIDAK dipasang sama sekali
+  //    (injectChatFab_ tidak dipanggil dari initLiveChat_).
+  //  - Polling badge unread (setiap 15 detik, semua role), polling Inbox staff (6 detik),
+  //    dan polling widget chat Agent (5 detik + status baca 4 detik) semuanya TIDAK PERNAH
+  //    dimulai — nol request google.script.run terkait chat yang jalan di background.
+  //  - Routing ke halaman 'livechat' (kalau ada URL/state lama yang nyasar ke situ) di-
+  //    redirect balik ke Dashboard alih-alih menampilkan halaman kosong/error.
+  // FAB Troli milik Agent (#agentCartFab) TIDAK terpengaruh flag ini — itu fitur terpisah
+  // dari Live Chat, tetap berjalan normal.
+  // =============================================================
+  var LIVECHAT_FEATURE_ENABLED_ = false;
+
   // ---------- Global client state ----------
   var STATE = {
     token: null,
@@ -82,15 +100,7 @@
     { key: 'products',    icon: ICONS.products,  label: 'Master Item Product', roles: ['ADMIN','MANAGER'] },
     { key: 'catalog',     icon: ICONS.products,  label: 'Katalog',          roles: ['AGENT','SUPERVISOR'] },
     { key: 'promo',       icon: ICONS.promo,     label: 'Promo',            roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
-    // HIDDEN MENU LIVE CHAT: item 'livechat' sengaja DICABUT dari MENU_ITEMS (bukan cuma
-    // disembunyikan lewat CSS) supaya: (1) tidak tampil di sidebar/bottom-nav untuk role
-    // manapun, (2) otomatis TIDAK IKUT di-preload oleh preloadAllPages_() karena daftar
-    // preload-nya difilter dari MENU_ITEMS ini, (3) navigasi manual ke showPage('livechat')
-    // tetap technically bisa lewat konsol tapi tidak ada entry point UI apapun ke sana.
-    // Rendering function renderLiveChatInbox() & backend-nya di Code.gs SENGAJA TIDAK
-    // dihapus (aman untuk dikembalikan nanti) — cukup diputus dari sini + initLiveChat_()
-    // dibuat no-op (lihat komentar di fungsi itu) supaya tidak ada request apapun yang
-    // jalan dari fitur ini.
+    { key: 'livechat',    icon: ICONS.bell,      label: 'Live Chat',        roles: ['ADMIN','SUPERVISOR','MANAGER'] },
     { key: 'transactions',icon: ICONS.transactions, label: 'Transaksi / PO',roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
     { key: 'orders',      icon: ICONS.orders,    label: 'Order',            roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
     { key: 'commission',  icon: ICONS.commission,label: 'Commission',       roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
@@ -102,13 +112,19 @@
     { key: 'settings',    icon: ICONS.settings,  label: 'Pengaturan',       roles: ['ADMIN'] },
     { key: 'dashboard-settings', icon: ICONS.dashboard, label: 'Dashboard Settings', roles: ['ADMIN'] },
     { key: 'audit-log',   icon: ICONS.audit,     label: 'Audit Log',        roles: ['ADMIN','MANAGER'] }
-  ];
+  ].filter(function(item){
+    // Live Chat dimatikan total lewat LIVECHAT_FEATURE_ENABLED_ (lihat deklarasinya di
+    // paling atas file) — di-filter keluar DI SINI (sumber tunggal MENU_ITEMS) supaya
+    // otomatis hilang dari sidebar DAN bottom-nav mobile sekaligus, karena renderSidebar()
+    // & renderBottomNav() keduanya membaca dari array ini, tidak perlu disentuh terpisah.
+    return LIVECHAT_FEATURE_ENABLED_ || item.key !== 'livechat';
+  });
 
   // ---------- Sidebar grouping (visual only — layout/order for the collapsible sections;
   // MENU_ITEMS above remains the flat source of truth for role/icon/label/preload) ----------
   var MENU_GROUPS = [
     { key: '__top__',   label: null,               items: ['dashboard'] }, // ungrouped, always visible, no header
-    { key: 'transaksi', label: 'Transaksi',         items: ['catalog','promo','transactions','orders','commission','commission-scheme'] },
+    { key: 'transaksi', label: 'Transaksi',         items: ['catalog','promo','livechat','transactions','orders','commission','commission-scheme'] },
     { key: 'master',    label: 'Master Data',       items: ['agents','products','stores'] },
     { key: 'laporan',   label: 'Laporan & Jadwal',  items: ['reports','calendar'] },
     { key: 'sistem',    label: 'Sistem',            items: ['users','settings','dashboard-settings','audit-log'] }
@@ -212,6 +228,7 @@
     // ketiga elemen ini supaya sesi berikutnya (akun apapun yang login berikutnya, termasuk
     // yang bukan role AGENT) mulai dari kondisi bersih tanpa sisa FAB milik akun sebelumnya.
     if(CHAT_STATE_.pollInterval){ clearInterval(CHAT_STATE_.pollInterval); CHAT_STATE_.pollInterval = null; }
+    if(CHAT_STATE_.myPollInterval){ clearInterval(CHAT_STATE_.myPollInterval); CHAT_STATE_.myPollInterval = null; }
     if(CHAT_STATE_.readStatusPollInterval){ clearInterval(CHAT_STATE_.readStatusPollInterval); CHAT_STATE_.readStatusPollInterval = null; }
     if(CHAT_STATE_.unreadPollInterval){ clearInterval(CHAT_STATE_.unreadPollInterval); CHAT_STATE_.unreadPollInterval = null; }
     ['fabDialWrap', 'fabDialScrim', 'chatPanelOverlay'].forEach(function(id){
@@ -287,22 +304,9 @@
   }
 
   // =============================================================
-  // TOPBAR USER MENU (avatar dropdown: Ganti Password / Keluar) — PORTAL PATTERN
-  // -------------------------------------------------------------
-  // FIX "dropdown terpotong di halaman Live Chat": versi lama menaruh .user-menu-backdrop
-  // + .user-menu-dropdown sbg markup statis DI DALAM .user-menu (anak .main-area). Karena
-  // .main-area diberi overflow:hidden khusus saat halaman Live Chat aktif (dibutuhkan supaya
-  // area scroll chat terkunci — lihat catatan .main-area.chat-page-active di Stylesheet.html),
-  // dropdown position:absolute itu ikut TERPOTONG oleh overflow tsb: z-index tinggi (100)
-  // tidak menolong di sini karena overflow:hidden pada ancestor memotong render terlepas dari
-  // z-index berapa pun. Sekarang dropdown dibangun dari nol sbg elemen baru di #notifPortalRoot
-  // (akhir <body>, di luar .main-area sama sekali) — pola yang SAMA PERSIS dengan notif
-  // dropdown (lihat "NOTIF DROPDOWN — PORTAL PATTERN" di bawah), yang sudah terbukti bebas dari
-  // masalah clipping maupun stacking-context serupa di semua halaman termasuk Live Chat.
+  // TOPBAR USER MENU (avatar dropdown: Ganti Password / Keluar)
   // =============================================================
   var USER_MENU_CLOSED_AT_ = 0; // guard: cegah re-open seketika krn race pointerdown(backdrop)->click(avatar)
-  var USER_MENU_OPEN_ = false;
-
   function toggleUserMenu(e){
     // stopPropagation WAJIB (pola sama seperti toggleNotifDropdown_): tanpa ini klik
     // pada trigger avatar "naik" (bubble) ke listener klik-luar document di bawah PADA
@@ -310,69 +314,15 @@
     // seketika saat dibuka, atau membuat state open/close jadi tidak sinkron.
     if(e) e.stopPropagation();
     if(Date.now() - USER_MENU_CLOSED_AT_ < 300) return; // baru saja ditutup via tap-di-luar, abaikan
-    if(USER_MENU_OPEN_){ closeUserMenu(); return; }
-    openUserMenu_();
-  }
-
-  /** Bangun backdrop + dropdown dari nol sbg child #notifPortalRoot (bukan di dalam
-      .topbar/.user-menu sama sekali), supaya selalu jadi elemen paling atas tanpa terjebak
-      overflow/stacking-context .main-area manapun (lihat catatan PORTAL PATTERN di atas). */
-  function openUserMenu_(){
+    var menu = document.getElementById('userMenu');
+    if(!menu) return;
+    var willOpen = !menu.classList.contains('open');
     closeNotifDropdown_(); // 2 dropdown topbar tidak pernah tumpang tindih terbuka bareng
-    var root = document.getElementById('notifPortalRoot');
-    var trigger = document.getElementById('userMenuTrigger');
-    if(!root || !trigger) return;
-    root.innerHTML =
-      '<div class="user-menu-backdrop show" id="userMenuBackdropPortal"></div>' +
-      '<div class="user-menu-dropdown show" id="userMenuDropdownPortal" role="menu" aria-label="Menu pengguna">' +
-        '<button type="button" class="user-menu-item" id="userMenuChangePwBtn">' +
-          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>' +
-          '<span>Ganti Password</span>' +
-        '</button>' +
-        '<button type="button" class="user-menu-item danger" id="userMenuLogoutBtn">' +
-          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>' +
-          '<span>Keluar</span>' +
-        '</button>' +
-      '</div>';
-    positionUserMenuPortal_();
-    var backdrop = document.getElementById('userMenuBackdropPortal');
-    var changePwBtn = document.getElementById('userMenuChangePwBtn');
-    var logoutBtn = document.getElementById('userMenuLogoutBtn');
-    if(backdrop) backdrop.addEventListener('pointerdown', function(ev){ ev.stopPropagation(); closeUserMenu(); });
-    if(changePwBtn) changePwBtn.addEventListener('click', function(ev){ handleUserMenuAction_(ev, openChangePasswordModal); });
-    if(logoutBtn) logoutBtn.addEventListener('click', function(ev){ handleUserMenuAction_(ev, confirmLogout); });
-    window.addEventListener('resize', positionUserMenuPortal_);
-    var caret = document.getElementById('userMenuCaret');
-    if(caret) caret.style.transform = 'rotate(180deg)';
-    USER_MENU_OPEN_ = true;
+    if(willOpen) menu.classList.add('open'); else closeUserMenu();
   }
-
-  /** Posisikan dropdown persis di bawah avatar/trigger, menempel ke sisi kanan — sama
-      persis dengan positionNotifPortal_ untuk lonceng notifikasi. */
-  function positionUserMenuPortal_(){
-    var dd = document.getElementById('userMenuDropdownPortal');
-    var trigger = document.getElementById('userMenuTrigger');
-    if(!dd || !trigger) return;
-    var r = trigger.getBoundingClientRect();
-    dd.style.position = 'fixed';
-    dd.style.top = (r.bottom + 8) + 'px';
-    dd.style.right = (window.innerWidth - r.right) + 'px';
-    dd.style.left = 'auto';
-  }
-
-  /** Satu-satunya cara menutup user menu: KOSONGKAN #notifPortalRoot (kalau memang isinya
-      dropdown ini — dicek via USER_MENU_OPEN_ supaya tidak menghapus notif dropdown yang
-      mungkin baru saja dibuka menimpanya). Tidak ada lagi classList.remove('open') / sisa
-      elemen tersembunyi yang masih bisa menerima/menyalurkan sentuhan berikutnya. */
   function closeUserMenu(){
-    if(USER_MENU_OPEN_){
-      var root = document.getElementById('notifPortalRoot');
-      if(root) root.innerHTML = '';
-      window.removeEventListener('resize', positionUserMenuPortal_);
-    }
-    var caret = document.getElementById('userMenuCaret');
-    if(caret) caret.style.transform = '';
-    USER_MENU_OPEN_ = false;
+    var menu = document.getElementById('userMenu');
+    if(menu) menu.classList.remove('open');
     USER_MENU_CLOSED_AT_ = Date.now();
   }
 
@@ -457,10 +407,9 @@
   // paling bawah file: "listener klik-global terpisah dihapus karena rawan race/double-trigger
   // di mobile"), dan bug itu jugalah yg bikin tombol "Ganti Password" kadang tidak merespons
   // DAN "menular" bikin tombol lain (Keluar, Buat PO, Tambah Promo) ikut tidak bisa diklik
-  // sampai layar disentuh ulang. Sekarang tutup-saat-tap-di-luar ditangani oleh backdrop
-  // portal #userMenuBackdropPortal (dibangun oleh openUserMenu_(), lihat blok PORTAL PATTERN
-  // di atas) — jauh lebih stabil di Android WebView krn tidak bergantung pada urutan bubbling
-  // event klik, dan sekaligus bebas dari masalah clipping .main-area overflow:hidden.
+  // sampai layar disentuh ulang. Sekarang tutup-saat-tap-di-luar ditangani oleh elemen fisik
+  // .user-menu-backdrop (lihat markup #userMenuBackdrop di index.html) — jauh lebih stabil di
+  // Android WebView krn tidak bergantung pada urutan bubbling event klik.
 
   // =============================================================
   // MY SIGNATURE (Admin/Supervisor/Manager) — auto-stamped on Approve PO
@@ -761,72 +710,12 @@
     // panggilan Dashboard sendiri yang baru saja ditembak oleh showPage('dashboard') di
     // atas — beri jeda dulu supaya beban ke GAS di detik-detik awal boot lebih landai
     // (mengurangi peluang redirect/echo 404 transient yang selama ini muncul di console).
-    setTimeout(preloadAllPages_, 2000);
+    setTimeout(preloadAllPages_, 1200);
     loadNotifications_();
     if(NOTIF_POLL_INTERVAL_) clearInterval(NOTIF_POLL_INTERVAL_);
     NOTIF_POLL_INTERVAL_ = setInterval(loadNotifications_, 120000); // refresh tiap 2 menit
   }
   var NOTIF_POLL_INTERVAL_ = null;
-
-  // =============================================================
-  // PAUSE POLLING SAAT TAB/APP DI-BACKGROUND (Page Visibility API)
-  // -------------------------------------------------------------
-  // AKAR MASALAH "LOGIN LEMOT/TIMEOUT, DIAGRAM GA MUNCUL" (dikonfirmasi via console log
-  // user: CORS blocked + 404 dari script.googleusercontent.com/.../echo bersamaan): GAS Web
-  // App punya KUOTA EKSEKUSI PARALEL GLOBAL per-project Google (bukan per-user/per-device,
-  // dan ini BATASAN PLATFORM Google, bukan sesuatu yang bisa dihapus total dari kode kita).
-  // Sebelum fix ini, app punya SAMPAI 4 setInterval polling background yang terus jalan
-  // TANPA PERNAH BERHENTI meski tab di-minimize, layar HP dikunci, atau user pindah ke app
-  // lain (PWA tetap "hidup" di background beberapa saat): notif tiap 120 detik, chat unread
-  // badge tiap 25 detik, chat messages tiap 5-6 detik, chat read-status tiap 4 detik. Kalau
-  // 2+ device/tab aktif bersamaan (mis. Admin buka Live Chat di desktop SAAT Agent yang sama
-  // login di HP — persis skenario yang dilaporkan), total tembakan request per menit ke
-  // project GAS yang SAMA membengkak signifikan, kebanyakan dari tab yang bahkan TIDAK
-  // SEDANG DILIHAT siapa pun — inilah yang menghabiskan kuota eksekusi paralel dan memicu
-  // GAS mengalihkan/menolak eksekusi lain (termasuk login & load Dashboard) yang MEMANG
-  // sedang ditunggu aktif oleh user, muncul sebagai TIMEOUT/404/CORS-block acak.
-  // FIX: begitu tab/PWA di-background (document.hidden true), SEMUA interval polling
-  // dihentikan total. Begitu kembali terlihat, semuanya dilanjutkan lagi DENGAN SEGERA
-  // memanggil sekali secara langsung (supaya data yang mungkin basi selama di-background
-  // langsung ter-refresh), baru interval-nya dipasang ulang. Ini murni pengurangan beban
-  // SIA-SIA ke kuota bersama — tidak mengubah pengalaman user yang SEDANG aktif memakai app
-  // sama sekali, karena begitu tab dibuka lagi, semua langsung fresh seperti biasa.
-  var POLLING_PAUSED_FOR_VISIBILITY_ = false;
-  document.addEventListener('visibilitychange', function(){
-    if(document.hidden){
-      POLLING_PAUSED_FOR_VISIBILITY_ = true;
-      if(NOTIF_POLL_INTERVAL_){ clearInterval(NOTIF_POLL_INTERVAL_); NOTIF_POLL_INTERVAL_ = null; }
-      if(typeof CHAT_STATE_ === 'undefined') return;
-      if(CHAT_STATE_.unreadPollInterval){ clearInterval(CHAT_STATE_.unreadPollInterval); CHAT_STATE_.unreadPollInterval = null; }
-      if(CHAT_STATE_.pollInterval){ clearInterval(CHAT_STATE_.pollInterval); CHAT_STATE_.pollInterval = null; }
-      if(CHAT_STATE_.readStatusPollInterval){ clearInterval(CHAT_STATE_.readStatusPollInterval); CHAT_STATE_.readStatusPollInterval = null; }
-    } else if(POLLING_PAUSED_FOR_VISIBILITY_){
-      POLLING_PAUSED_FOR_VISIBILITY_ = false;
-      if(!STATE.token) return; // belum login, tidak ada apapun yang perlu dipoll
-      // Refresh sekali segera (data mungkin sudah basi selama di-background), baru pasang
-      // ulang interval masing-masing — meniru persis interval asal tiap fitur.
-      loadNotifications_();
-      NOTIF_POLL_INTERVAL_ = setInterval(loadNotifications_, 120000);
-      if(typeof CHAT_STATE_ === 'undefined' || !STATE.user) return;
-      refreshChatUnreadBadge_();
-      CHAT_STATE_.unreadPollInterval = setInterval(refreshChatUnreadBadge_, 25000);
-      // Poll pesan chat (Agent: panel FAB / Staff: halaman Inbox) HANYA dipasang ulang kalau
-      // memang sedang terbuka — cek lewat state yang sudah ada, bukan asumsi selalu aktif.
-      if(CHAT_STATE_.panelOpen && CHAT_STATE_.myRoomId){
-        loadMyChatMessages_(false);
-        CHAT_STATE_.pollInterval = setInterval(function(){ loadMyChatMessages_(false); }, 8000);
-        refreshMyChatReadStatus_();
-        CHAT_STATE_.readStatusPollInterval = setInterval(refreshMyChatReadStatus_, 7000);
-      } else if(STATE.currentPage === 'livechat'){
-        loadChatRoomList_();
-        if(CHAT_STATE_.inboxActiveRoomId) loadInboxMessages_(false);
-        CHAT_STATE_.pollInterval = setInterval(function(){
-          loadChatRoomList_();
-          if(CHAT_STATE_.inboxActiveRoomId) loadInboxMessages_(false);
-        }, 9000);
-      }
-    }
-  });
 
   /** Diam-diam mem-fetch & merender SEMUA halaman menu (sesuai role user) langsung setelah
       login/refresh, lalu menyimpannya ke PAGE_HTML_CACHE lewat paintPage_() — supaya begitu
@@ -870,46 +759,15 @@
     // bertahap (trickle), bukan serentak — dan seandainya satu preload tetap gagal,
     // pageErrorEl_() di atas memastikan itu tidak pernah menimpa layar user kalau dia
     // sedang tidak melihat halaman itu.
-    // FIX "DEVICE YANG LOGIN BELAKANGAN TERASA BERAT" (saat akun yang sama/berbeda aktif di
-    // 2 device bersamaan, mis. HP & laptop): GAS Web App (/exec) punya kuota concurrent
-    // execution GLOBAL per-PROJECT (bukan per-user/per-device) — jadi kalau device A baru
-    // saja login dan preload belasan halaman miliknya SEDANG berjalan, device B yang login
-    // beberapa detik kemudian ikut rebutan kuota eksekusi backend yang SAMA, membuat request
-    // device B (termasuk render Dashboard pertamanya) terasa lambat padahal device B sendiri
-    // tidak melakukan apa-apa yang salah. STAGGER_MS dinaikkan dari 700ms ke 1200ms supaya
-    // laju request tiap device ke backend lebih landai — totalnya tetap sama (preload semua
-    // halaman tetap selesai, cuma makan waktu background sedikit lebih lama, yang TIDAK
-    // terasa oleh user karena ini murni caching diam-diam), tapi peluang 2 device saling
-    // tabrakan kuota di waktu bersamaan jadi jauh lebih kecil.
-    var STAGGER_MS = 1200;
+    var STAGGER_MS = 400;
     keys.forEach(function(key, i){
       setTimeout(function(){
-        // FIX "HP LEMOT PAS LOGIN / BUKA LIVE CHAT": sebelumnya preload ini jalan TERUS
-        // walau user sudah keburu pindah dari Dashboard (mis. langsung buka Live Chat
-        // begitu login selesai) — request2 background ini tetap ditembak ke backend dan
-        // rebutan bandwidth/koneksi dengan halaman yang BENAR-BENAR sedang dibuka user,
-        // apalagi di jaringan lambat (HP) di mana efeknya jauh lebih terasa daripada di
-        // desktop/wifi kencang. Sekarang dicek dulu: kalau user SUDAH tidak lagi di
-        // Dashboard saat giliran preload halaman ini tiba, SKIP total — halaman itu toh
-        // akan dirender biasa (on-demand) begitu memang dibuka user nanti. Preload cuma
-        // jalan penuh kalau user memang masih diam di Dashboard.
-        if(STATE.currentPage !== 'dashboard') return;
+        // Tandai request ini sebagai background/low-priority (lihat catatan di api-bridge.js)
+        // supaya kalau user keburu klik menu lain, request klik itu SELALU didahulukan
+        // antrian, bukan ikut ngantre di belakang sisa preload.
         window.__BG_LOW_PRIORITY__ = true;
         try{ renderers[key](); }catch(e){ /* silent — a failed background preload shouldn't disrupt the user */ }
-        // FIX BUG NYATA (device kadang lemot pas ada preload jalan di background, walau
-        // MAX_CONCURRENT_HI/LO di api-bridge.js sudah dipisah dari klik user): beberapa
-        // renderer (mis. renderPO untuk role AGENT) melakukan google.script.run PERTAMA
-        // secara sinkron di sini (aman, ke-tag LO), tapi lalu di DALAM withSuccessHandler-nya
-        // memanggil google.script.run KEDUA (mis. getAgentDetail sukses -> baru lanjut
-        // listPO) — panggilan kedua itu baru benar2 terjadi setelah request pertama pulang
-        // dari network (puluhan-ratusan ms kemudian), BUKAN sinkron di baris yang sama.
-        // Mematikan flag ini SINKRON tepat di sini (seperti sebelumnya) membuat request
-        // kedua itu salah ke-tag HI-priority, ikut menyita slot yang seharusnya khusus
-        // buat klik/aksi user. FIX: matikan lewat setTimeout singkat (bukan langsung),
-        // cukup lama untuk menaungi request susulan seperti itu, tapi masih jauh lebih
-        // pendek dari STAGGER_MS di atas (jadi tidak akan salah menaungi giliran preload
-        // BERIKUTNYA atau klik user yang kebetulan terjadi setelahnya).
-        setTimeout(function(){ window.__BG_LOW_PRIORITY__ = false; }, 500);
+        window.__BG_LOW_PRIORITY__ = false;
       }, i * STAGGER_MS);
     });
   }
@@ -1246,40 +1104,13 @@
     try{ history.pushState({ agPage: pageKey }, '', location.href); }catch(e){}
   }
 
-  // =============================================================
   function showPage(pageKey){
-    // FIX BUG "DASHBOARD RELOAD 2X SETELAH LOGIN" — AKAR MASALAH DIPASTIKAN LEWAT LOG DEBUG:
-    // showPage('dashboard') ternyata benar2 dipicu oleh event click SUNGGUHAN pada tombol
-    // Dashboard di bottom-nav (stack trace: "at el.onclick"), BUKAN oleh preload/race
-    // condition di kode ini — kemungkinan besar "ghost click"/touch event yang di-replay oleh
-    // WebView Android beberapa puluh detik setelah tap awal (fenomena dikenal terjadi saat
-    // main thread sempat sibuk, mis. selagi preloadAllPages_ berjalan di background), BUKAN
-    // dari sentuhan/klik yang disengaja user. Karena Dashboard TIDAK punya semantik "klik
-    // ulang utk reset" (beda dgn Transaksi/Orders yg punya filter yg sengaja direset saat
-    // re-entry), klik ke Dashboard SELAGI SUDAH di Dashboard cukup di-no-op TOTAL — tidak ada
-    // downside, karena tidak ada state apapun di Dashboard yang perlu/boleh direset oleh
-    // re-klik menunya sendiri.
-    if(pageKey === 'dashboard' && STATE.currentPage === 'dashboard') return;
-    // FIX "HARUS PINDAH MENU LALU BALIK BARU MUNCUL": sebelumnya, kalau user klik ulang
-    // menu yang SAMA PERSIS dengan yang sedang di-load (mis. klik Dashboard lagi sesaat
-    // setelah login, sementara getDashboardData/getAgentDashboardConfig yang PERTAMA masih
-    // dalam perjalanan ke server — bisa makan beberapa detik di jaringan lambat), showPage()
-    // ini SELALU reset #content balik ke spinner dan membiarkan request lama itu tetap
-    // jalan sendirian di background. Begitu request lama itu AKHIRNYA selesai, success
-    // handler-nya cek `if(STATE.currentPage !== 'dashboard') return;` (lihat renderDashboard/
-    // renderAgentDashboard) — kalau pas itu user MASIH di halaman yang sama, harusnya tetap
-    // ke-render, TAPI karena innerHTML sempat direset ke spinner oleh navigasi kedua tadi,
-    // hasil dari request pertama itu terpasang, sedangkan mata user sempat melihat spinner
-    // "muter lagi dari nol" seolah gagal — sehingga muncul pola: pindah ke menu lain lalu
-    // balik lagi baru kelihatan (karena saat balik itu request KEDUA yang ditembak biasanya
-    // lebih cepat, kena cache 5 menit di backend).
-    // FIX: kalau halaman yang diminta SAMA dengan yang masih PENDING (belum selesai loading),
-    // jangan reset apapun dan jangan tembak request baru — cukup tunggu request yang sudah
-    // berjalan itu selesai secara alami.
-    if(pageKey === PAGE_LOADING_ && pageKey === STATE.currentPage){
-      return;
+    // Live Chat dimatikan total (LIVECHAT_FEATURE_ENABLED_ = false) — kalau ada state lama
+    // yang masih coba ke sini (mis. history browser, deep-link tersimpan, atau bookmark),
+    // alihkan diam-diam ke Dashboard alih-alih menampilkan halaman kosong/error.
+    if(pageKey === 'livechat' && !LIVECHAT_FEATURE_ENABLED_){
+      pageKey = 'dashboard';
     }
-    PAGE_LOADING_ = pageKey;
     STATE.currentPage = pageKey;
     // FIX SCROLL CHAT MOBILE: halaman Live Chat ('livechat') punya scroll AREA-NYA SENDIRI
     // (.chat-inbox-messages, di dalam .chat-room-detail) yang seharusnya jadi SATU-SATUNYA
@@ -1294,17 +1125,20 @@
     // pindah ke halaman lain — supaya perilaku scroll halaman lain sama sekali tidak berubah.
     var mainAreaEl = document.querySelector('.main-area');
     if(mainAreaEl) mainAreaEl.classList.toggle('chat-page-active', pageKey === 'livechat');
-    // FIX "TOPBAR & KOLOM KETIK MASIH BISA DITARIK NAIK-TURUN" (video report): overflow:hidden
-    // di CSS saja TERNYATA TIDAK CUKUP untuk mencegah halaman ikut ter-drag oleh SENTUHAN JARI
-    // di Android/Chrome — overflow:hidden cuma mencegah scroll PROGRAMATIK/wheel, sedangkan
-    // gesture drag jari tetap bisa menggeser dokumen kalau tidak ada touch-action yang eksplisit
-    // melarangnya. class "chat-page-lock" di <html> ini mengaktifkan `touch-action:none` khusus
-    // selagi di halaman Live Chat (lihat CSS di Stylesheet.html) — dan supaya HANYA area pesan
-    // chat (.chat-inbox-messages) yang tetap bisa digeser jarinya (buat scroll baca chat lama),
-    // itu diberi pengecualian `touch-action:pan-y` sendiri. Hasilnya: topbar & kolom ketik
-    // benar2 PATEN, tidak bisa ditarik lagi walau di-drag paksa dengan jari.
-    var htmlEl = document.documentElement;
-    if(htmlEl) htmlEl.classList.toggle('chat-page-lock', pageKey === 'livechat');
+    // FIX PERFORMA: polling daftar percakapan + pesan Inbox staff (CHAT_STATE_.pollInterval,
+    // dipasang oleh renderLiveChatInbox tiap 6 detik) SEBELUMNYA hanya di-clear saat staff
+    // membuka ulang halaman Inbox atau logout — TIDAK ADA yang menghentikannya saat staff
+    // pindah ke halaman LAIN (Dashboard, Transaksi, dst). Akibatnya polling itu terus
+    // menembak google.script.run setiap 6 detik TANPA HENTI di background selama staff
+    // masih login, walau sudah lama meninggalkan halaman Live Chat — salah satu penyebab
+    // aplikasi terasa lambat/berat setelah dipakai beberapa saat. Dihentikan di sini setiap
+    // kali halaman AKTIF bukan 'livechat' lagi (aman dipanggil walau intervalnya memang
+    // sedang tidak ada / null / milik konteks lain — clearInterval terhadap id apapun yang
+    // sudah tidak valid adalah no-op, tidak error).
+    if(pageKey !== 'livechat' && CHAT_STATE_.pollInterval){
+      clearInterval(CHAT_STATE_.pollInterval);
+      CHAT_STATE_.pollInterval = null;
+    }
     // Catat perpindahan ini ke riwayat browser (lihat initAppHistory_ di bawah) supaya
     // gesture/tombol back bawaan HP tahu ada "halaman sebelumnya" di DALAM app, dan balik
     // ke situ dulu — bukan langsung keluar app (yang bikin sessionStorage token hilang dan
@@ -1344,13 +1178,11 @@
     if(pageKey === 'transactions' && PO_LAST_RENDER_ARGS_){
       renderPOTable_(PO_LAST_RENDER_ARGS_.rows, PO_LAST_RENDER_ARGS_.canCreatePO, PO_LAST_RENDER_ARGS_.agentMap);
       content.classList.remove('content-loading-lock');
-      PAGE_LOADING_ = null;
     } else if(PAGE_HTML_CACHE[pageKey]){
       // Instant paint from cache if we've visited this page before — no spinner/flash.
       content.innerHTML = PAGE_HTML_CACHE[pageKey];
       LAST_PAINTED_PAGE_ = pageKey;
       content.classList.remove('content-loading-lock');
-      PAGE_LOADING_ = null;
     } else {
       content.innerHTML = '<div class="spinner"></div>';
       LAST_PAINTED_PAGE_ = pageKey; // spinner is page-agnostic markup, but this IS now what pageKey's slot shows
@@ -1390,33 +1222,19 @@
 
   /** Call after building a page's innerHTML to (a) paint it and (b) cache it for instant revisit. */
   var LAST_PAINTED_PAGE_ = null; // pageKey whose HTML is actually sitting in #content right now
-  var PAGE_LOADING_ = null; // pageKey currently waiting on a backend request (see showPage guard above)
   var CONTENT_LOCK_SAFETY_TIMER_ = null;
   function paintPage_(pageKey, html){
-    if(PAGE_LOADING_ === pageKey) PAGE_LOADING_ = null;
     PAGE_HTML_CACHE[pageKey] = html;
     persistPageCache_();
     // FAB Troli ditempel di #agentCartFabSlot (di dalam FAB Speed Dial, document.body —
     // lihat injectChatFab_/refreshAgentCartFab_), yaitu DI LUAR #content. Karena itu ia
     // TIDAK ikut hilang otomatis saat innerHTML #content diganti untuk pindah ke halaman
-    // lain (beda dari perilaku sebelumnya waktu Troli masih anak langsung #content).
-    // Untuk halaman selain Dashboard, Troli FAB memang tidak relevan (aksinya "buka
-    // ringkasan Troli dashboard"), jadi dibersihkan di sini supaya tidak nyangkut
-    // tertinggal saat Agent pindah ke halaman lain.
-    // BUG SEBELUMNYA: kondisi ini cuma cek argumen `pageKey` (halaman YANG SEDANG di-paint
-    // oleh pemanggil ini) — tapi paintPage_() juga dipakai oleh preloadAllPages_() untuk
-    // diam-diam merender & men-cache SEMUA halaman lain (products, promo, dst) di BACKGROUND
-    // beberapa detik setelah login, TERLEPAS dari halaman apa yang sedang benar-benar
-    // dilihat Agent. Akibatnya: Agent lagi di Dashboard, troli sudah keisi lewat tombol "+",
-    // lalu tiba-tiba FAB Troli lenyap sendiri begitu preload latar belakang itu kebetulan
-    // sampai giliran merender halaman non-dashboard (mis. Produk/Promo) — padahal Agent TIDAK
-    // PERNAH pindah halaman. FIX: cek STATE.currentPage (halaman yang BENAR-BENAR aktif di
-    // layar Agent saat ini), bukan pageKey argumen — jadi FAB cuma dihapus kalau Agent memang
-    // sedang berada di halaman selain Dashboard, bukan gara-gara preload diam-diam di balik layar.
-    if(STATE.currentPage !== 'dashboard'){
-      var lingeringCartFab = document.getElementById('agentCartFab');
-      if(lingeringCartFab) lingeringCartFab.remove();
-    }
+    // lain. refreshAgentCartFab_() sekarang menjadi SATU-SATUNYA tempat yang memutuskan
+    // tampil/sembunyi-nya FAB ini (termasuk syarat STATE.currentPage === 'dashboard' di
+    // dalamnya) — dipanggil di sini supaya FAB langsung disembunyikan/dimunculkan begitu
+    // halaman berpindah, tanpa duplikasi logic manual DOM remove() di banyak tempat yang
+    // sebelumnya jadi sumber beberapa bug timing berbeda ("troli hilang padahal ada isinya").
+    refreshAgentCartFab_();
     // Only overwrite the DOM if the user is still on this page (they may have navigated away
     // while this background fetch was in flight).
     if(STATE.currentPage === pageKey){
@@ -4664,40 +4482,36 @@
     refreshAgentCartFab_();
   }
 
-  // Update/buat/hapus tombol mengambang "Troli" (#agentCartFab) di Dashboard SENDIRIAN,
-  // tanpa render ulang seluruh Dashboard — supaya aman dipanggil kapan saja (termasuk saat
-  // modal lain sedang terbuka di atasnya) dan tidak mereset scroll/banner/dll di baliknya.
-  // Aman dipanggil walau Agent sedang TIDAK di halaman Dashboard sama sekali (mis. sedang
-  // di halaman Transaksi) — kalau elemennya tidak ada di DOM, fungsi ini diam saja (no-op).
+  // Update/tampilkan/sembunyikan tombol mengambang "Troli" (#agentCartFab) di Dashboard.
+  // FIX ROBUSTNESS: sebelumnya elemen ini di-CREATE & DIHAPUS berulang kali dari DOM
+  // (appendChild saat troli terisi, .remove() saat troli kosong) — pendekatan itu rawan
+  // race condition: kalau fungsi ini terpanggil PERSIS saat #agentCartFabSlot belum sempat
+  // ada (mis. injectChatFab_ belum selesai jalan) atau saat Dashboard baru separuh ter-render,
+  // FAB gagal dibuat sama sekali dan tidak ada mekanisme "coba lagi" — makanya beberapa kali
+  // dilaporkan troli "hilang" padahal isinya ada. Sekarang elemennya dibuat SEKALI SAJA (kalau
+  // belum ada) lalu SELALU tetap di DOM, tinggal ditoggle lewat class .cart-fab-hidden (CSS
+  // opacity+pointer-events, bukan display:none, supaya transisi tampil halus) — jauh lebih
+  // sedikit skenario race yang bisa membuatnya "hilang" secara tidak sengaja.
   function refreshAgentCartFab_(){
     var cartCount = Object.keys(AGENT_DASH_CART_).reduce(function(sum,pid){ return sum + AGENT_DASH_CART_[pid]; }, 0);
-    var fab = document.getElementById('agentCartFab');
     var mouLocked = !!(AGENT_DASH_CFG_CACHE_ && AGENT_DASH_CFG_CACHE_.mouStatus && AGENT_DASH_CFG_CACHE_.mouStatus !== 'SIGNED');
-    if(cartCount > 0 && !mouLocked){
-      if(!fab){
-        // FAB belum ada di DOM (sebelumnya troli kosong sehingga tidak dirender) — buat
-        // barunya sekarang lalu tempel ke slot di dalam FAB Speed Dial (#agentCartFabSlot,
-        // lihat injectChatFab_), supaya Troli & toggle Live Chat selalu serumpun dalam
-        // satu kelompok FAB, bukan dua elemen fixed terpisah yang bisa saling tumpuk.
-        // Guard lewat '.agent-dash' (elemen pembungkus utama Dashboard Agent): kalau
-        // tidak ada berarti Agent sedang tidak berada di halaman Dashboard sama sekali.
-        var content = document.getElementById('content');
-        var slot = document.getElementById('agentCartFabSlot');
-        if(content && content.querySelector('.agent-dash') && slot){
-          var wrap = document.createElement('div');
-          wrap.innerHTML = '<button type="button" class="agent-cart-fab" id="agentCartFab" onclick="openAgentCart_()" title="Buka Troli">'
-            + ICONS.cart
-            + '<span class="agent-cart-fab-badge">'+(cartCount > 99 ? '99+' : cartCount)+'</span>'
-            + '</button>';
-          slot.appendChild(wrap.firstChild);
-        }
-      } else {
-        var badge = fab.querySelector('.agent-cart-fab-badge');
-        if(badge) badge.textContent = (cartCount > 99 ? '99+' : cartCount);
-      }
-    } else if(fab){
-      fab.remove();
+    var shouldShow = cartCount > 0 && !mouLocked && STATE.currentPage === 'dashboard';
+
+    var fab = document.getElementById('agentCartFab');
+    if(!fab){
+      var slot = document.getElementById('agentCartFabSlot');
+      if(!slot) return; // injectChatFab_ belum sempat jalan (Agent belum login sepenuhnya) — aman diam saja, dipanggil ulang nanti
+      var wrap = document.createElement('div');
+      wrap.innerHTML = '<button type="button" class="agent-cart-fab cart-fab-hidden" id="agentCartFab" onclick="openAgentCart_()" title="Buka Troli">'
+        + ICONS.cart
+        + '<span class="agent-cart-fab-badge">0</span>'
+        + '</button>';
+      fab = wrap.firstChild;
+      slot.appendChild(fab);
     }
+    var badge = fab.querySelector('.agent-cart-fab-badge');
+    if(badge) badge.textContent = (cartCount > 99 ? '99+' : cartCount);
+    fab.classList.toggle('cart-fab-hidden', !shouldShow);
   }
 
   function addToNewPOCart_(productId){
@@ -6659,7 +6473,10 @@
           '</div>' +
           '<button class="btn btn-primary" id="settingsSaveBtn" onclick="saveSettingsForm()">'+ICON_CHECK_SM+' Simpan Semua Pengaturan</button>' +
         '</div>' +
-        '<div class="settings-grid">' + logoCardHtml + groupsHtml + notifCardHtml + chatSettingsCardHtml + '</div>';
+        // Kartu Pengaturan Live Chat disembunyikan total saat LIVECHAT_FEATURE_ENABLED_ =
+        // false, konsisten dengan hilangnya menu sidebar & FAB — supaya Admin tidak melihat
+        // tombol pengaturan untuk fitur yang sedang dimatikan sepenuhnya.
+        '<div class="settings-grid">' + logoCardHtml + groupsHtml + notifCardHtml + (LIVECHAT_FEATURE_ENABLED_ ? chatSettingsCardHtml : '') + '</div>';
       paintPage_('settings', html);
       renderCompanyLogoCard_();
     }).withFailureHandler(function(e){ handleBackendError(e, pageErrorEl_('settings')); }).getSettings(STATE.token);
@@ -7768,7 +7585,7 @@
       // Dibungkus requestAnimationFrame supaya layout track sudah pasti kebentuk dulu.
       requestAnimationFrame(function(){
         var track = document.getElementById('agentBannerTrack');
-        if(track && track.children[1]) scrollTrackToChild_(track, track.children[1], false);
+        if(track && track.children[1]) track.children[1].scrollIntoView({ behavior:'instant', inline:'center', block:'nearest' });
         onAgentBannerScroll_();
       });
       startAgentBannerAutoplay_(banners.length);
@@ -7830,19 +7647,6 @@
     return best;
   }
 
-  // FIX BUG "HALAMAN IKUT TERTARIK KE ATAS SAAT BANNER AUTO-SLIDE": scrollIntoView(),
-  // walau dikasih block:'nearest', browser (terutama Chrome/Safari mobile) tetap kadang
-  // ikut menggeser SCROLL VERTIKAL ancestor (halaman Dashboard) kalau dianggap elemen
-  // targetnya "belum genap kelihatan penuh" secara vertikal — inilah yang bikin halaman
-  // ke-tarik naik sendiri tiap banner geser. Ganti dengan scroll manual HORIZONTAL SAJA
-  // langsung ke elemen track-nya (bukan scrollIntoView bawaan browser), jadi dijamin
-  // tidak pernah menyentuh scroll halaman sama sekali.
-  function scrollTrackToChild_(track, el, smooth){
-    if(!track || !el) return;
-    var target = el.offsetLeft - (track.clientWidth - el.offsetWidth) / 2;
-    track.scrollTo({ left: target, behavior: smooth ? 'smooth' : 'instant' });
-  }
-
   var AGENT_BANNER_AUTOPLAY_TIMER_ = null;
   var AGENT_BANNER_RESUME_TIMER_ = null;
   var AGENT_BANNER_SETTLE_TIMER_ = null;
@@ -7853,7 +7657,7 @@
       if(!track || !track.clientWidth) return;
       var slot = agentBannerCenterSlot_(track);
       var nextEl = track.children[slot + 1];
-      scrollTrackToChild_(track, nextEl, true);
+      if(nextEl) nextEl.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
     }, 4500);
   }
   function stopAgentBannerAutoplay_(){
@@ -7964,7 +7768,7 @@
   function scrollAgentBannerTo_(i){
     var track = document.getElementById('agentBannerTrack');
     var el = track && track.children[i + 1];
-    if(el) scrollTrackToChild_(track, el, true);
+    if(el) el.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
   }
 
   // Dipanggil tiap track discroll (swipe manual ATAU hasil scrollAgentBannerTo_/autoplay)
@@ -8015,7 +7819,7 @@
           // lompatannya benar2 tidak kelihatan (lihat komentar .no-anim di Stylesheet.html) —
           // ini yang membenahi transisi "kedip 2x" pas geser dari banner terakhir balik ke awal.
           for(var j=0;j<slides.length;j++) slides[j].classList.add('no-anim');
-          scrollTrackToChild_(track, targetEl, false);
+          targetEl.scrollIntoView({ behavior:'instant', inline:'center', block:'nearest' });
           onAgentBannerScroll_(); // recalc .is-centered & dot supaya langsung sinkron pasca-lompat
           requestAnimationFrame(function(){
             requestAnimationFrame(function(){
@@ -8114,7 +7918,7 @@
       requestAnimationFrame(function(){
         var track = document.getElementById('agentBannerTrack');
         var target = track && track.children[savedBannerSlot];
-        if(target) scrollTrackToChild_(track, target, false);
+        if(target) target.scrollIntoView({ behavior:'instant', inline:'center', block:'nearest' });
         onAgentBannerScroll_();
       });
     }
@@ -8451,6 +8255,7 @@
   }
 
   function paintDashboardKpis_(data){
+
     if(STATE.currentPage !== 'dashboard') return;
     var isAgent = data.role === 'AGENT';
     var kpis = isAgent
@@ -8460,42 +8265,6 @@
       : kpiCard('Total Agent', data.totalAgents, 'green', ICONS.agent, 'Agents registered in the system', 'agents') +
         kpiCard('Total PO', data.totalPO, 'blue', ICONS.transactions, 'All PO submissions', 'transactions') +
         kpiCard('Commission Paid', formatRupiah(data.totalCommissionPaid), 'orange', ICONS.commission, 'Total commission paid out', 'commission');
-
-    // FIX "DASHBOARD SEAKAN-AKAN RELOAD LAGI" (khusus ADMIN/SUPERVISOR/MANAGER):
-    // paintDashboardKpis_() ini dipanggil DUA KALI setiap kali Dashboard dibuka — sekali
-    // instan dari DASH_DATA_CACHE_ (kalau ada, cuma ada di SPA-navigation dalam sesi yang
-    // sama) dan sekali lagi begitu getDashboardData() selesai fetch data terbaru dari
-    // backend. Sebelumnya, KEDUA panggilan itu selalu membangun ULANG seluruh skeleton
-    // dashboard dari nol (welcome banner + kpi-grid + SEMUA panel Tren/Status PO/PO
-    // Terbaru/Leaderboard, lengkap dengan spinner kosong baru untuk tiap panel) lalu
-    // menimpa #content total lewat paintPage_() — walau panel2 itu SEBELUMNYA sudah
-    // terisi data (baik dari cache basi hasil instant-paint showPage(), atau dari
-    // render pertama yang baru saja selesai). Efeknya persis seperti "reload dobel":
-    // Dashboard sempat kelihatan penuh terisi, lalu SEKEJAP semua panel balik jadi
-    // spinner kosong, baru terisi lagi begitu loadDashboardPoInsights_/
-    // loadDashboardTrendInsights_ selesai — padahal cuma angka KPI yang sebenarnya
-    // berubah (atau malah sama sekali tidak berubah).
-    // FIX: kalau skeleton Dashboard SUDAH ada di DOM (elemen #dashKpiGrid ditemukan —
-    // baik dari instant-paint cache di renderDashboard()/showPage() maupun dari
-    // panggilan paintDashboardKpis_ sebelumnya), JANGAN bangun ulang seluruh skeleton.
-    // Cukup timpa isi grid KPI-nya saja secara in-place; panel Tren/Status PO/PO
-    // Terbaru/Leaderboard dibiarkan apa adanya (nanti diperbarui sendiri-sendiri oleh
-    // fungsi masing2 kalau memang ada data baru) — jadi tidak pernah ada kedipan
-    // "kosong lalu terisi lagi" yang terlihat seperti reload.
-    var existingKpiGrid = document.getElementById('dashKpiGrid');
-    if(existingKpiGrid){
-      existingKpiGrid.innerHTML = kpis;
-      startDashboardClock_();
-      // Sinkronkan juga cache HTML halaman supaya kunjungan berikutnya (instant-paint
-      // dari PAGE_HTML_CACHE) sudah membawa angka KPI terbaru ini, bukan angka basi dari
-      // render skeleton pertama kali.
-      var contentElNow = document.getElementById('content');
-      if(contentElNow && STATE.currentPage === 'dashboard'){
-        PAGE_HTML_CACHE['dashboard'] = contentElNow.innerHTML;
-        persistPageCache_();
-      }
-      return;
-    }
 
     var html =
       '<div class="welcome-banner">' +
@@ -8508,7 +8277,7 @@
           '<div class="welcome-banner-clock-time" id="dashClockTime"></div>' +
         '</div>' +
       '</div>' +
-      '<div class="kpi-grid" id="dashKpiGrid">' + kpis + '</div>' +
+      '<div class="kpi-grid">' + kpis + '</div>' +
       '<div class="dash-panel" style="margin-bottom:16px;">' +
         '<div class="dash-panel-head"><span class="dash-section-title" style="margin:0;">Tren PO 7 Hari Terakhir</span></div>' +
         '<div id="dashTrendBox"><div class="spinner" style="padding:18px 0;"></div></div>' +
@@ -8590,12 +8359,6 @@
       2 panel tambahan di Dashboard: ringkasan jumlah PO per status (bar), dan 5 PO
       paling baru. Dipanggil setelah KPI utama tampil supaya KPI tidak ikut menunggu. */
   function loadDashboardPoInsights_(){
-    // FIX PERFORMA: sebelumnya memanggil listPO(), fungsi yang sama dipakai halaman
-    // Transaksi — ikut melakukan enrichWithPromoName_() (lookup tambahan ke sheet PROMOS)
-    // dan mengirim SEMUA kolom PO untuk SETIAP baris, padahal panel ini cuma perlu 5 field
-    // ringkas (lihat renderDashPoStatusBox_/renderDashRecentPoBox_). getDashboardPoInsights
-    // di backend mengembalikan versi ringkasnya saja, jadi panel ini tidak lagi ikut kena
-    // beban kerja milik halaman Transaksi.
     google.script.run.withSuccessHandler(function(rows){
       rows = rows || [];
       DASH_DATA_CACHE_ = DASH_DATA_CACHE_ || {};
@@ -8606,7 +8369,7 @@
       if(DASH_DATA_CACHE_ && DASH_DATA_CACHE_.poRows) return; // already showing good cached data
       var a = document.getElementById('dashPoStatusBox'); if(a) a.innerHTML = emptyState_('Gagal memuat data', 'Coba muat ulang halaman.', ICONS.warning);
       var b = document.getElementById('dashRecentPoBox'); if(b) b.innerHTML = emptyState_('Gagal memuat data', 'Coba muat ulang halaman.', ICONS.warning);
-    }).getDashboardPoInsights(STATE.token);
+    }).listPO(STATE.token);
   }
 
   /** Ambil tren PO 7 hari terakhir (dengan delta % vs 7 hari sebelumnya) dan
@@ -8640,7 +8403,6 @@
     if(!box) return;
     if(!trend){
       box.innerHTML = emptyState_('Belum ada data', 'Tren PO akan muncul di sini.', ICONS.transactions);
-      syncDashboardPageCache_();
       return;
     }
     DASH_TREND_LAST_DATA_ = trend;
@@ -8667,20 +8429,8 @@
         '</div>' +
       '</div>' +
       '<div style="height:140px;position:relative;margin-top:12px;"><canvas id="dashTrendCanvas"></canvas></div>';
-    syncDashboardPageCache_();
 
-    ensureChartJsLoaded_(function(ok){
-      // FIX "DIAGRAM GA MUNCUL2": ok===false berarti CDN Chart.js gagal/timeout dimuat (mis.
-      // diblokir firewall/proxy jaringan device ybs). Sebelumnya tidak ada penanganan ini sama
-      // sekali — canvas kosong dibiarkan begitu saja tanpa penjelasan, kelihatan seperti
-      // "macet" selamanya. Sekarang tampilkan fallback teks yang jelas di tempat canvas,
-      // memakai data yang SUDAH ADA (ringkasan jumlah & nilai di atas tetap tampil normal,
-      // cuma grafik garisnya yang tidak bisa dirender tanpa library eksternal itu).
-      if(ok === false){
-        var canvasWrap = document.querySelector('#dashTrendBox [style*="height:140px"]');
-        if(canvasWrap) canvasWrap.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:12px;color:var(--ag-gray-500);text-align:center;padding:0 12px;">Grafik tidak dapat dimuat (koneksi ke library grafik terblokir/lambat). Angka ringkasan di atas tetap akurat.</div>';
-        return;
-      }
+    ensureChartJsLoaded_(function(){
       var canvas = document.getElementById('dashTrendCanvas');
       if(!canvas || typeof Chart === 'undefined') return;
       if(DASH_TREND_CHART_INSTANCE_){ DASH_TREND_CHART_INSTANCE_.destroy(); DASH_TREND_CHART_INSTANCE_ = null; }
@@ -8723,7 +8473,6 @@
     if(!box) return;
     if(!leaderboard || !leaderboard.length){
       box.innerHTML = emptyState_('Belum ada data', 'Leaderboard agent akan muncul di sini setelah ada PO.', ICONS.agent);
-      syncDashboardPageCache_();
       return;
     }
     var rows = leaderboard.map(function(a, i){
@@ -8736,77 +8485,31 @@
       '</div>';
     }).join('');
     box.innerHTML = '<div class="dash-leaderboard-list">' + rows + '</div>';
-    syncDashboardPageCache_();
   }
 
   var CHARTJS_LOADED_ = false;
-  var CHARTJS_FAILED_ = false; // true kalau CDN Chart.js gagal/timeout dimuat — lihat ensureChartJsLoaded_
   var CHARTJS_LOADING_CALLBACKS_ = [];
   /** Lazy-load Chart.js sekali dari CDN, dipakai bersama oleh semua chart di
       aplikasi ini (saat ini hanya tren Dashboard). Callback dipanggil begitu
       library siap; kalau sudah pernah dimuat, dipanggil langsung tanpa delay. */
   function ensureChartJsLoaded_(callback){
     if(typeof Chart !== 'undefined'){ callback(); return; }
-    if(CHARTJS_LOADED_){
-      // FIX "DIAGRAM GA MUNCUL2": kalau load SEBELUMNYA sudah gagal (CHARTJS_FAILED_ true —
-      // mis. CDN diblokir firewall/proxy jaringan device ybs), jangan numpuk callback baru ke
-      // antrian yang tidak akan pernah dipanggil. Panggil langsung dengan flag gagal supaya
-      // pemanggil bisa menampilkan fallback, bukan menggantung selamanya.
-      if(CHARTJS_FAILED_){ callback(false); return; }
-      CHARTJS_LOADING_CALLBACKS_.push(callback);
-      return;
-    }
+    if(CHARTJS_LOADED_){ CHARTJS_LOADING_CALLBACKS_.push(callback); return; }
     CHARTJS_LOADED_ = true;
     CHARTJS_LOADING_CALLBACKS_.push(callback);
     var script = document.createElement('script');
     script.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js';
-    var settled = false;
-    // FIX BUG NYATA: sebelumnya TIDAK ADA script.onerror maupun timeout sama sekali. Kalau
-    // device/jaringan tidak bisa memuat CDN ini (diblokir firewall/proxy kantor, DNS/region
-    // tertentu bermasalah, atau koneksi terputus tepat saat itu), <script> ini gagal diam-diam
-    // — onload TIDAK PERNAH terpanggil, dan tanpa onerror tidak ada jalan lain untuk tahu itu
-    // gagal. Akibatnya SEMUA callback yang menunggu (termasuk dari render Dashboard berikutnya
-    // yang numpuk ke CHARTJS_LOADING_CALLBACKS_ karena CHARTJS_LOADED_ sudah true) menggantung
-    // SELAMANYA — persis gejala "diagram ga muncul2" walau data ringkasan di atasnya (yang
-    // tidak butuh Chart.js) tetap tampil normal. FIX: onerror + timeout 8 detik menandai
-    // CHARTJS_FAILED_ dan memanggil semua callback dengan argumen false, supaya pemanggil
-    // (renderDashTrendBox_) bisa menampilkan fallback yang jelas alih-alih spinner/area kosong
-    // tanpa penjelasan selamanya.
-    function settle_(ok){
-      if(settled) return;
-      settled = true;
-      clearTimeout(timer);
-      if(!ok) CHARTJS_FAILED_ = true;
-      CHARTJS_LOADING_CALLBACKS_.forEach(function(cb){ cb(ok); });
+    script.onload = function(){
+      CHARTJS_LOADING_CALLBACKS_.forEach(function(cb){ cb(); });
       CHARTJS_LOADING_CALLBACKS_ = [];
-    }
-    var timer = setTimeout(function(){ settle_(false); }, 8000);
-    script.onload = function(){ settle_(true); };
-    script.onerror = function(){ settle_(false); };
+    };
     document.head.appendChild(script);
-  }
-
-  /** Sinkronkan snapshot #content SAAT INI ke PAGE_HTML_CACHE['dashboard'], supaya kalau
-   *  showPage('dashboard') terpanggil lagi oleh sebab apapun (kemungkinan besar akar bug
-   *  "dashboard reload 2x setelah login" yang dilaporkan — lihat catatan panjang di
-   *  paintDashboardKpis_), versi yang di-instant-paint dari cache SUDAH lengkap dgn data
-   *  panel Tren/Status PO/PO Terbaru/Leaderboard, BUKAN skeleton basi berisi spinner kosong
-   *  dari render pertama. Sebelumnya cache HANYA disentuh oleh paintDashboardKpis_ (baris KPI
-   *  saja) — keempat fungsi renderDash...Box_ ini mengubah DOM panel masing2 SECARA LANGSUNG
-   *  tanpa pernah menuliskan hasilnya balik ke cache, jadi cache selalu ketinggalan/basi
-   *  begitu salah satu panel async selesai belakangan dari skeleton awal. */
-  function syncDashboardPageCache_(){
-    if(STATE.currentPage !== 'dashboard') return;
-    var contentEl = document.getElementById('content');
-    if(!contentEl) return;
-    PAGE_HTML_CACHE['dashboard'] = contentEl.innerHTML;
-    persistPageCache_();
   }
 
   function renderDashPoStatusBox_(rows){
     var box = document.getElementById('dashPoStatusBox');
     if(!box) return;
-    if(!rows.length){ box.innerHTML = emptyState_('Belum ada PO', 'Data PO akan muncul di sini.', ICONS.transactions); syncDashboardPageCache_(); return; }
+    if(!rows.length){ box.innerHTML = emptyState_('Belum ada PO', 'Data PO akan muncul di sini.', ICONS.transactions); return; }
     var counts = {};
     rows.forEach(function(r){ var s = poDisplayStatus_(r); counts[s] = (counts[s]||0) + 1; });
     var max = Math.max.apply(null, Object.keys(counts).map(function(k){ return counts[k]; }));
@@ -8821,7 +8524,6 @@
         '<div class="po-status-bar-track"><div class="po-status-bar-fill" style="width:'+pct+'%;background:'+color+';"></div></div>' +
       '</div>';
     }).join('');
-    syncDashboardPageCache_();
   }
 
   /** Dipanggil saat user klik salah satu baris status di panel "Ringkasan Status PO"
@@ -8866,7 +8568,7 @@
   function renderDashRecentPoBox_(rows){
     var box = document.getElementById('dashRecentPoBox');
     if(!box) return;
-    if(!rows.length){ box.innerHTML = emptyState_('Belum ada PO', 'Data PO akan muncul di sini.', ICONS.transactions); syncDashboardPageCache_(); return; }
+    if(!rows.length){ box.innerHTML = emptyState_('Belum ada PO', 'Data PO akan muncul di sini.', ICONS.transactions); return; }
     var sorted = rows.slice().sort(function(a,b){ return new Date(b.CreatedAt) - new Date(a.CreatedAt); }).slice(0, 5);
     box.innerHTML = sorted.map(function(r){
       return '<div class="po-recent-row" onclick="goToPOWithIdFilter_(\''+escapeHtml(r.POID||'')+'\')">' +
@@ -8880,7 +8582,6 @@
         '</div>' +
       '</div>';
     }).join('');
-    syncDashboardPageCache_();
   }
 
   /** Jalankan jam & sapaan yang live-update setiap detik supaya "Selamat pagi/siang/sore/malam"
@@ -9071,11 +8772,6 @@
 
   function handleBackendError(err, contentEl){
     var msg = err && err.message ? err.message : String(err);
-    // FIX terkait guard PAGE_LOADING_ di showPage(): kalau request yang gagal ini yang
-    // sedang di-tunggu (pageKey masih PAGE_LOADING_), lepaskan supaya user BISA klik ulang
-    // menu yang sama untuk mencoba lagi — tanpa ini, sekali gagal, guard "sedang loading"
-    // akan menganggapnya masih pending selamanya dan memblokir percobaan ulang berikutnya.
-    PAGE_LOADING_ = null;
     if(msg.indexOf('SESSION_EXPIRED') !== -1){
       showToast('Sesi berakhir, silakan login kembali.', 'error');
       handleLogout();
@@ -9506,8 +9202,6 @@
   function loadNotifications_(){
     // Notifikasi (ikon lonceng) bukan sesuatu yang user tunggu secara aktif — selalu
     // tandai low-priority supaya tidak menyalip request yang dipicu langsung oleh klik user.
-    // (Hanya 1 google.script.run di sini, jadi matikan sinkron sudah aman — beda dengan
-    // preloadAllPages_ yang bisa memanggil renderer dgn call berantai, lihat catatan di sana.)
     window.__BG_LOW_PRIORITY__ = true;
     google.script.run.withSuccessHandler(function(list){
       NOTIF_STATE_.items = list || [];
@@ -9739,11 +9433,11 @@
 
   var CHAT_STATE_ = {
     myRoomId: null, myRoomStatus: 'OPEN', lastMessageId: null, panelOpen: false,
-    pollInterval: null, unreadPollInterval: null, readStatusPollInterval: null,
+    myPollInterval: null, readStatusPollInterval: null, unreadPollInterval: null,
     availabilityOnline: true, myLastSeenByStaff: false,
     inboxRooms: [], inboxFilter: 'OPEN', inboxActiveRoomId: null, inboxActiveRoomStatus: 'OPEN',
     inboxLastMessageId: null, quickReplies: null, quickReplyPopoverOpen: false,
-    inboxMessagesCache: {} // roomId -> array pesan terakhir yg pernah dimuat, utk instant-paint saat balik ke halaman ini
+    pollInterval: null // KHUSUS Inbox staff (renderLiveChatInbox) — lihat myPollInterval untuk widget chat Agent
   };
 
   var CHAT_ICONS_ = {
@@ -9765,21 +9459,22 @@
 
   /** Dipanggil dari bootApp() setelah login berhasil. Memasang floating bubble untuk Agent
       dan memulai polling badge unread untuk semua role (termasuk staff, untuk badge menu
-      sidebar "Live Chat"). */
+      sidebar "Live Chat"). NO-OP TOTAL kalau LIVECHAT_FEATURE_ENABLED_ = false — tidak ada
+      FAB yang dipasang, tidak ada satupun polling yang dimulai, nol request google.script.run
+      terkait chat yang pernah jalan sepanjang sesi. */
   function initLiveChat_(){
-    // HIDDEN MENU LIVE CHAT: dinonaktifkan total atas permintaan — fitur ini terbukti
-    // menambah beban (polling badge tiap 25 detik + preload halaman inbox-nya) ke kuota
-    // eksekusi paralel GAS yang sama dipakai semua menu lain, sehingga bikin app lemot.
-    // Early-return di sini membuat: (1) FAB Live Chat tidak pernah dibuat/muncul untuk
-    // AGENT, (2) refreshChatUnreadBadge_() tidak pernah dipanggil sama sekali -> tidak
-    // ada request getChatUnreadSummary ke backend, (3) tidak ada setInterval polling yang
-    // terpasang. Menu sidebar/bottom-nav untuk ADMIN/SUPERVISOR/MANAGER juga sudah dicabut
-    // dari MENU_ITEMS (lihat komentar di sana), jadi tidak ada request lain yang bisa
-    // memicu load Live Chat dari mana pun di app ini.
-    return;
+    if(!LIVECHAT_FEATURE_ENABLED_) return;
+    if(CHAT_STATE_.unreadPollInterval) clearInterval(CHAT_STATE_.unreadPollInterval);
+
+    if(STATE.user.role === 'AGENT'){
+      injectChatFab_();
+    }
+    refreshChatUnreadBadge_();
+    CHAT_STATE_.unreadPollInterval = setInterval(refreshChatUnreadBadge_, 15000);
   }
 
   function refreshChatUnreadBadge_(){
+    if(!LIVECHAT_FEATURE_ENABLED_) return; // lapis pertahanan terakhir: jangan pernah request ke backend soal chat kalau fitur dimatikan
     google.script.run.withSuccessHandler(function(res){
       var unread = (res && res.unread) || 0;
       var fabBadge = document.getElementById('chatFabBadge');
@@ -9906,6 +9601,7 @@
   }
 
   function openChatPanel_(){
+    if(!LIVECHAT_FEATURE_ENABLED_) return; // jaga-jaga: tombol pemicunya sendiri sudah tidak pernah dipasang (lihat initLiveChat_), ini extra safety
     var overlay = document.getElementById('chatPanelOverlay');
     overlay.classList.add('active');
     CHAT_STATE_.panelOpen = true;
@@ -9915,19 +9611,13 @@
       CHAT_STATE_.myRoomId = room.roomId;
       CHAT_STATE_.myRoomStatus = room.status || 'OPEN';
       loadMyChatMessages_(true);
-      if(CHAT_STATE_.pollInterval) clearInterval(CHAT_STATE_.pollInterval);
-      CHAT_STATE_.pollInterval = setInterval(function(){ loadMyChatMessages_(false); }, 8000);
+      if(CHAT_STATE_.myPollInterval) clearInterval(CHAT_STATE_.myPollInterval);
+      CHAT_STATE_.myPollInterval = setInterval(function(){ loadMyChatMessages_(false); }, 5000);
       // Poll ringan terpisah khusus status "sudah dibaca staff" untuk bubble milik Agent
       // sendiri — dipisah dari poll pesan supaya panggilan ini TIDAK ikut menandai room
       // sebagai sudah dibaca Agent (lihat getMyChatRoomReadStatus di backend).
       if(CHAT_STATE_.readStatusPollInterval) clearInterval(CHAT_STATE_.readStatusPollInterval);
-      // FIX "LOGIN LEMOT/TIMEOUT" (dikonfirmasi via console: CORS-block + 404 echo dari GAS —
-      // tanda kuota eksekusi paralel GAS Web App terlampaui): interval ini dinaikkan dari 4
-      // detik ke 7 detik. GAS Web App punya kuota concurrent execution GLOBAL per-project,
-      // jadi polling seagresif 4 detik dari SETIAP device yang buka panel chat menyumbang
-      // beban besar ke kuota yang sama dipakai bersama semua device/user lain — termasuk
-      // request login & load Dashboard device LAIN yang justru sedang aktif ditunggu usernya.
-      CHAT_STATE_.readStatusPollInterval = setInterval(refreshMyChatReadStatus_, 7000);
+      CHAT_STATE_.readStatusPollInterval = setInterval(refreshMyChatReadStatus_, 4000);
       refreshMyChatReadStatus_();
     }).withFailureHandler(function(e){ handleBackendError(e); }).getOrCreateMyChatRoom(STATE.token);
   }
@@ -9935,7 +9625,7 @@
   function closeChatPanel_(){
     document.getElementById('chatPanelOverlay').classList.remove('active');
     CHAT_STATE_.panelOpen = false;
-    if(CHAT_STATE_.pollInterval){ clearInterval(CHAT_STATE_.pollInterval); CHAT_STATE_.pollInterval = null; }
+    if(CHAT_STATE_.myPollInterval){ clearInterval(CHAT_STATE_.myPollInterval); CHAT_STATE_.myPollInterval = null; }
     if(CHAT_STATE_.readStatusPollInterval){ clearInterval(CHAT_STATE_.readStatusPollInterval); CHAT_STATE_.readStatusPollInterval = null; }
     refreshChatUnreadBadge_();
   }
@@ -10004,51 +9694,28 @@
     }
   }
 
-  function sendMyChatMessage_(overrideText, attachment){
+  function sendMyChatMessage_(attachment){
     var input = document.getElementById('chatInputEl');
-    // overrideText dipakai saat dipanggil dari confirmSendChatAttachment_() (caption dari
-    // modal preview lampiran) — kalau tidak diisi (pengiriman teks biasa), baca dari kolom
-    // input seperti biasa.
-    var text = (typeof overrideText === 'string' && attachment !== undefined) ? overrideText.trim() : input.value.trim();
+    var text = input.value.trim();
     if(!text && !attachment) return;
     if(!CHAT_STATE_.myRoomId) return;
-    if(attachment === undefined) { input.value = ''; autoGrowChatInput_(input); }
+    input.value = ''; autoGrowChatInput_(input);
     var btn = document.getElementById('chatSendBtn');
     btn.disabled = true;
 
-    // FIX "CHAT LAMBAT MUNCUL": bubble OPTIMISTIC ditambahkan LANGSUNG begitu tombol kirim
-    // ditekan (id sementara), bukan menunggu sendChatMessage() pulang dari server dulu — lihat
-    // catatan panjang yang sama di sendInboxMessage_ (versi staff). Ditukar diam-diam dengan
-    // data resmi begitu server konfirmasi sukses; dihapus + teks dikembalikan kalau gagal.
-    var tempId = 'temp-' + Date.now();
-    var el = document.getElementById('chatMessagesEl');
-    if(el.querySelector('.chat-empty-state')) el.innerHTML = '';
-    var optimisticMsg = {
-      messageId: tempId, senderRole: STATE.user.role, senderName: STATE.user.name,
-      messageText: text, createdAt: new Date().toISOString(),
-      attachmentUrl: attachment ? attachment.url : '', attachmentType: attachment ? (attachment.type || 'file') : '',
-      attachmentName: attachment ? (attachment.name || '') : ''
-    };
-    appendChatBubble_(el, optimisticMsg, true);
-    el.scrollTop = el.scrollHeight;
-
     google.script.run.withSuccessHandler(function(msg){
       btn.disabled = false;
-      var tempEl = el.querySelector('[data-message-id="'+tempId+'"]');
-      if(tempEl) tempEl.setAttribute('data-message-id', msg.messageId);
+      var el = document.getElementById('chatMessagesEl');
+      if(el.querySelector('.chat-empty-state')) el.innerHTML = '';
+      appendChatBubble_(el, msg, true);
       CHAT_STATE_.lastMessageId = msg.messageId;
       CHAT_STATE_.myLastSeenByStaff = false; // pesan baru terkirim, belum tentu sudah dibaca staff
+      el.scrollTop = el.scrollHeight;
       if(CHAT_STATE_.myRoomStatus === 'CLOSED'){
         CHAT_STATE_.myRoomStatus = 'OPEN'; // auto-reopen sudah terjadi di backend
         updateMyChatInputState_();
       }
-    }).withFailureHandler(function(e){
-      btn.disabled = false;
-      input.value = text;
-      var tempEl = el.querySelector('[data-message-id="'+tempId+'"]');
-      if(tempEl) tempEl.remove();
-      handleBackendError(e);
-    }).sendChatMessage(STATE.token, CHAT_STATE_.myRoomId, text, attachment || null);
+    }).withFailureHandler(function(e){ btn.disabled = false; input.value = text; handleBackendError(e); }).sendChatMessage(STATE.token, CHAT_STATE_.myRoomId, text, attachment || null);
   }
 
   function handleChatInputKeydown_(e){
@@ -10056,10 +9723,10 @@
   }
 
   /** Dipanggil saat user memilih file di tombol lampiran (baik dari widget Agent maupun
-   *  inbox staff — dibedakan lewat parameter isInbox). BARU: alurnya sekarang tidak langsung
-   *  upload+kirim — file yang dipilih ditampilkan dulu di modal preview (ala WhatsApp), user
-   *  bisa menambahkan caption/teks, baru menekan "Kirim" untuk benar-benar upload ke Drive
-   *  (uploadChatAttachment) lalu mengirim pesannya (sendChatMessage/sendInboxMessage). */
+   *  inbox staff — dibedakan lewat parameter isInbox). Alurnya: validasi ukuran/tipe di
+   *  sisi klien dulu (respons cepat, tanpa nunggu roundtrip server), upload ke Drive lewat
+   *  uploadChatAttachment, lalu kirim pesan (dengan teks yang sedang diketik, kalau ada)
+   *  disertai info lampiran lewat sendChatMessage/sendInboxMessage. */
   function handleChatAttachSelected_(inputEl, isInbox){
     var file = inputEl.files && inputEl.files[0];
     if(!file) return;
@@ -10076,89 +9743,19 @@
     }
     var roomId = isInbox ? CHAT_STATE_.inboxActiveRoomId : CHAT_STATE_.myRoomId;
     if(!roomId){ inputEl.value = ''; return; }
-    inputEl.value = ''; // reset input file supaya bisa pilih file sama lagi nanti
-    openChatAttachPreview_(file, isInbox);
-  }
 
-  var CHAT_ATTACH_PREVIEW_STATE_ = null; // { file, isInbox, objectUrl }
-
-  /** Modal preview lampiran sebelum dikirim — mirip alur WhatsApp: tampilkan gambar/nama
-   *  file dulu, sediakan kolom caption, baru upload+kirim beneran saat tombol Kirim ditekan. */
-  function openChatAttachPreview_(file, isInbox){
-    closeChatAttachPreview_(); // jaga2 kalau ada sisa modal sebelumnya
-    var isImage = file.type.indexOf('image/') === 0;
-    var objectUrl = isImage ? URL.createObjectURL(file) : null;
-    CHAT_ATTACH_PREVIEW_STATE_ = { file: file, isInbox: isInbox, objectUrl: objectUrl };
-
-    var overlay = document.createElement('div');
-    overlay.id = 'chatAttachPreviewOverlay';
-    overlay.className = 'chat-attach-preview-overlay';
-    overlay.innerHTML =
-      '<div class="chat-attach-preview-modal">' +
-        '<div class="chat-attach-preview-header">' +
-          '<span>Kirim ' + (isImage ? 'Gambar' : 'File') + '</span>' +
-          '<button type="button" class="chat-panel-close" onclick="closeChatAttachPreview_()" aria-label="Batal">' + CHAT_ICONS_.close + '</button>' +
-        '</div>' +
-        '<div class="chat-attach-preview-body">' +
-          (isImage
-            ? '<img src="' + objectUrl + '" class="chat-attach-preview-img" alt="Preview gambar">'
-            : '<div class="chat-attachment-file chat-attach-preview-file">' + CHAT_ICONS_.filePdf +
-              '<span class="chat-attachment-file-name">' + escapeHtml(file.name || 'Dokumen.pdf') + '</span></div>'
-          ) +
-        '</div>' +
-        '<div class="chat-attach-preview-footer">' +
-          '<input type="text" id="chatAttachCaptionInput" placeholder="Tambahkan keterangan (opsional)..." maxlength="500">' +
-          '<button type="button" class="chat-send-btn" id="chatAttachPreviewSendBtn" onclick="confirmSendChatAttachment_()" aria-label="Kirim">' + CHAT_ICONS_.send + '</button>' +
-        '</div>' +
-      '</div>';
-    document.body.appendChild(overlay);
-    // FIX "KLIK DI LUAR GAMBAR TIDAK BISA TUTUP": sebelumnya modal ini cuma bisa ditutup
-    // lewat tombol X (yang ternyata juga tidak kelihatan — lihat fix CSS terkait) atau
-    // tombol Kirim, jadi kalau user berubah pikiran, tidak ada jalan keluar sama sekali
-    // selain paksa reload halaman. Klik di area gelap overlay (bukan di dalam modal
-    // putihnya) sekarang menutup modal, seperti pola modal lain di app ini.
-    overlay.addEventListener('click', function(e){
-      if(e.target === overlay) closeChatAttachPreview_();
-    });
-    setTimeout(function(){
-      overlay.classList.add('open');
-      var capEl = document.getElementById('chatAttachCaptionInput');
-      if(capEl) capEl.focus();
-    }, 10);
-  }
-
-  function closeChatAttachPreview_(){
-    var overlay = document.getElementById('chatAttachPreviewOverlay');
-    if(overlay) overlay.remove();
-    if(CHAT_ATTACH_PREVIEW_STATE_ && CHAT_ATTACH_PREVIEW_STATE_.objectUrl){
-      try{ URL.revokeObjectURL(CHAT_ATTACH_PREVIEW_STATE_.objectUrl); }catch(e){}
-    }
-    CHAT_ATTACH_PREVIEW_STATE_ = null;
-  }
-
-  /** Dipanggil saat user menekan tombol Kirim di modal preview lampiran — baru di titik INI
-   *  file benar2 di-upload ke Drive (uploadChatAttachment), lalu pesan dikirim beserta caption
-   *  yang sempat diketik (kalau ada). */
-  function confirmSendChatAttachment_(){
-    if(!CHAT_ATTACH_PREVIEW_STATE_) return;
-    var st = CHAT_ATTACH_PREVIEW_STATE_;
-    var isInbox = st.isInbox;
-    var file = st.file;
-    var capEl = document.getElementById('chatAttachCaptionInput');
-    var caption = capEl ? capEl.value.trim() : '';
-    var roomId = isInbox ? CHAT_STATE_.inboxActiveRoomId : CHAT_STATE_.myRoomId;
-    if(!roomId){ closeChatAttachPreview_(); return; }
-
-    var sendBtn = document.getElementById('chatAttachPreviewSendBtn');
+    var sendBtnId = isInbox ? 'chatInboxSendBtn' : 'chatSendBtn';
+    var sendBtn = document.getElementById(sendBtnId);
     if(sendBtn) sendBtn.disabled = true;
-    if(capEl) capEl.disabled = true;
+    showToast('Mengunggah lampiran...', 'info');
 
     fileToBase64_(file, function(fileObj){
       google.script.run.withSuccessHandler(function(attachment){
-        closeChatAttachPreview_();
-        if(isInbox){ sendInboxMessage_(attachment, caption); } else { sendMyChatMessage_(caption, attachment); }
+        inputEl.value = '';
+        if(isInbox){ sendInboxMessage_(attachment); } else { sendMyChatMessage_(attachment); }
       }).withFailureHandler(function(e){
-        closeChatAttachPreview_();
+        if(sendBtn) sendBtn.disabled = false;
+        inputEl.value = '';
         handleBackendError(e);
       }).uploadChatAttachment(STATE.token, roomId, fileObj);
     });
@@ -10220,34 +9817,13 @@
     container.appendChild(row);
   }
 
-  /** Dipanggil lewat onerror="" saat <img> lampiran gambar chat gagal dimuat (link Drive
-   *  kadang belum siap/minta konfirmasi scan sesaat setelah upload). Mengganti <img> yang
-   *  gagal dengan kartu "Buka Gambar" yang rapi — tetap bisa diklik utk buka link aslinya.
-   *  DIPISAH jadi fungsi sendiri (bukan inline string di dalam renderChatBubbleContent_)
-   *  supaya tidak rawan salah escape kutip/HTML seperti yang sempat terjadi sebelumnya. */
-  function handleChatImgError_(imgEl){
-    var link = imgEl.closest('.chat-attachment-image-link');
-    if(!link) return;
-    link.classList.add('chat-attachment-image-broken');
-    link.innerHTML = CHAT_ICONS_.filePdf + '<span class="chat-attachment-file-name">Buka Gambar</span>';
-    link.classList.remove('chat-attachment-image-link');
-    link.classList.add('chat-attachment-file');
-  }
-
   /** Render isi bubble: teks biasa, atau lampiran gambar/PDF (lihat fitur kirim file). */
   function renderChatBubbleContent_(m){
     var html = '';
     if(m.attachmentUrl){
       if(m.attachmentType === 'image'){
-        // FIX "gambar cuma tampil link, tidak preview": URL Drive uc?export=view/thumbnail kadang
-        // ditolak/lambat untuk hotlink <img> langsung (terutama sesaat setelah upload, atau
-        // kalau Drive minta konfirmasi/scan). handleChatImgError_() (fungsi terpisah, BUKAN
-        // inline string rumit — versi sebelumnya sempat salah escape dan malah menampilkan kode
-        // JS mentah "'Buka Gambar')}(>" di layar) otomatis mengganti tampilan jadi kartu
-        // "Buka Gambar" begitu <img> gagal dimuat, supaya tetap rapi & tetap bisa dibuka walau
-        // thumbnail-nya gagal.
         html += '<a href="' + escapeHtml(m.attachmentUrl) + '" target="_blank" rel="noopener" class="chat-attachment-image-link">' +
-          '<img src="' + escapeHtml(m.attachmentUrl) + '" class="chat-attachment-image" alt="' + escapeHtml(m.attachmentName || 'Gambar') + '" loading="lazy" onerror="handleChatImgError_(this)"></a>';
+          '<img src="' + escapeHtml(m.attachmentUrl) + '" class="chat-attachment-image" alt="' + escapeHtml(m.attachmentName || 'Gambar') + '"></a>';
       } else {
         html += '<a href="' + escapeHtml(m.attachmentUrl) + '" target="_blank" rel="noopener" class="chat-attachment-file">' +
           CHAT_ICONS_.filePdf +
@@ -10300,36 +9876,8 @@
   // ---------- STAFF (ADMIN/SUPERVISOR/MANAGER): halaman inbox "Live Chat" ----------
 
   function renderLiveChatInbox(){
-    // FIX BUG "LOGIN/REFRESH SEMPAT NAMPAKKAN LIVE CHAT SEBELUM DASHBOARD": beda dari
-    // hampir semua render*() halaman lain (yang menulis lewat paintPage_(), sudah otomatis
-    // menjaga diri lewat LAST_PAINTED_PAGE_/STATE.currentPage), fungsi ini SELALU langsung
-    // menulis ke #content tanpa penjagaan. preloadAllPages_() (dipanggil ~1.2 detik setelah
-    // bootApp menampilkan Dashboard, untuk warm-cache semua menu di background) ikut
-    // memanggil renderLiveChatInbox() ini walau user masih di Dashboard — akibatnya #content
-    // KETIMPA jadi Live Chat sesaat, baru "kembali" begitu render halaman lain berikutnya
-    // jalan. Guard ini menghentikan fungsi lebih dulu kalau BUKAN user yang benar-benar
-    // sedang membuka halaman Live Chat (showPage('livechat') selalu set STATE.currentPage
-    // TEPAT sebelum memanggil ini, jadi guard tidak mengganggu pemakaian normal).
-    if(STATE.currentPage !== 'livechat') return;
+    if(!LIVECHAT_FEATURE_ENABLED_){ showPage('dashboard'); return; } // jaga-jaga: fitur dimatikan total, jangan render apapun ataupun mulai polling
     var content = document.getElementById('content');
-    // FIX BUG "TOMBOL BACK/APAPUN DI LIVE CHAT KADANG TIDAK RESPON": showPage() memasang
-    // class 'content-loading-lock' (pointer-events:none sementara, lihat CSS) SEBELUM
-    // memanggil render halaman manapun, lalu MELEPASNYA lewat paintPage_() setelah selesai.
-    // Tapi fungsi ini TIDAK PERNAH memanggil paintPage_() (ia menulis ke #content langsung),
-    // jadi lock itu nyangkut aktif sampai safety-timer 4 DETIK kemudian baru otomatis lepas
-    // — kalau user keburu tap back/tombol apapun dalam 4 detik itu, tap-nya tidak kena apa-apa.
-    // Lepas manual di sini, sama seperti yang seharusnya dilakukan paintPage_().
-    content.classList.remove('content-loading-lock');
-    clearTimeout(CONTENT_LOCK_SAFETY_TIMER_);
-    // FIX BUG "BALIK KE MENU LIVE CHAT SELALU LOADING ULANG": sebelumnya daftar
-    // percakapan & isi chat SELALU dibangun dari nol (spinner) setiap renderLiveChatInbox()
-    // dipanggil — padahal CHAT_STATE_.inboxRooms/inboxMessagesCache (dan roomId yang lagi
-    // dibuka) tetap hidup di memory selama app belum di-reload, TIDAK PERNAH direset saat
-    // pindah menu. Sekarang: kalau sudah pernah ada data tersimpan, langsung dilukis instan
-    // (tanpa spinner) dari cache itu dulu, baru menyusul di-refresh diam-diam di background
-    // lewat loadChatRoomList_()/loadInboxMessages_() di bawah — user langsung lihat data
-    // lama sambil menunggu data terbaru datang, bukan layar kosong ber-spinner lagi.
-    var hasCachedRooms = CHAT_STATE_.inboxRooms && CHAT_STATE_.inboxRooms.length > 0;
     content.innerHTML =
       '<div class="chat-inbox" id="chatInboxEl">' +
         '<div class="chat-room-list" id="chatRoomListEl">' +
@@ -10340,44 +9888,25 @@
               '<button type="button" class="chat-room-filter-tab" data-filter="ALL" onclick="setChatRoomFilter_(\'ALL\')">Semua</button>' +
             '</div>' +
           '</div>' +
-          '<div id="chatRoomListItems">' + (hasCachedRooms ? '' : '<div class="spinner"></div>') + '</div>' +
+          '<div id="chatRoomListItems"><div class="spinner"></div></div>' +
         '</div>' +
         '<div class="chat-room-detail" id="chatRoomDetailEl">' +
           '<div class="chat-inbox-empty">' + CHAT_ICONS_.chatEmpty + '<span>Pilih percakapan untuk mulai membalas.</span></div>' +
         '</div>' +
       '</div>';
     CHAT_STATE_.inboxFilter = 'OPEN';
-    if(hasCachedRooms) renderChatRoomListItems_(); // instant paint dari cache
-    // Kalau sebelumnya ada room yang sedang dibuka (user cuma pindah menu, belum benar-benar
-    // "keluar" dari percakapan itu), buka lagi persis room yang sama — instan dari cache
-    // pesan kalau ada, sekaligus me-refresh keduanya di background lewat openInboxRoom_.
-    var roomToReopen = CHAT_STATE_.inboxActiveRoomId;
-    CHAT_STATE_.inboxActiveRoomId = null; // biar openInboxRoom_ di bawah tidak dianggap "room yang sama, skip"
-    if(roomToReopen){ openInboxRoom_(roomToReopen); } else { loadChatRoomList_(); }
+    loadChatRoomList_();
     if(CHAT_STATE_.pollInterval) clearInterval(CHAT_STATE_.pollInterval);
-    // Jeda 6 detik SEBELUM polling pertama (bukan langsung nembak di detik ke-0) — supaya
-    // tidak ikut menumpuk dengan request awal (loadChatRoomList_/openInboxRoom_/quickReplies
-    // di atas) yang baru saja ditembak begitu halaman ini dibuka, apalagi kalau bertepatan
-    // dengan preloadAllPages_ background yang masih berjalan.
     CHAT_STATE_.pollInterval = setInterval(function(){
       loadChatRoomList_();
       if(CHAT_STATE_.inboxActiveRoomId) loadInboxMessages_(false);
-    }, 9000);
+    }, 6000);
     // Quick reply staff: dimuat sekali & dicache di CHAT_STATE_ (bukan per-buka room) karena
     // isinya sama untuk semua percakapan dan jarang berubah — cukup diperbarui saat halaman
     // Inbox dibuka ulang (mis. pindah menu lalu balik lagi).
-    // FIX "LEMOT BUKA CHAT DI HP": request ini TIDAK URGENT (cuma isi popover Quick Reply yang
-    // belum tentu dibuka user) tapi sebelumnya ditembak BERSAMAAN dengan loadInboxMessages_/
-    // loadChatRoomList_ di atas — di koneksi HP yang lambat, ketiganya rebutan bandwidth
-    // sekaligus sehingga isi chat (yang paling penting dilihat user duluan) ikut molor.
-    // Ditunda 900ms supaya request pesan chat & daftar percakapan dapat "jalan duluan" tanpa
-    // saingan di koneksi yang sama.
-    setTimeout(function(){
-      if(STATE.currentPage !== 'livechat') return; // user sudah pindah halaman, tidak perlu lagi
-      google.script.run.withSuccessHandler(function(settings){
-        CHAT_STATE_.quickReplies = (settings && settings.quickReplies) || [];
-      }).withFailureHandler(function(){ CHAT_STATE_.quickReplies = []; }).getChatSettings(STATE.token);
-    }, 900);
+    google.script.run.withSuccessHandler(function(settings){
+      CHAT_STATE_.quickReplies = (settings && settings.quickReplies) || [];
+    }).withFailureHandler(function(){ CHAT_STATE_.quickReplies = []; }).getChatSettings(STATE.token);
   }
 
   function setChatRoomFilter_(filter){
@@ -10424,12 +9953,6 @@
   }
 
   function openInboxRoom_(roomId){
-    if(CHAT_STATE_.inboxActiveRoomId === roomId){
-      // Sudah kebuka persis room ini (mis. dari renderLiveChatInbox() yang reopen otomatis
-      // lalu user klik ulang room yg sama di list) — tidak perlu bangun ulang shell-nya.
-      document.getElementById('chatInboxEl').classList.add('room-open');
-      return;
-    }
     CHAT_STATE_.inboxActiveRoomId = roomId;
     CHAT_STATE_.inboxLastMessageId = null;
     CHAT_STATE_.quickReplyPopoverOpen = false; // reset supaya popover tidak nyangkut terbuka dari room sebelumnya
@@ -10437,34 +9960,20 @@
 
     var room = CHAT_STATE_.inboxRooms.filter(function(r){ return r.roomId === roomId; })[0] || {};
     CHAT_STATE_.inboxActiveRoomStatus = room.status || 'OPEN';
-    // FIX CACHE LIVE CHAT: kalau room ini sudah pernah dimuat sebelumnya di sesi ini
-    // (CHAT_STATE_.inboxMessagesCache), lukis dulu bubble-bubble lama itu INSTAN tanpa
-    // spinner, sambil loadInboxMessages_(true) di bawah tetap jalan diam-diam utk
-    // menyegarkan/melengkapinya dari server.
-    renderInboxRoomDetailShell_(room, CHAT_STATE_.inboxMessagesCache[roomId]);
+    renderInboxRoomDetailShell_(room);
     loadInboxMessages_(true);
-    // FIX "LEMOT BUKA CHAT DI HP": loadChatRoomList_() (refresh badge unread & highlight list)
-    // BUKAN yang paling penting dilihat user saat ini — yang paling ditunggu adalah ISI PESAN
-    // chat yang barusan diklik (loadInboxMessages_ di atas). Ditunda dikit (400ms) supaya
-    // request pesan chat itu dapat jalan duluan tanpa rebutan koneksi di HP yang lambat.
-    setTimeout(function(){
-      if(STATE.currentPage === 'livechat') loadChatRoomList_();
-    }, 400);
+    loadChatRoomList_(); // refresh supaya badge unread & highlight active ter-update
   }
 
-  function renderInboxRoomDetailShell_(room, cachedMessages){
+  function renderInboxRoomDetailShell_(room){
     var detailEl = document.getElementById('chatRoomDetailEl');
     var isClosed = room.status === 'CLOSED';
-    var messagesInnerHtml = '<div class="spinner"></div>';
-    if(cachedMessages && cachedMessages.length){
-      messagesInnerHtml = ''; // diisi lewat appendChatBubble_ setelah elemen ada di DOM, lihat di bawah
-    }
     detailEl.innerHTML =
       '<div class="chat-room-detail-header">' +
         '<button type="button" class="chat-room-detail-back" onclick="closeInboxRoom_()" aria-label="Kembali">' + CHAT_ICONS_.back + '</button>' +
         '<div class="chat-room-detail-title-wrap">' +
           '<div class="chat-room-detail-title">' +
-            '<span class="chat-room-detail-name">' + escapeHtml(room.agentName || room.agentId || '-') + '</span>' +
+            escapeHtml(room.agentName || room.agentId || '-') +
             '<span class="chat-status-badge ' + (isClosed ? 'closed' : 'open') + '">' + (isClosed ? 'Selesai' : 'Aktif') + '</span>' +
           '</div>' +
           '<div class="chat-room-detail-sub">ID Agent: ' + escapeHtml(room.agentId || '-') + '</div>' +
@@ -10473,7 +9982,7 @@
           ? '<button type="button" class="chat-end-btn is-reopen" onclick="reopenInboxRoom_(\'' + room.roomId + '\')">' + CHAT_ICONS_.rotate + 'Buka Lagi</button>'
           : '<button type="button" class="chat-end-btn" onclick="confirmEndChat_(\'' + room.roomId + '\')">' + CHAT_ICONS_.checkCircle + 'Selesaikan</button>') +
       '</div>' +
-      '<div class="chat-inbox-messages" id="chatInboxMessagesEl">' + messagesInnerHtml + '</div>' +
+      '<div class="chat-inbox-messages" id="chatInboxMessagesEl"><div class="spinner"></div></div>' +
       '<div class="chat-inbox-input-bar" id="chatInboxInputBarEl">' +
         '<div class="chat-quickreply-popover" id="chatQuickReplyPopover"></div>' +
         '<input type="file" id="chatInboxAttachInput" accept="image/png,image/jpeg,image/webp,application/pdf" style="display:none" onchange="handleChatAttachSelected_(this,true)">' +
@@ -10482,13 +9991,6 @@
         '<textarea id="chatInboxInputEl" rows="1" placeholder="Balas sebagai ' + roleLabel_(STATE.user.role) + '..." onkeydown="handleInboxInputKeydown_(event)" oninput="autoGrowChatInput_(this)"></textarea>' +
         '<button type="button" class="chat-send-btn" id="chatInboxSendBtn" onclick="sendInboxMessage_()" aria-label="Kirim">' + CHAT_ICONS_.send + '</button>' +
       '</div>';
-    if(cachedMessages && cachedMessages.length){
-      var el = document.getElementById('chatInboxMessagesEl');
-      cachedMessages.forEach(function(m){
-        appendChatBubble_(el, m, m.senderRole !== 'AGENT' && m.senderRole !== 'SYSTEM');
-      });
-      el.scrollTop = el.scrollHeight;
-    }
   }
 
   /** Buka/tutup popover daftar Quick Reply di atas kolom ketik staff. Isi diambil dari
@@ -10536,7 +10038,6 @@
       if(isFirstLoad) { el.innerHTML = ''; el.removeAttribute('data-last-date-key'); }
       if(isFirstLoad && messages.length === 0){
         el.innerHTML = '<div class="chat-inbox-empty">' + CHAT_ICONS_.chatEmpty + '<span>Belum ada pesan di percakapan ini.</span></div>';
-        CHAT_STATE_.inboxMessagesCache[roomId] = [];
       } else {
         var wasNearBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) < 60;
         messages.forEach(function(m){
@@ -10544,62 +10045,29 @@
           CHAT_STATE_.inboxLastMessageId = m.messageId;
         });
         if(isFirstLoad || wasNearBottom) el.scrollTop = el.scrollHeight;
-        // Simpan/lengkapi cache pesan room ini (lihat CHAT_STATE_.inboxMessagesCache) —
-        // dipakai renderInboxRoomDetailShell_ utk instant-paint kalau room ini dibuka lagi
-        // nanti tanpa perlu nunggu round-trip ke server dulu.
-        if(isFirstLoad) CHAT_STATE_.inboxMessagesCache[roomId] = messages.slice();
-        else CHAT_STATE_.inboxMessagesCache[roomId] = (CHAT_STATE_.inboxMessagesCache[roomId] || []).concat(messages);
       }
     }).withFailureHandler(function(e){ if(isFirstLoad) handleBackendError(e); }).getChatMessages(STATE.token, roomId, isFirstLoad ? null : CHAT_STATE_.inboxLastMessageId);
   }
 
-  function sendInboxMessage_(attachment, overrideText){
+  function sendInboxMessage_(attachment){
     var roomId = CHAT_STATE_.inboxActiveRoomId;
     var input = document.getElementById('chatInboxInputEl');
-    // overrideText dipakai saat dipanggil dari confirmSendChatAttachment_() (caption dari
-    // modal preview lampiran) — kalau tidak diisi, baca dari kolom input seperti biasa.
-    var text = (typeof overrideText === 'string') ? overrideText.trim() : input.value.trim();
+    var text = input.value.trim();
     if(!text && !attachment) return;
     if(!roomId) return;
-    if(typeof overrideText !== 'string'){ input.value = ''; autoGrowChatInput_(input); }
+    input.value = ''; autoGrowChatInput_(input);
     var btn = document.getElementById('chatInboxSendBtn');
     btn.disabled = true;
 
-    // FIX "CHAT LAMBAT MUNCUL": sebelumnya bubble baru ditambahkan ke layar SETELAH
-    // sendChatMessage() pulang dari server (nunggu full round-trip GAS — bisa 1-3 detik
-    // di koneksi biasa), jadi ada jeda kelihatan "kosong" antara klik kirim dan bubble
-    // muncul. Sekarang bubble OPTIMISTIC ditambahkan LANGSUNG begitu tombol kirim ditekan
-    // (pakai id sementara), memberi kesan instan seperti WhatsApp — begitu server benar2
-    // konfirmasi sukses, bubble sementara itu ditukar diam-diam dengan data asli (messageId
-    // & timestamp resmi dari server); kalau gagal, bubble sementara dihapus & teks
-    // dikembalikan ke kolom supaya user tahu harus kirim ulang.
-    var tempId = 'temp-' + Date.now();
-    var el = document.getElementById('chatInboxMessagesEl');
-    if(el.querySelector('.chat-inbox-empty')) el.innerHTML = '';
-    var optimisticMsg = {
-      messageId: tempId, senderRole: STATE.user.role, senderName: STATE.user.name,
-      messageText: text, createdAt: new Date().toISOString(),
-      attachmentUrl: attachment ? attachment.url : '', attachmentType: attachment ? (attachment.type || 'file') : '',
-      attachmentName: attachment ? (attachment.name || '') : ''
-    };
-    appendChatBubble_(el, optimisticMsg, true);
-    el.scrollTop = el.scrollHeight;
-
     google.script.run.withSuccessHandler(function(msg){
       btn.disabled = false;
-      // Tukar bubble sementara (temp-...) dengan versi resmi dari server (messageId asli).
-      var tempEl = el.querySelector('[data-message-id="'+tempId+'"]');
-      if(tempEl) tempEl.setAttribute('data-message-id', msg.messageId);
+      var el = document.getElementById('chatInboxMessagesEl');
+      if(el.querySelector('.chat-inbox-empty')) el.innerHTML = '';
+      appendChatBubble_(el, msg, true);
       CHAT_STATE_.inboxLastMessageId = msg.messageId;
-      CHAT_STATE_.inboxMessagesCache[roomId] = (CHAT_STATE_.inboxMessagesCache[roomId] || []).concat([msg]);
+      el.scrollTop = el.scrollHeight;
       loadChatRoomList_();
-    }).withFailureHandler(function(e){
-      btn.disabled = false;
-      input.value = text;
-      var tempEl = el.querySelector('[data-message-id="'+tempId+'"]');
-      if(tempEl) tempEl.remove();
-      handleBackendError(e);
-    }).sendChatMessage(STATE.token, roomId, text, attachment || null);
+    }).withFailureHandler(function(e){ btn.disabled = false; input.value = text; handleBackendError(e); }).sendChatMessage(STATE.token, roomId, text, attachment || null);
   }
 
   function handleInboxInputKeydown_(e){
@@ -10665,28 +10133,7 @@
   // =============================================================
   var MOBILE_KEYBOARD_OPEN_ = false;
 
-  // FIX TOPBAR HILANG + KOLOM KETIK IKUT "KETARIK" SAAT KEYBOARD MUNCUL (mobile, chat):
-  // Root cause-nya BUKAN CSS .chat-inbox/.topbar (itu sudah benar, position:fixed dipatok
-  // ke viewport) — tapi Android/Chrome kadang memaksa SELURUH DOKUMEN (window) ikut
-  // discroll begitu textarea balasan difokus, walau html/body/.app-shell semuanya sudah
-  // overflow:hidden. ".chat-inbox mengurus scroll-nya sendiri" tidak cukup untuk mencegah
-  // ini karena perilaku auto-scroll-into-view browser ini bekerja di level WINDOW, bukan
-  // level elemen — begitu window ikut bergeser, topbar (yang statis di dalam .main-area)
-  // ikut terdorong ke luar layar ke atas, dan .chat-inbox (position:fixed, dipatok relatif
-  // ke LAYOUT viewport) ikut kelihatan bergeser juga kalau browser lawas tidak konsisten
-  // menyinkronkan fixed-position dengan visual viewport. FIX: paksa window tetap di (0,0)
-  // setiap kali ada indikasi ia bergeser (event scroll di window ATAU visualViewport) —
-  // karena app ini memang TIDAK PERNAH butuh scroll di level window sama sekali (semua
-  // scroll internal ditangani container masing2 seperti .chat-inbox-messages/.main-area).
-  function snapWindowScrollToZero_(){
-    if (window.scrollX !== 0 || window.scrollY !== 0) {
-      window.scrollTo(0, 0);
-    }
-  }
-  window.addEventListener('scroll', snapWindowScrollToZero_, { passive:true });
-
   function syncMobileViewportHeight_(){
-    snapWindowScrollToZero_();
     var vv = window.visualViewport;
     var vh = vv ? vv.height : window.innerHeight;
     document.documentElement.style.setProperty('--app-vvh', vh + 'px');
@@ -10724,16 +10171,12 @@
   // yang sudah benar (di situ ini jadi no-op karena nilainya sama).
   document.addEventListener('focusin', function(e){
     if (e.target && (e.target.id === 'chatInboxInputEl' || e.target.id === 'chatInputEl')) {
-      snapWindowScrollToZero_();
       setTimeout(syncMobileViewportHeight_, 50);
-      setTimeout(syncMobileViewportHeight_, 150);
       setTimeout(syncMobileViewportHeight_, 350); // browser lambat menyesuaikan viewport saat animasi keyboard belum kelar
-      setTimeout(syncMobileViewportHeight_, 600); // jaga2 kalau animasi keyboard di HP tertentu lebih lambat lagi
     }
   });
   document.addEventListener('focusout', function(e){
     if (e.target && (e.target.id === 'chatInboxInputEl' || e.target.id === 'chatInputEl')) {
-      snapWindowScrollToZero_();
       setTimeout(syncMobileViewportHeight_, 50);
       setTimeout(syncMobileViewportHeight_, 350);
     }
