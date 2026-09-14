@@ -760,6 +760,66 @@
   }
   var NOTIF_POLL_INTERVAL_ = null;
 
+  // =============================================================
+  // PAUSE POLLING SAAT TAB/APP DI-BACKGROUND (Page Visibility API)
+  // -------------------------------------------------------------
+  // AKAR MASALAH "LOGIN LEMOT/TIMEOUT, DIAGRAM GA MUNCUL" (dikonfirmasi via console log
+  // user: CORS blocked + 404 dari script.googleusercontent.com/.../echo bersamaan): GAS Web
+  // App punya KUOTA EKSEKUSI PARALEL GLOBAL per-project Google (bukan per-user/per-device,
+  // dan ini BATASAN PLATFORM Google, bukan sesuatu yang bisa dihapus total dari kode kita).
+  // Sebelum fix ini, app punya SAMPAI 4 setInterval polling background yang terus jalan
+  // TANPA PERNAH BERHENTI meski tab di-minimize, layar HP dikunci, atau user pindah ke app
+  // lain (PWA tetap "hidup" di background beberapa saat): notif tiap 120 detik, chat unread
+  // badge tiap 25 detik, chat messages tiap 5-6 detik, chat read-status tiap 4 detik. Kalau
+  // 2+ device/tab aktif bersamaan (mis. Admin buka Live Chat di desktop SAAT Agent yang sama
+  // login di HP — persis skenario yang dilaporkan), total tembakan request per menit ke
+  // project GAS yang SAMA membengkak signifikan, kebanyakan dari tab yang bahkan TIDAK
+  // SEDANG DILIHAT siapa pun — inilah yang menghabiskan kuota eksekusi paralel dan memicu
+  // GAS mengalihkan/menolak eksekusi lain (termasuk login & load Dashboard) yang MEMANG
+  // sedang ditunggu aktif oleh user, muncul sebagai TIMEOUT/404/CORS-block acak.
+  // FIX: begitu tab/PWA di-background (document.hidden true), SEMUA interval polling
+  // dihentikan total. Begitu kembali terlihat, semuanya dilanjutkan lagi DENGAN SEGERA
+  // memanggil sekali secara langsung (supaya data yang mungkin basi selama di-background
+  // langsung ter-refresh), baru interval-nya dipasang ulang. Ini murni pengurangan beban
+  // SIA-SIA ke kuota bersama — tidak mengubah pengalaman user yang SEDANG aktif memakai app
+  // sama sekali, karena begitu tab dibuka lagi, semua langsung fresh seperti biasa.
+  var POLLING_PAUSED_FOR_VISIBILITY_ = false;
+  document.addEventListener('visibilitychange', function(){
+    if(document.hidden){
+      POLLING_PAUSED_FOR_VISIBILITY_ = true;
+      if(NOTIF_POLL_INTERVAL_){ clearInterval(NOTIF_POLL_INTERVAL_); NOTIF_POLL_INTERVAL_ = null; }
+      if(typeof CHAT_STATE_ === 'undefined') return;
+      if(CHAT_STATE_.unreadPollInterval){ clearInterval(CHAT_STATE_.unreadPollInterval); CHAT_STATE_.unreadPollInterval = null; }
+      if(CHAT_STATE_.pollInterval){ clearInterval(CHAT_STATE_.pollInterval); CHAT_STATE_.pollInterval = null; }
+      if(CHAT_STATE_.readStatusPollInterval){ clearInterval(CHAT_STATE_.readStatusPollInterval); CHAT_STATE_.readStatusPollInterval = null; }
+    } else if(POLLING_PAUSED_FOR_VISIBILITY_){
+      POLLING_PAUSED_FOR_VISIBILITY_ = false;
+      if(!STATE.token) return; // belum login, tidak ada apapun yang perlu dipoll
+      // Refresh sekali segera (data mungkin sudah basi selama di-background), baru pasang
+      // ulang interval masing-masing — meniru persis interval asal tiap fitur.
+      loadNotifications_();
+      NOTIF_POLL_INTERVAL_ = setInterval(loadNotifications_, 120000);
+      if(typeof CHAT_STATE_ === 'undefined' || !STATE.user) return;
+      refreshChatUnreadBadge_();
+      CHAT_STATE_.unreadPollInterval = setInterval(refreshChatUnreadBadge_, 25000);
+      // Poll pesan chat (Agent: panel FAB / Staff: halaman Inbox) HANYA dipasang ulang kalau
+      // memang sedang terbuka — cek lewat state yang sudah ada, bukan asumsi selalu aktif.
+      if(CHAT_STATE_.panelOpen && CHAT_STATE_.myRoomId){
+        loadMyChatMessages_(false);
+        CHAT_STATE_.pollInterval = setInterval(function(){ loadMyChatMessages_(false); }, 8000);
+        refreshMyChatReadStatus_();
+        CHAT_STATE_.readStatusPollInterval = setInterval(refreshMyChatReadStatus_, 7000);
+      } else if(STATE.currentPage === 'livechat'){
+        loadChatRoomList_();
+        if(CHAT_STATE_.inboxActiveRoomId) loadInboxMessages_(false);
+        CHAT_STATE_.pollInterval = setInterval(function(){
+          loadChatRoomList_();
+          if(CHAT_STATE_.inboxActiveRoomId) loadInboxMessages_(false);
+        }, 9000);
+      }
+    }
+  });
+
   /** Diam-diam mem-fetch & merender SEMUA halaman menu (sesuai role user) langsung setelah
       login/refresh, lalu menyimpannya ke PAGE_HTML_CACHE lewat paintPage_() — supaya begitu
       user klik menu lain, halamannya SUDAH siap dan langsung tampil tanpa spinner/loading
@@ -8601,7 +8661,18 @@
       '<div style="height:140px;position:relative;margin-top:12px;"><canvas id="dashTrendCanvas"></canvas></div>';
     syncDashboardPageCache_();
 
-    ensureChartJsLoaded_(function(){
+    ensureChartJsLoaded_(function(ok){
+      // FIX "DIAGRAM GA MUNCUL2": ok===false berarti CDN Chart.js gagal/timeout dimuat (mis.
+      // diblokir firewall/proxy jaringan device ybs). Sebelumnya tidak ada penanganan ini sama
+      // sekali — canvas kosong dibiarkan begitu saja tanpa penjelasan, kelihatan seperti
+      // "macet" selamanya. Sekarang tampilkan fallback teks yang jelas di tempat canvas,
+      // memakai data yang SUDAH ADA (ringkasan jumlah & nilai di atas tetap tampil normal,
+      // cuma grafik garisnya yang tidak bisa dirender tanpa library eksternal itu).
+      if(ok === false){
+        var canvasWrap = document.querySelector('#dashTrendBox [style*="height:140px"]');
+        if(canvasWrap) canvasWrap.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:12px;color:var(--ag-gray-500);text-align:center;padding:0 12px;">Grafik tidak dapat dimuat (koneksi ke library grafik terblokir/lambat). Angka ringkasan di atas tetap akurat.</div>';
+        return;
+      }
       var canvas = document.getElementById('dashTrendCanvas');
       if(!canvas || typeof Chart === 'undefined') return;
       if(DASH_TREND_CHART_INSTANCE_){ DASH_TREND_CHART_INSTANCE_.destroy(); DASH_TREND_CHART_INSTANCE_ = null; }
@@ -8661,21 +8732,49 @@
   }
 
   var CHARTJS_LOADED_ = false;
+  var CHARTJS_FAILED_ = false; // true kalau CDN Chart.js gagal/timeout dimuat — lihat ensureChartJsLoaded_
   var CHARTJS_LOADING_CALLBACKS_ = [];
   /** Lazy-load Chart.js sekali dari CDN, dipakai bersama oleh semua chart di
       aplikasi ini (saat ini hanya tren Dashboard). Callback dipanggil begitu
       library siap; kalau sudah pernah dimuat, dipanggil langsung tanpa delay. */
   function ensureChartJsLoaded_(callback){
     if(typeof Chart !== 'undefined'){ callback(); return; }
-    if(CHARTJS_LOADED_){ CHARTJS_LOADING_CALLBACKS_.push(callback); return; }
+    if(CHARTJS_LOADED_){
+      // FIX "DIAGRAM GA MUNCUL2": kalau load SEBELUMNYA sudah gagal (CHARTJS_FAILED_ true —
+      // mis. CDN diblokir firewall/proxy jaringan device ybs), jangan numpuk callback baru ke
+      // antrian yang tidak akan pernah dipanggil. Panggil langsung dengan flag gagal supaya
+      // pemanggil bisa menampilkan fallback, bukan menggantung selamanya.
+      if(CHARTJS_FAILED_){ callback(false); return; }
+      CHARTJS_LOADING_CALLBACKS_.push(callback);
+      return;
+    }
     CHARTJS_LOADED_ = true;
     CHARTJS_LOADING_CALLBACKS_.push(callback);
     var script = document.createElement('script');
     script.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js';
-    script.onload = function(){
-      CHARTJS_LOADING_CALLBACKS_.forEach(function(cb){ cb(); });
+    var settled = false;
+    // FIX BUG NYATA: sebelumnya TIDAK ADA script.onerror maupun timeout sama sekali. Kalau
+    // device/jaringan tidak bisa memuat CDN ini (diblokir firewall/proxy kantor, DNS/region
+    // tertentu bermasalah, atau koneksi terputus tepat saat itu), <script> ini gagal diam-diam
+    // — onload TIDAK PERNAH terpanggil, dan tanpa onerror tidak ada jalan lain untuk tahu itu
+    // gagal. Akibatnya SEMUA callback yang menunggu (termasuk dari render Dashboard berikutnya
+    // yang numpuk ke CHARTJS_LOADING_CALLBACKS_ karena CHARTJS_LOADED_ sudah true) menggantung
+    // SELAMANYA — persis gejala "diagram ga muncul2" walau data ringkasan di atasnya (yang
+    // tidak butuh Chart.js) tetap tampil normal. FIX: onerror + timeout 8 detik menandai
+    // CHARTJS_FAILED_ dan memanggil semua callback dengan argumen false, supaya pemanggil
+    // (renderDashTrendBox_) bisa menampilkan fallback yang jelas alih-alih spinner/area kosong
+    // tanpa penjelasan selamanya.
+    function settle_(ok){
+      if(settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if(!ok) CHARTJS_FAILED_ = true;
+      CHARTJS_LOADING_CALLBACKS_.forEach(function(cb){ cb(ok); });
       CHARTJS_LOADING_CALLBACKS_ = [];
-    };
+    }
+    var timer = setTimeout(function(){ settle_(false); }, 8000);
+    script.onload = function(){ settle_(true); };
+    script.onerror = function(){ settle_(false); };
     document.head.appendChild(script);
   }
 
@@ -9814,12 +9913,18 @@
       CHAT_STATE_.myRoomStatus = room.status || 'OPEN';
       loadMyChatMessages_(true);
       if(CHAT_STATE_.pollInterval) clearInterval(CHAT_STATE_.pollInterval);
-      CHAT_STATE_.pollInterval = setInterval(function(){ loadMyChatMessages_(false); }, 5000);
+      CHAT_STATE_.pollInterval = setInterval(function(){ loadMyChatMessages_(false); }, 8000);
       // Poll ringan terpisah khusus status "sudah dibaca staff" untuk bubble milik Agent
       // sendiri — dipisah dari poll pesan supaya panggilan ini TIDAK ikut menandai room
       // sebagai sudah dibaca Agent (lihat getMyChatRoomReadStatus di backend).
       if(CHAT_STATE_.readStatusPollInterval) clearInterval(CHAT_STATE_.readStatusPollInterval);
-      CHAT_STATE_.readStatusPollInterval = setInterval(refreshMyChatReadStatus_, 4000);
+      // FIX "LOGIN LEMOT/TIMEOUT" (dikonfirmasi via console: CORS-block + 404 echo dari GAS —
+      // tanda kuota eksekusi paralel GAS Web App terlampaui): interval ini dinaikkan dari 4
+      // detik ke 7 detik. GAS Web App punya kuota concurrent execution GLOBAL per-project,
+      // jadi polling seagresif 4 detik dari SETIAP device yang buka panel chat menyumbang
+      // beban besar ke kuota yang sama dipakai bersama semua device/user lain — termasuk
+      // request login & load Dashboard device LAIN yang justru sedang aktif ditunggu usernya.
+      CHAT_STATE_.readStatusPollInterval = setInterval(refreshMyChatReadStatus_, 7000);
       refreshMyChatReadStatus_();
     }).withFailureHandler(function(e){ handleBackendError(e); }).getOrCreateMyChatRoom(STATE.token);
   }
@@ -10254,7 +10359,7 @@
     CHAT_STATE_.pollInterval = setInterval(function(){
       loadChatRoomList_();
       if(CHAT_STATE_.inboxActiveRoomId) loadInboxMessages_(false);
-    }, 6000);
+    }, 9000);
     // Quick reply staff: dimuat sekali & dicache di CHAT_STATE_ (bukan per-buka room) karena
     // isinya sama untuk semua percakapan dan jarang berubah — cukup diperbarui saat halaman
     // Inbox dibuka ulang (mis. pindah menu lalu balik lagi).
