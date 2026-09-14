@@ -8219,7 +8219,7 @@
       + '<div class="dc-cat-checklist">'
         + cats.map(function(c){
             var checked = selectedCats.indexOf(c.toUpperCase()) !== -1;
-            return '<label class="dc-cat-check-item"><input type="checkbox" class="dcCatCheckbox" value="'+escapeHtml(c)+'" '+(checked?'checked':'')+'>'+escapeHtml(c)+'</label>';
+            return '<label class="dc-cat-check-item"><input type="checkbox" class="dcCatCheckbox" value="'+escapeHtml(c)+'" '+(checked?'checked':'')+'><span>'+escapeHtml(c)+'</span></label>';
           }).join('')
       + '</div></div>';
   }
