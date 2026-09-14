@@ -1419,24 +1419,25 @@
      Tambah/Edit Banner & Kategori Dashboard Settings — Admin sekarang bisa centang LEBIH
      DARI 1 kategori sekaligus (LinkAction disimpan 'category:CAT1,CAT2,...'). */
   .dc-cat-checklist{
-    display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:8px;margin-top:8px;
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-top:8px;
     max-height:180px;overflow-y:auto;border:1px solid var(--ag-gray-200);border-radius:10px;padding:10px;
     background:var(--ag-gray-50,#F9F9F7);
   }
   .dc-cat-check-item{
-    display:flex;align-items:center;justify-content:center;gap:6px;font-size:12.5px;font-weight:700;
+    display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;
     color:var(--ag-gray-600);background:#fff;border:1.5px solid var(--ag-gray-200);border-radius:9px;
-    padding:8px 6px;cursor:pointer;transition:background .15s,border-color .15s,color .15s;text-align:center;
-    user-select:none;
+    padding:9px 12px;cursor:pointer;transition:background .15s,border-color .15s,color .15s;
+    user-select:none;line-height:1;
   }
+  .dc-cat-check-item span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .dc-cat-check-item input{
     appearance:none;-webkit-appearance:none;margin:0;flex-shrink:0;cursor:pointer;
-    width:15px;height:15px;border-radius:4px;border:1.5px solid var(--ag-gray-300);background:#fff;
+    width:16px;height:16px;border-radius:4px;border:1.5px solid var(--ag-gray-300);background:#fff;
     position:relative;transition:background .15s,border-color .15s;
   }
   .dc-cat-check-item input:checked{background:var(--ag-green);border-color:var(--ag-green);}
   .dc-cat-check-item input:checked::after{
-    content:'';position:absolute;left:4px;top:1px;width:4px;height:8px;
+    content:'';position:absolute;left:5px;top:2px;width:4px;height:8px;
     border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg);
   }
   .dc-cat-check-item:has(input:checked){background:var(--ag-green-soft);border-color:var(--ag-green);color:var(--ag-green);}
