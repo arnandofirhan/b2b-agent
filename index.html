@@ -6,6 +6,29 @@
   <title>Agrinesia B2B Agent Management</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 
+  <style>
+    html,body{margin:0;}
+    /* ===== FIX FOUC (Flash Of Unstyled Content) =====
+       BUG NYATA yang dilaporkan user (video + screenshot): sesaat setelah app dibuka,
+       sempat KELIHATAN halaman mentah tanpa styling sama sekali — background hitam/putih
+       polos, SVG logo tampil sebagai kotak-kotak besar mentah (belum di-resize lewat CSS),
+       teks tanpa warna/format. Ini muncul justru SEBAGAI AKIBAT dari fix performa
+       sebelumnya: Stylesheet.html diubah dari XHR SINKRON (membekukan thread sampai CSS
+       siap, tapi karena itu juga menjamin CSS SUDAH ada sebelum body sempat digambar) jadi
+       fetch ASYNC (tidak membekukan thread — bagus untuk performa — tapi ada jeda singkat
+       di mana body SUDAH ada di DOM namun CSS BELUM selesai di-apply, dan jeda itulah yang
+       kelihatan sebagai "flash" konten mentah tsb).
+       FIX: <body> disembunyikan (visibility:hidden, BUKAN display:none — supaya browser
+       tetap sempat menghitung layout & tidak menunda hal lain) lewat rule inline SESINGKAT
+       ini, SEBELUM apa pun lain di <head> dieksekusi. Begitu Stylesheet.html selesai
+       di-apply (lihat loadStylesheetAsync_ di bawah), class ini dilepas lagi dari <html> dan
+       body baru benar-benar terlihat — jadi user tidak pernah melihat versi tanpa-style,
+       TANPA harus membekukan thread seperti sebelumnya. Ada juga fallback timeout (lihat
+       script di bawah) supaya body tetap dimunculkan walau CSS gagal total dimuat, daripada
+       user terjebak lihat layar kosong selamanya. */
+    html.ag-preload body{ visibility:hidden; }
+  </style>
+  <script>document.documentElement.classList.add('ag-preload');</script>
   <!-- ===== "Add to Home Screen" (Android/Chrome + iOS/Safari) =====
        Apps Script tidak bisa menyajikan manifest.json / service-worker.js sebagai
        file statis di scope yang tepat, jadi Chrome TIDAK akan memunculkan prompt
@@ -30,7 +53,6 @@
        CATATAN: upload file splash-screen.png ke repo GitHub Pages yang sama (folder
        yang sama dengan index.html) — nama file harus persis "splash-screen.png". -->
   <style>
-    html,body{margin:0;}
     /* ===== SPLASH CUSTOM (splash-screen.png) — SENGAJA DIMATIKAN =====
        Atas permintaan: splash custom HTML ini sekarang tidak pernah ditampilkan sama
        sekali (display:none permanen, di semua ukuran layar). Yang tampil ke user sekarang
@@ -122,23 +144,44 @@
       var target = document.createElement('style');
       target.id = 'agStylesheetTarget';
       document.head.appendChild(target);
+      var revealed = false;
+      function revealBody_(){
+        // Lepas class ag-preload (lihat rule CSS-nya di paling atas <head>) supaya body
+        // yang sebelumnya visibility:hidden jadi terlihat. Dibungkus flag `revealed` supaya
+        // aman dipanggil berkali-kali (jalur sukses, jalur error, DAN fallback timeout bisa
+        // saja saling susul-menyusul) tanpa efek samping.
+        if(revealed) return;
+        revealed = true;
+        document.documentElement.classList.remove('ag-preload');
+      }
       function applyCss_(text){
         var inner = text.replace(/^\s*<style[^>]*>/i, '').replace(/<\/style>\s*$/i, '');
         target.textContent = inner;
+        revealBody_();
       }
+      // FIX FOUC — jaring pengaman: kalau karena sebab apa pun (network sangat lambat,
+      // request nyangkut, dll) fetch Stylesheet.html belum kelar dalam 2 detik, tetap
+      // munculkan body TANPA CSS custom kita daripada user terjebak lihat layar kosong
+      // (visibility:hidden) tanpa akhir. Browser masih punya default styling bawaan, jadi
+      // ini "lebih baik terlihat berantakan sesaat" daripada "terlihat kosong selamanya".
+      var revealTimeoutId_ = setTimeout(revealBody_, 2000);
       var bustedUrl = 'Stylesheet.html?v=' + ASSET_CACHE_BUSTER_;
       fetch(bustedUrl, { cache: 'no-store' })
         .then(function(res){
           if(!res.ok) throw new Error('HTTP ' + res.status);
           return res.text();
         })
-        .then(applyCss_)
+        .then(function(text){ clearTimeout(revealTimeoutId_); applyCss_(text); })
         .catch(function(err){
           console.error('Gagal memuat Stylesheet.html (network), coba fallback cache:', err);
           // Fallback: coba tanpa cache-buster/no-store, biarkan browser/SW ambil dari cache
           // kalau ada, supaya app tetap bisa tampil (walau mungkin versi lama) daripada blank.
-          fetch('Stylesheet.html').then(function(res){ return res.text(); }).then(applyCss_).catch(function(e2){
+          fetch('Stylesheet.html').then(function(res){ return res.text(); }).then(function(text){
+            clearTimeout(revealTimeoutId_); applyCss_(text);
+          }).catch(function(e2){
             console.error('Gagal memuat Stylesheet.html total:', e2);
+            clearTimeout(revealTimeoutId_);
+            revealBody_(); // tetap tampilkan apa adanya — daripada layar kosong permanen
           });
         });
     })();
