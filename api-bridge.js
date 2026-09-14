@@ -91,6 +91,39 @@
   var queueHi_ = [];
   var queueLo_ = [];
 
+  // -----------------------------------------------------------------------
+  // DEDUPLIKASI REQUEST IN-FLIGHT
+  // -----------------------------------------------------------------------
+  // BUG NYATA (dilaporkan user): saat login pertama di jaringan lambat, dashboard
+  // (getAgentDashboardConfig/getDashboardData) kadang "macet" spinner lama sekali
+  // (bisa >1 menit, karena antrian retry MAX_ATTEMPTS x RETRY_DELAY_MS x
+  // REQUEST_TIMEOUT_MS). Begitu user pindah menu lalu balik lagi ke Dashboard,
+  // request LAMA masih jalan diam-diam di background (tidak pernah dibatalkan),
+  // dan showPage('dashboard') menembak request BARU yang identik — dua request
+  // untuk fungsi & argumen yang sama, menghabiskan slot antrian dua kali dan
+  // membuat load-nya terasa dobel/lebih lama.
+  // FIX: kalau ada request dengan fnName+args yang SAMA PERSIS sedang berjalan
+  // (belum jobDone), request baru yang identik CUKUP "menumpang" hasil yang lama
+  // itu (dapat onSuccess/onFailure yang sama) alih-alih menembak request baru ke
+  // server. Ini aman untuk fungsi read-only (get*/list*) yang dipakai di alur
+  // render halaman — untuk fungsi yang mengubah data (create/update/delete) dedup
+  // ini nyaris tidak pernah kena karena argumennya jarang identik dua kali
+  // berturut-turut dalam window waktu yang sama, tapi supaya 100% aman kita
+  // hanya men-dedup panggilan yang namanya berawalan get/list/fetch.
+  var inFlight_ = Object.create(null); // key -> array of {onSuccess, onFailure}
+
+  function isDedupableFn_(fnName) {
+    return /^(get|list|fetch)/.test(fnName);
+  }
+
+  function inFlightKey_(fnName, args) {
+    try {
+      return fnName + '::' + JSON.stringify(args);
+    } catch (e) {
+      return null; // args tidak bisa di-serialize (mis. ada fungsi) — skip dedup, aman
+    }
+  }
+
   function runNext_() {
     if (activeHi_ < MAX_CONCURRENT_HI && queueHi_.length) {
       var jobHi = queueHi_.shift();
