@@ -7636,6 +7636,23 @@
   // Makanya semua fungsi di bawah pindah pakai agentBannerCenterSlot_() (cari child yang
   // titik tengahnya paling dekat dengan titik tengah track) & scrollIntoView({inline:
   // 'center'}) untuk pindah slide — keduanya otomatis benar berapapun lebar/gap slide-nya.
+  // FIX BUG NYATA ("halaman ketarik ke atas tiap banner geser otomatis"): sebelumnya
+  // perpindahan slide (autoplay, klik dot, reset loop tak berujung) semuanya memakai
+  // `element.scrollIntoView({block:'nearest', inline:'center'})`. Masalahnya scrollIntoView
+  // menghitung visibility elemen di SEMUA ancestor scrollable, termasuk halaman/#content di
+  // luar track banner-nya sendiri — begitu card banner tidak 100% penuh terlihat vertikal
+  // (mis. sedikit ketutup elemen lain / posisi scroll halaman sedang tidak pas), browser ikut
+  // menggeser scroll HALAMAN itu supaya card kelihatan penuh, walau yang dimaksud cuma geser
+  // horizontal di dalam carousel. FIX: hitung & set scrollLeft target secara manual lalu pakai
+  // track.scrollTo(...) — ini HANYA menggeser scroll milik track itu sendiri (elemen dengan
+  // overflow-x), tidak pernah menyentuh/menggeser scroll milik parent/halaman.
+  function scrollAgentBannerToSlot_(track, slotIndex, instant){
+    var child = track.children[slotIndex];
+    if(!child) return;
+    var target = child.offsetLeft - (track.clientWidth - child.offsetWidth) / 2;
+    track.scrollTo({ left: target, behavior: instant ? 'auto' : 'smooth' });
+  }
+
   function agentBannerCenterSlot_(track){
     var center = track.scrollLeft + track.clientWidth / 2;
     var children = track.children, best = 0, bestDist = Infinity;
@@ -7656,8 +7673,7 @@
       var track = document.getElementById('agentBannerTrack');
       if(!track || !track.clientWidth) return;
       var slot = agentBannerCenterSlot_(track);
-      var nextEl = track.children[slot + 1];
-      if(nextEl) nextEl.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
+      scrollAgentBannerToSlot_(track, slot + 1, false);
     }, 4500);
   }
   function stopAgentBannerAutoplay_(){
@@ -7767,8 +7783,7 @@
   // di onAgentBannerScroll_ supaya tetap sinkron kalau user geser manual/swipe.
   function scrollAgentBannerTo_(i){
     var track = document.getElementById('agentBannerTrack');
-    var el = track && track.children[i + 1];
-    if(el) el.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
+    if(track) scrollAgentBannerToSlot_(track, i + 1, false);
   }
 
   // Dipanggil tiap track discroll (swipe manual ATAU hasil scrollAgentBannerTo_/autoplay)
@@ -7819,7 +7834,7 @@
           // lompatannya benar2 tidak kelihatan (lihat komentar .no-anim di Stylesheet.html) —
           // ini yang membenahi transisi "kedip 2x" pas geser dari banner terakhir balik ke awal.
           for(var j=0;j<slides.length;j++) slides[j].classList.add('no-anim');
-          targetEl.scrollIntoView({ behavior:'instant', inline:'center', block:'nearest' });
+          scrollAgentBannerToSlot_(track, slot === 0 ? totalReal : 1, true);
           onAgentBannerScroll_(); // recalc .is-centered & dot supaya langsung sinkron pasca-lompat
           requestAnimationFrame(function(){
             requestAnimationFrame(function(){
@@ -9463,12 +9478,24 @@
       FAB yang dipasang, tidak ada satupun polling yang dimulai, nol request google.script.run
       terkait chat yang pernah jalan sepanjang sesi. */
   function initLiveChat_(){
-    if(!LIVECHAT_FEATURE_ENABLED_) return;
-    if(CHAT_STATE_.unreadPollInterval) clearInterval(CHAT_STATE_.unreadPollInterval);
-
+    // FIX BUG NYATA: sebelumnya injectChatFab_() (satu-satunya tempat yang membuat
+    // #agentCartFabSlot, wadah tombol Troli) ada DI DALAM blok `if(!LIVECHAT_FEATURE_ENABLED_)
+    // return;` di bawah. Begitu Live Chat dimatikan (LIVECHAT_FEATURE_ENABLED_ = false),
+    // injectChatFab_() ikut TIDAK PERNAH jalan sama sekali -> slot Troli tidak pernah
+    // tercipta -> refreshAgentCartFab_() selalu diam-diam `return` karena slot-nya tidak
+    // ada -> tombol Troli tidak pernah muncul walau keranjang terisi. Padahal Troli
+    // seharusnya fitur terpisah dari Live Chat. FIX: panggil injectChatFab_() untuk role
+    // AGENT DI LUAR early-return flag Live Chat, supaya slot Troli & tombolnya selalu
+    // dibuat terlepas dari status LIVECHAT_FEATURE_ENABLED_. Bagian dalam injectChatFab_()
+    // sendiri yang memutuskan elemen mana yang boleh muncul (opsi Chat & panelnya
+    // di-skip kalau flag mati — lihat di dalam fungsi itu).
     if(STATE.user.role === 'AGENT'){
       injectChatFab_();
     }
+
+    if(!LIVECHAT_FEATURE_ENABLED_) return;
+    if(CHAT_STATE_.unreadPollInterval) clearInterval(CHAT_STATE_.unreadPollInterval);
+
     refreshChatUnreadBadge_();
     CHAT_STATE_.unreadPollInterval = setInterval(refreshChatUnreadBadge_, 15000);
   }
@@ -9495,23 +9522,37 @@
     // refreshAgentCartFab_ / paintAgentDashboard_ tergantung isi troli — dial ini
     // sendiri tidak peduli isi troli, cuma menyediakan "tempat" untuknya supaya
     // kedua FAB (Troli & toggle Chat) selalu serumpun & tidak saling tumpuk.
+    // FIX: opsi "Live Chat" (bubble + label) dan toggle "+" dial HANYA dirender kalau
+    // fiturnya memang aktif — kalau LIVECHAT_FEATURE_ENABLED_ mati, dial tidak ada
+    // gunanya (isinya cuma Troli), jadi cukup slot Troli saja yang tampil polos tanpa
+    // tombol "+"/opsi Chat di sampingnya. Ini yang membuat Troli sekarang independen
+    // total dari status Live Chat, sesuai maksud awal.
+    var chatOptionHtml = LIVECHAT_FEATURE_ENABLED_
+      ? ('<div class="fab-dial-option chat">' +
+          '<span class="fab-dial-option-label">Live Chat</span>' +
+          '<button type="button" class="chat-fab" id="chatFab" title="Live Chat" aria-label="Buka Live Chat" onclick="toggleFabDial_(false); openChatPanel_();">' +
+            CHAT_ICONS_.bubble + '<span id="chatFabBadge" class="chat-fab-badge" style="display:none;">0</span>' +
+          '</button>' +
+        '</div>')
+      : '';
+    var dialToggleHtml = LIVECHAT_FEATURE_ENABLED_
+      ? ('<button type="button" class="fab-dial-toggle" id="fabDialToggle" title="Opsi lainnya" aria-label="Buka opsi lainnya" onclick="toggleFabDial_()">' +
+          CHAT_ICONS_.plus +
+        '</button>')
+      : '';
+
     var wrap = document.createElement('div');
     wrap.id = 'fabDialWrap';
     wrap.className = 'fab-dial-wrap';
     wrap.innerHTML =
       '<div class="fab-dial-row">' +
-        '<div class="fab-dial-option chat">' +
-          '<span class="fab-dial-option-label">Live Chat</span>' +
-          '<button type="button" class="chat-fab" id="chatFab" title="Live Chat" aria-label="Buka Live Chat" onclick="toggleFabDial_(false); openChatPanel_();">' +
-            CHAT_ICONS_.bubble + '<span id="chatFabBadge" class="chat-fab-badge" style="display:none;">0</span>' +
-          '</button>' +
-        '</div>' +
+        chatOptionHtml +
         '<span id="agentCartFabSlot"></span>' +
-        '<button type="button" class="fab-dial-toggle" id="fabDialToggle" title="Opsi lainnya" aria-label="Buka opsi lainnya" onclick="toggleFabDial_()">' +
-          CHAT_ICONS_.plus +
-        '</button>' +
+        dialToggleHtml +
       '</div>';
     document.body.appendChild(wrap);
+
+    if(!LIVECHAT_FEATURE_ENABLED_) return; // tidak perlu scrim/overlay panel chat kalau fiturnya mati
 
     var scrim = document.createElement('div');
     scrim.id = 'fabDialScrim';
