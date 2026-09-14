@@ -52,13 +52,21 @@
   // sibuk retry. FIX: pisahkan jatah slot hi & lo jadi 2 counter independen supaya job
   // hi-priority PASTI selalu dapat slot sendiri, tidak pernah terblokir oleh proses
   // background yang sedang retry.
-  // Diturunkan sementara dari 2 -> 1: Console user menunjukkan login + listPO (2 request
-  // hi-priority) menembak BERSAMAAN persis saat boot pertama dan sama-sama gagal
-  // (404/ERR_CONNECTION_CLOSED) — pola ini cocok dengan kuota eksekusi SIMULTAN Apps
-  // Script yang terlampaui (bukan CORS beneran). Menjadikan hi-priority strictly
-  // sequential menghilangkan burst 2x-simultan itu tanpa mengubah urutan/prioritas logikanya.
-  var MAX_CONCURRENT_HI = 1; // klik user / submit form — jatah sendiri, tidak pernah nunggu background
-  var MAX_CONCURRENT_LO = 1; // preload/polling background — sengaja dibatasi 1 spy beban ke GAS makin halus
+  // NAIK LAGI dari 1 -> 3 (HI) / 1 -> 2 (LO): 1/1 sengaja dicoba dulu untuk menghilangkan
+  // burst 2x-simultan yang sempat bikin login+listPO gagal bareng, TAPI efek sampingnya
+  // ternyata jauh lebih parah — SELURUH aplikasi jadi strictly-sequential satu request
+  // per waktu, jadi 1 request lambat/di-retry menahan SEMUA request lain (termasuk klik
+  // user) walau tidak saling terkait sama sekali. Root cause asli (2 request BERSAMAAN
+  // persis di detik yang sama saat boot pertama) sudah ditangani dengan cara lain yang
+  // lebih presisi: (1) dedup in-flight di callServer() mencegah panggilan identik dobel,
+  // (2) preloadAllPages_() di JavaScript.html sudah di-stagger (tidak lagi menembak semua
+  // sekaligus), (3) delay 2.5 detik sebelum preload mulai supaya tidak tabrakan dengan
+  // request Dashboard sendiri. Dengan 3 mitigasi itu sudah aktif, HI=1/LO=1 tidak lagi
+  // diperlukan dan hanya menambah lambat secara nyata di setiap klik menu — dinaikkan ke
+  // HI=3 (jatah aksi user, cukup untuk beberapa klik cepat berurutan tanpa membanjiri GAS)
+  // dan LO=2 (preload/polling background, tetap dibatasi rendah supaya tidak dominan).
+  var MAX_CONCURRENT_HI = 3; // klik user / submit form — jatah sendiri, tidak pernah nunggu background
+  var MAX_CONCURRENT_LO = 2; // preload/polling background — tetap dibatasi supaya tidak dominan
   var activeHi_ = 0;
   var activeLo_ = 0;
 
@@ -129,6 +137,22 @@
     }
   }
 
+  // FIX BUG NYATA (laporan: logout lalu login lagi cepat-cepat masih terasa lambat):
+  // queueHi_/queueLo_/inFlight_ di atas SEBELUMNYA tidak pernah dikosongkan saat logout.
+  // Kalau ada request lama (preload/dashboard) yang masih tertunda di antrian atau sedang
+  // menunggu jawaban server saat user klik Logout, entri itu tetap nyangkut: begitu server
+  // akhirnya menjawab, ia tetap ikut menempati slot MAX_CONCURRENT_HI/LO yang seharusnya
+  // sudah bebas untuk sesi BARU, dan callback-nya (yang menunjuk ke fungsi render sesi lama)
+  // masih terpanggil sia-sia. Fungsi ini dipanggil oleh handleLogout() di JavaScript.html
+  // untuk membuang semua job yang belum sempat jalan (job yang SUDAH terkirim ke server
+  // tidak bisa dibatalkan beneran, tapi dibiarkan selesai di background tanpa mengganggu
+  // apa pun karena queueHi_/queueLo_ sudah dikosongkan duluan sebelum job itu genap giliran).
+  function resetQueue_() {
+    queueHi_.length = 0;
+    queueLo_.length = 0;
+    inFlight_ = Object.create(null);
+  }
+
   function runNext_() {
     if (activeHi_ < MAX_CONCURRENT_HI && queueHi_.length) {
       var jobHi = queueHi_.shift();
@@ -194,7 +218,12 @@
     // RETRY OTOMATIS hanya untuk error jaringan murni (bukan error
     // deployment/akses — itu tidak akan hilang dengan diulang).
     var MAX_ATTEMPTS = 4; // dinaikkan dari 3 — glitch redirect/echo GAS kadang butuh >2x percobaan utk pulih
-    var RETRY_DELAY_MS = 700;
+    // DITURUNKAN dari 700ms -> 400ms: dengan MAX_CONCURRENT_HI sekarang > 1, slot yang
+    // dipakai sebuah request yang sedang retry TIDAK LAGI memblokir SEMUA request lain
+    // (ada slot lain yang bebas), jadi delay besar di sini tidak lagi wajib untuk melindungi
+    // klik user lain — tapi tetap diberi jeda kecil (bukan 0) supaya tidak langsung menembak
+    // ulang GAS yang mungkin masih dalam kondisi ter-throttle.
+    var RETRY_DELAY_MS = 400;
     // FIX BUG NYATA #2 (ditemukan saat audit): TIMEOUT (AbortError, request tidak dijawab
     // sama sekali dalam REQUEST_TIMEOUT_MS) sebelumnya LANGSUNG dianggap gagal permanen,
     // TIDAK PERNAH masuk jalur retry di atas — padahal timeout di koneksi lambat sering
@@ -330,4 +359,9 @@
     setWidth: function () {},
     origin: (global.location && global.location.origin) || ''
   };
+
+  // Dipanggil dari handleLogout() di JavaScript.html supaya antrian request lama
+  // (preload/dashboard sesi sebelumnya yang belum sempat jalan) tidak nyangkut dan
+  // membebani sesi berikutnya begitu user login lagi.
+  global.__apiBridgeResetQueue__ = resetQueue_;
 })(window);
