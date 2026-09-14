@@ -4295,7 +4295,11 @@
   function newPOForm(preserveCart, categoryFilter, presetProductId){
     NEWPO_RESUBMIT_ID_ = null;
     NEWPO_EDIT_APPROVED_ID_ = null;
-    NEWPO_CATEGORY_FILTER_ = categoryFilter || null;
+    // NEWPO_CATEGORY_FILTER_ sekarang selalu berupa ARRAY (atau null) supaya bisa menampung
+    // lebih dari 1 kategori sekaligus (klik banner/kategori Dashboard yang link ke beberapa
+    // kategori) — tetap terima string tunggal (dipakai switchNewPOCategory_/tab klik biasa)
+    // dan otomatis dibungkus jadi array 1 elemen supaya kode di bawah tidak perlu tahu bedanya.
+    NEWPO_CATEGORY_FILTER_ = categoryFilter ? (Array.isArray(categoryFilter) ? categoryFilter : [categoryFilter]) : null;
     NEWPO_PRESELECT_PRODUCT_ID_ = presetProductId || null;
     var myModalGeneration = MODAL_GENERATION_; // lihat penjelasan lengkap di deklarasi MODAL_GENERATION_
 
@@ -4414,7 +4418,9 @@
     var list = NEWPO_PRODUCTS_.filter(function(p){
       var visible = p.Status !== 'INACTIVE' || !!NEWPO_CART_[p.ProductID];
       var matchesQuery = !q || (p.ProductName||'').toLowerCase().indexOf(q) !== -1;
-      var matchesCategory = !NEWPO_CATEGORY_FILTER_ || (String(p.Category||'').toUpperCase() === NEWPO_CATEGORY_FILTER_.toUpperCase());
+      var matchesCategory = !NEWPO_CATEGORY_FILTER_ || !NEWPO_CATEGORY_FILTER_.length || NEWPO_CATEGORY_FILTER_.some(function(c){
+        return String(p.Category||'').toUpperCase() === String(c).toUpperCase();
+      });
       return visible && matchesQuery && matchesCategory;
     });
     // Diurutkan per Category (A-Z) lalu nama produk, supaya Agent gampang menyusuri
@@ -4453,16 +4459,22 @@
     cats.sort();
     if(!cats.length) return '';
     var tabs = [{v:null, label:'Semua'}].concat(cats.map(function(c){ return {v:c, label:c}; }));
+    // Tab "Semua" ikut ditandai aktif kalau filter sedang berisi LEBIH DARI 1 kategori
+    // (klik dari banner/kategori Dashboard yang link ke beberapa kategori sekaligus) —
+    // karena tidak ada satu tab tunggal yang cocok mewakili gabungan itu.
+    var isMulti = NEWPO_CATEGORY_FILTER_ && NEWPO_CATEGORY_FILTER_.length > 1;
+    var isSingle = NEWPO_CATEGORY_FILTER_ && NEWPO_CATEGORY_FILTER_.length === 1;
     return tabs.map(function(t){
-      var active = (NEWPO_CATEGORY_FILTER_ && t.v) ? (t.v.toUpperCase() === NEWPO_CATEGORY_FILTER_.toUpperCase())
-                    : (!NEWPO_CATEGORY_FILTER_ && !t.v);
+      var active = t.v
+        ? (isSingle && t.v.toUpperCase() === NEWPO_CATEGORY_FILTER_[0].toUpperCase())
+        : (!isSingle); // tab "Semua" aktif kalau filter kosong ATAU berisi banyak kategori sekaligus
       return '<button type="button" class="po-category-tab'+(active?' is-active':'')+'" '
         + 'onclick="switchNewPOCategory_('+(t.v?'\''+escapeHtml(t.v)+'\'':'null')+')">'+escapeHtml(t.label)+'</button>';
     }).join('');
   }
 
   function switchNewPOCategory_(cat){
-    NEWPO_CATEGORY_FILTER_ = cat || null;
+    NEWPO_CATEGORY_FILTER_ = cat ? [cat] : null;
     var tabsWrap = document.getElementById('poCategoryTabs');
     if(tabsWrap) tabsWrap.innerHTML = newPOCategoryTabsHtml_(NEWPO_PRODUCTS_);
     renderNewPOProductGrid_();
@@ -7800,8 +7812,12 @@
   function agentDashBannerClick_(linkAction){
     if(!linkAction) return;
     if(linkAction.indexOf('category:') === 0){
-      var cat = linkAction.slice('category:'.length);
-      newPOForm(false, cat);
+      // Sekarang bisa berisi lebih dari 1 kategori dipisah koma (mis. dari checklist multi-
+      // kategori di Dashboard Settings) — pecah jadi array, newPOForm/NEWPO_CATEGORY_FILTER_
+      // sudah disesuaikan untuk menerima array supaya produk dari SEMUA kategori itu ikut
+      // tampil (bukan cuma kategori pertama).
+      var catList = linkAction.slice('category:'.length).split(',').map(function(s){ return s.trim(); }).filter(Boolean);
+      newPOForm(false, catList);
       return;
     }
     if(linkAction.indexOf('product:') === 0){
@@ -8148,8 +8164,19 @@
   // Dipakai untuk render <select> "Aksi saat diklik" dengan optgroup rapi: Halaman /
   // Kategori Produk / Produk Tertentu — supaya daftar panjang (bisa puluhan produk) tetap
   // gampang disusuri, bukan satu list datar tanpa pengelompokan.
+  // FIX BUG NYATA (diminta user): sebelumnya tiap kategori muncul sebagai OPTION SENDIRI di
+  // <select> ini ("Aksi saat diklik"), jadi Admin cuma bisa pilih SATU kategori (mis. banner
+  // "BKT" yang sebenarnya menaungi beberapa kategori produk tidak bisa link ke semuanya
+  // sekaligus). Sekarang seluruh kategori digabung jadi SATU opsi 'category_multi' —
+  // begitu opsi ini dipilih, muncul checklist terpisah (lihat dashConfigCategoryChecklistHtml_
+  // & toggleDashCategoryMultiWrap_) supaya Admin bisa centang LEBIH DARI SATU kategori.
+  // LinkAction tetap disimpan dengan prefix yang sama seperti dulu ('category:...') supaya
+  // data lama (1 kategori) tetap kebaca normal — cuma sekarang isinya boleh
+  // 'category:CAT1,CAT2,CAT3' (dipisah koma) kalau Admin centang beberapa.
   function dashConfigLinkSelectHtml_(selectedValue){
-    function opt(o){ return '<option value="'+o.v+'" '+(selectedValue===o.v?'selected':'')+'>'+escapeHtml(o.label)+'</option>'; }
+    var isCategoryMode = String(selectedValue||'').indexOf('category:') === 0;
+    var effectiveSelected = isCategoryMode ? 'category_multi' : (selectedValue||'');
+    function opt(o){ return '<option value="'+o.v+'" '+(effectiveSelected===o.v?'selected':'')+'>'+escapeHtml(o.label)+'</option>'; }
     var html = DASH_CONFIG_LINK_OPTIONS_BASE_.map(opt).join('');
 
     var cats = [];
@@ -8159,9 +8186,7 @@
     });
     cats.sort();
     if(cats.length){
-      html += '<optgroup label="Kategori Produk">'
-        + cats.map(function(c){ return opt({ v:'category:'+c, label:c }); }).join('')
-        + '</optgroup>';
+      html += opt({ v:'category_multi', label:'📂 Kategori Produk (bisa pilih lebih dari satu)' });
     }
 
     var prods = (PRODUCTS_CACHE||[]).slice().sort(function(a,b){ return (a.ProductName||'').localeCompare(b.ProductName||''); });
@@ -8171,6 +8196,38 @@
         + '</optgroup>';
     }
     return html;
+  }
+
+  // Checklist kategori yang muncul/hilang di bawah select "Aksi saat diklik" tergantung
+  // pilihannya — lihat toggleDashCategoryMultiWrap_. selectedValue di sini adalah LinkAction
+  // ASLI dari item (mis. 'category:BKT,Lainnya'), dipakai untuk pre-check kotak yang relevan
+  // waktu modal Edit dibuka.
+  function dashConfigCategoryChecklistHtml_(selectedValue){
+    var isCategoryMode = String(selectedValue||'').indexOf('category:') === 0;
+    var selectedCats = isCategoryMode
+      ? selectedValue.slice('category:'.length).split(',').map(function(s){ return s.trim().toUpperCase(); }).filter(Boolean)
+      : [];
+    var cats = [];
+    (PRODUCTS_CACHE||[]).forEach(function(p){
+      var c = String(p.Category||'').trim();
+      if(c && cats.indexOf(c) === -1) cats.push(c);
+    });
+    cats.sort();
+    if(!cats.length) return '';
+    return '<div class="form-group" id="dcCategoryMultiWrap" style="'+(isCategoryMode?'':'display:none;')+'">'
+      + dcFieldLabel_(ICONS.products,'Pilih Kategori (bisa lebih dari satu)')
+      + '<div class="dc-cat-checklist">'
+        + cats.map(function(c){
+            var checked = selectedCats.indexOf(c.toUpperCase()) !== -1;
+            return '<label class="dc-cat-check-item"><input type="checkbox" class="dcCatCheckbox" value="'+escapeHtml(c)+'" '+(checked?'checked':'')+'>'+escapeHtml(c)+'</label>';
+          }).join('')
+      + '</div></div>';
+  }
+
+  // Tampil/sembunyikan checklist kategori sesuai pilihan di <select id="dcLinkAction">.
+  function toggleDashCategoryMultiWrap_(selectVal){
+    var wrap = document.getElementById('dcCategoryMultiWrap');
+    if(wrap) wrap.style.display = (selectVal === 'category_multi') ? '' : 'none';
   }
 
   // Label field bericon dipakai khusus di popup Tambah/Edit Banner-Kategori-Produk
@@ -8220,7 +8277,8 @@
       }
       body += '<div class="form-group">'+dcFieldLabel_(ICONS.camera,'Gambar')+imageUploadWidgetHtml_(item?item.ImageURL:null)+'</div>'
         + '<div class="form-group">'+dcFieldLabel_(ICONS.external,'Aksi saat diklik (opsional)')
-        + dcInputWithIcon_(ICONS.external,'<select id="dcLinkAction">'+dashConfigLinkSelectHtml_(item?item.LinkAction:'')+'</select>')+'</div>';
+        + dcInputWithIcon_(ICONS.external,'<select id="dcLinkAction" onchange="toggleDashCategoryMultiWrap_(this.value)">'+dashConfigLinkSelectHtml_(item?item.LinkAction:'')+'</select>')+'</div>'
+        + dashConfigCategoryChecklistHtml_(item?item.LinkAction:'');
     }
     body += '<div class="form-group">'+dcFieldLabel_(ICONS.reports,'Urutan Tampil')
       + dcInputWithIcon_(ICONS.reports,'<input type="number" id="dcSortOrder" value="'+(item?item.SortOrder:(DASHBOARD_CONFIG_CACHE_.filter(function(r){return r.ItemType===type;}).length))+'">')+'</div>';
@@ -8280,7 +8338,19 @@
     } else {
       payload.Title = val_('dcTitle');
       if(type === 'BANNER') payload.Subtitle = val_('dcSubtitle');
-      payload.LinkAction = val_('dcLinkAction');
+      // Kalau Admin pilih "📂 Kategori Produk (bisa pilih lebih dari satu)" di dropdown,
+      // LinkAction TIDAK diambil dari value select itu sendiri ('category_multi' cuma
+      // penanda internal UI) — melainkan digabung dari semua checkbox kategori yang
+      // dicentang, jadi 'category:CAT1,CAT2,...'. Kalau tidak ada yang dicentang, dianggap
+      // sama seperti "(Tidak ada, hanya tampilan)" supaya tidak error saat diklik Agent.
+      var linkActionVal = val_('dcLinkAction');
+      if(linkActionVal === 'category_multi'){
+        var checkedCats = Array.prototype.slice.call(document.querySelectorAll('.dcCatCheckbox:checked'))
+          .map(function(el){ return el.value; });
+        payload.LinkAction = checkedCats.length ? ('category:'+checkedCats.join(',')) : '';
+      } else {
+        payload.LinkAction = linkActionVal;
+      }
     }
 
     function doSave(imageUrl){
