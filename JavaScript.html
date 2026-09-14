@@ -7579,14 +7579,31 @@
     refreshAgentCartFab_();
     if(banners.length > 1){
       // Posisikan track PERSIS di slide asli index-0 (bukan klon di paling depan) — instan
-      // tanpa animasi. Pakai scrollIntoView(inline:'center') bukan hitung pixel manual,
-      // karena sekarang lebar slide cuma 86% (ada "peek" kartu sebelah) jadi lebih aman
-      // biar tetap presisi di tengah walau ukurannya bukan persis 100% lebar track.
-      // Dibungkus requestAnimationFrame supaya layout track sudah pasti kebentuk dulu.
+      // tanpa animasi.
+      //
+      // BUG NYATA (dilaporkan: "tiap hard refresh/login yang muncul duluan malah banner
+      // urutan TERAKHIR"): sebelumnya jump ini dibungkus SATU requestAnimationFrame saja.
+      // Satu rAF cuma menjamin "sebelum browser paint berikutnya" — pada hard
+      // refresh/login (CSS/font/gambar banner masih fresh dari cache dingin, belum tentu
+      // langsung sempurna sebelum tick itu), track kadang BELUM benar-benar selesai
+      // layout (mis. clientWidth masih 0 sesaat) tepat saat baris ini jalan. Kalau itu
+      // terjadi, perhitungan pusat/pindah slide jadi tidak berarti apa-apa (lebar 0 =
+      // tidak ada yang perlu digeser) dan scrollLeft track TETAP di 0 — yang artinya
+      // slot 0 (KLON banner TERAKHIR, ditempel di paling depan track untuk loop tak
+      // berujung — lihat pembuatan slideList) itulah yang kebetulan pertama terlihat,
+      // persis gejala "banner urutan terakhir muncul duluan" yang dilaporkan.
+      // FIX: bungkus dengan DUA requestAnimationFrame bersarang (pola yang sama persis
+      // dipakai di onAgentBannerScroll_ untuk lompatan loop tak berujung) supaya baris ini
+      // pasti jalan SETELAH satu siklus layout+paint penuh selesai, bukan cuma "sebelum
+      // paint berikutnya". Sekaligus ganti scrollIntoView(...) jadi scrollAgentBannerToSlot_
+      // (scrollTo pada track sendiri) — konsisten dengan fix bug "halaman ikut ketarik"
+      // sebelumnya, supaya jump awal ini juga tidak berisiko menggeser scroll halaman.
       requestAnimationFrame(function(){
-        var track = document.getElementById('agentBannerTrack');
-        if(track && track.children[1]) track.children[1].scrollIntoView({ behavior:'instant', inline:'center', block:'nearest' });
-        onAgentBannerScroll_();
+        requestAnimationFrame(function(){
+          var track = document.getElementById('agentBannerTrack');
+          if(track) scrollAgentBannerToSlot_(track, 1, true);
+          onAgentBannerScroll_();
+        });
       });
       startAgentBannerAutoplay_(banners.length);
       wireAgentBannerTouchPause_();
