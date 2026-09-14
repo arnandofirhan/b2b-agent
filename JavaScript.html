@@ -82,7 +82,15 @@
     { key: 'products',    icon: ICONS.products,  label: 'Master Item Product', roles: ['ADMIN','MANAGER'] },
     { key: 'catalog',     icon: ICONS.products,  label: 'Katalog',          roles: ['AGENT','SUPERVISOR'] },
     { key: 'promo',       icon: ICONS.promo,     label: 'Promo',            roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
-    { key: 'livechat',    icon: ICONS.bell,      label: 'Live Chat',        roles: ['ADMIN','SUPERVISOR','MANAGER'] },
+    // HIDDEN MENU LIVE CHAT: item 'livechat' sengaja DICABUT dari MENU_ITEMS (bukan cuma
+    // disembunyikan lewat CSS) supaya: (1) tidak tampil di sidebar/bottom-nav untuk role
+    // manapun, (2) otomatis TIDAK IKUT di-preload oleh preloadAllPages_() karena daftar
+    // preload-nya difilter dari MENU_ITEMS ini, (3) navigasi manual ke showPage('livechat')
+    // tetap technically bisa lewat konsol tapi tidak ada entry point UI apapun ke sana.
+    // Rendering function renderLiveChatInbox() & backend-nya di Code.gs SENGAJA TIDAK
+    // dihapus (aman untuk dikembalikan nanti) — cukup diputus dari sini + initLiveChat_()
+    // dibuat no-op (lihat komentar di fungsi itu) supaya tidak ada request apapun yang
+    // jalan dari fitur ini.
     { key: 'transactions',icon: ICONS.transactions, label: 'Transaksi / PO',roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
     { key: 'orders',      icon: ICONS.orders,    label: 'Order',            roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
     { key: 'commission',  icon: ICONS.commission,label: 'Commission',       roles: ['ADMIN','AGENT','SUPERVISOR','MANAGER'] },
@@ -100,7 +108,7 @@
   // MENU_ITEMS above remains the flat source of truth for role/icon/label/preload) ----------
   var MENU_GROUPS = [
     { key: '__top__',   label: null,               items: ['dashboard'] }, // ungrouped, always visible, no header
-    { key: 'transaksi', label: 'Transaksi',         items: ['catalog','promo','livechat','transactions','orders','commission','commission-scheme'] },
+    { key: 'transaksi', label: 'Transaksi',         items: ['catalog','promo','transactions','orders','commission','commission-scheme'] },
     { key: 'master',    label: 'Master Data',       items: ['agents','products','stores'] },
     { key: 'laporan',   label: 'Laporan & Jadwal',  items: ['reports','calendar'] },
     { key: 'sistem',    label: 'Sistem',            items: ['users','settings','dashboard-settings','audit-log'] }
@@ -9759,21 +9767,16 @@
       dan memulai polling badge unread untuk semua role (termasuk staff, untuk badge menu
       sidebar "Live Chat"). */
   function initLiveChat_(){
-    if(CHAT_STATE_.unreadPollInterval) clearInterval(CHAT_STATE_.unreadPollInterval);
-
-    if(STATE.user.role === 'AGENT'){
-      injectChatFab_();
-    }
-    refreshChatUnreadBadge_();
-    // Interval dinaikkan dari 15 detik ke 25 detik: mengurangi beban total ke GAS Web App
-    // saat lebih dari satu device aktif bersamaan (mis. login akun yang sama di HP & laptop
-    // sekaligus) — GAS Web App punya kuota concurrent execution GLOBAL per-project (bukan
-    // per-user/per-device), jadi semakin banyak device yang polling terus-menerus di
-    // background, semakin besar kemungkinan device-device itu saling berebut kuota &
-    // terasa lambat satu sama lain. 25 detik masih cukup responsif untuk badge notifikasi
-    // (bukan sesuatu yang perlu real-time detik demi detik), tapi mengurangi total request
-    // per menit dari 4x jadi ~2.4x per device.
-    CHAT_STATE_.unreadPollInterval = setInterval(refreshChatUnreadBadge_, 25000);
+    // HIDDEN MENU LIVE CHAT: dinonaktifkan total atas permintaan — fitur ini terbukti
+    // menambah beban (polling badge tiap 25 detik + preload halaman inbox-nya) ke kuota
+    // eksekusi paralel GAS yang sama dipakai semua menu lain, sehingga bikin app lemot.
+    // Early-return di sini membuat: (1) FAB Live Chat tidak pernah dibuat/muncul untuk
+    // AGENT, (2) refreshChatUnreadBadge_() tidak pernah dipanggil sama sekali -> tidak
+    // ada request getChatUnreadSummary ke backend, (3) tidak ada setInterval polling yang
+    // terpasang. Menu sidebar/bottom-nav untuk ADMIN/SUPERVISOR/MANAGER juga sudah dicabut
+    // dari MENU_ITEMS (lihat komentar di sana), jadi tidak ada request lain yang bisa
+    // memicu load Live Chat dari mana pun di app ini.
+    return;
   }
 
   function refreshChatUnreadBadge_(){
