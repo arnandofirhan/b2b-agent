@@ -107,21 +107,40 @@
       });
     }
 
-    // Muat CSS secara sinkron (XHR, bukan fetch) supaya style sudah aktif SEBELUM body
-    // dirender — mencegah "flash tanpa style" saat halaman pertama kali dibuka.
-    (function loadStylesheetSync_(){
-      try{
-        var xhr = new XMLHttpRequest();
-        var bustedUrl = 'Stylesheet.html?v=' + ASSET_CACHE_BUSTER_;
-        xhr.open('GET', bustedUrl, false); // false = synchronous
-        // Paksa skip HTTP cache — tanpa ini beberapa browser tetap bisa menyajikan
-        // response lama dari disk cache walau query string berubah (jarang, tapi terjadi
-        // di sebagian WebView Android lama).
-        xhr.setRequestHeader('Cache-Control', 'no-cache');
-        xhr.send(null);
-        var inner = xhr.responseText.replace(/^\s*<style[^>]*>/i, '').replace(/<\/style>\s*$/i, '');
-        document.write('<style>' + inner + '<\/style>');
-      }catch(e){ console.error('Gagal memuat Stylesheet.html:', e); }
+    // ===== PERF FIX (root cause "lemot di HP, lancar di laptop mode inspect") =====
+    // SEBELUMNYA: Stylesheet.html dimuat lewat XHR SINKRON (xhr.open(..., false)).
+    // Itu MEMBEKUKAN seluruh main thread sampai file itu selesai di-download — sebelum
+    // JavaScript.html dimuat, sebelum service worker register, sebelum apa pun bisa
+    // interaktif. Di laptop dengan DevTools "mode HP", CPU & jaringan yang dipakai TETAP
+    // CPU/koneksi laptop (emulator cuma mengubah ukuran viewport, bukan kecepatan asli),
+    // jadi round-trip-nya terasa instan. Di HP asli lewat data seluler, round-trip yang
+    // sama menahan thread dalam kondisi BEKU/tidak responsif — persis gejala "lemot pas
+    // dibuka" yang dilaporkan. FIX: fetch ASYNC (tidak memblokir thread) + fallback ke versi
+    // ter-cache (kalau ada, dari cache Service Worker/HTTP) bila fetch lambat/gagal, supaya
+    // CSS tetap terpasang secepat mungkin TANPA membekukan seluruh halaman menunggu network.
+    (function loadStylesheetAsync_(){
+      var target = document.createElement('style');
+      target.id = 'agStylesheetTarget';
+      document.head.appendChild(target);
+      function applyCss_(text){
+        var inner = text.replace(/^\s*<style[^>]*>/i, '').replace(/<\/style>\s*$/i, '');
+        target.textContent = inner;
+      }
+      var bustedUrl = 'Stylesheet.html?v=' + ASSET_CACHE_BUSTER_;
+      fetch(bustedUrl, { cache: 'no-store' })
+        .then(function(res){
+          if(!res.ok) throw new Error('HTTP ' + res.status);
+          return res.text();
+        })
+        .then(applyCss_)
+        .catch(function(err){
+          console.error('Gagal memuat Stylesheet.html (network), coba fallback cache:', err);
+          // Fallback: coba tanpa cache-buster/no-store, biarkan browser/SW ambil dari cache
+          // kalau ada, supaya app tetap bisa tampil (walau mungkin versi lama) daripada blank.
+          fetch('Stylesheet.html').then(function(res){ return res.text(); }).then(applyCss_).catch(function(e2){
+            console.error('Gagal memuat Stylesheet.html total:', e2);
+          });
+        });
     })();
   </script>
 </head>
