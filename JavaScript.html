@@ -231,6 +231,19 @@
     APP_HISTORY_READY_ = false; // supaya initAppHistory_ pasang baseline baru saat login berikutnya, bukan numpuk di history sesi lama
     PAGE_HTML_CACHE = {};
     sessionStorage_remove(PAGE_CACHE_STORAGE_KEY_); // jangan sampai user berikutnya di tab yg sama lihat cache HTML user lama
+    // FIX BUG NYATA ("refresh -> sekilas menu LAIN yang ke-highlight/terbuka sebelum balik ke
+    // yang benar"): ag_last_open_page (LAST_PAGE_STORAGE_KEY_) disimpan lewat sessionStorage_set,
+    // yang SEBENARNYA menulis ke localStorage (lihat catatan di deklarasi sessionStorage_set/get
+    // di atas) — jadi nilainya BERTAHAN lintas logout/login, bahkan lintas AKUN BERBEDA di
+    // device/browser yang sama. Tanpa baris ini: Akun A terakhir buka menu "Laporan" -> logout
+    // -> Akun B (role beda, mis. AGENT yang bahkan tidak punya akses menu itu) login -> lain
+    // waktu Akun B refresh browser -> bootApp() (IS_FRESH_LOGIN_=false) baca ag_last_open_page
+    // yang MASIH berisi "Laporan" peninggalan Akun A -> showPage('Laporan') sempat memilih/
+    // highlight section menu itu di sidebar sebelum guard peran (lihat validasi pageToOpen baru
+    // di bootApp()) sempat mengoreksinya balik ke Dashboard — itulah "flash menu lain" yang
+    // dilaporkan. FIX: hapus juga key ini saat logout, supaya user berikutnya di device yang
+    // sama selalu mulai bersih (fallback ke Dashboard), bukan mewarisi menu terakhir akun lama.
+    sessionStorage_remove(LAST_PAGE_STORAGE_KEY_);
     // CATATAN: troli Dashboard (AGENT_DASH_CART_) SENGAJA TIDAK dihapus dari penyimpanan di
     // sini — sudah disimpan per-akun (lihat agentDashCartKey_/localStorage), jadi aman tetap
     // ada supaya Agent yang sama tidak kehilangan troli-nya kalau logout lalu login lagi.
@@ -792,6 +805,17 @@
     if(!IS_FRESH_LOGIN_){
       try{ pageToOpen = sessionStorage_get(LAST_PAGE_STORAGE_KEY_) || 'dashboard'; }catch(e){}
     }
+    // FIX BUG NYATA (lapis pertahanan KEDUA, selain penghapusan key ini saat logout di atas):
+    // validasi pageToOpen terhadap MENU_ITEMS + role user YANG SEDANG LOGIN sebelum dipakai.
+    // Kalaupun ag_last_open_page ternyata masih menyimpan halaman yang TIDAK ADA di menu role
+    // ini (mis. dari akun lain sebelumnya di device yang sama, atau menu itu sendiri sudah
+    // dihapus/berubah nama), jangan sampai showPage() sempat membuka/highlight halaman yang
+    // salah itu dulu — validasi & fallback ke Dashboard di sini, SEBELUM showPage() dipanggil
+    // sama sekali, supaya tidak ada sepersekian detik pun menu yang salah sempat kelihatan.
+    var pageAllowedForRole_ = MENU_ITEMS.some(function(item){
+      return item.key === pageToOpen && item.roles.indexOf(STATE.user.role) !== -1;
+    });
+    if(!pageAllowedForRole_) pageToOpen = 'dashboard';
     showPage(pageToOpen);
     // FIX PERFORMA (laporan nyata: HP dengan sinyal lemah sering kena "TIMEOUT: server
     // tidak merespons dalam 60 detik" tepat di Dashboard, PADAHAL Live Chat sudah dimatikan
