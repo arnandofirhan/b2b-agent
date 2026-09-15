@@ -721,24 +721,40 @@
     var token = sessionStorage_get('ag_token');
     var userRaw = sessionStorage_get('ag_user');
     if(token && userRaw){
-      // FIX PERFORMA LOGIN ("awal login selalu lama"): SEBELUMNYA di titik ini app langsung
-      // percaya token dari sessionStorage masih valid dan lanjut bootApp() — yang menembak
-      // beberapa RPC (dashboard, products, cart, notifications) SEKALIGUS. Kalau token itu
-      // sudah expired (sesi 6 jam, wajar terjadi tiap hari), SEMUA RPC itu tetap menembak ke
-      // server dan baru gagal SESSION_EXPIRED masing-masing setelah round-trip penuh —
-      // ditambah retry otomatis di api-bridge.js kalau kebetulan sempat 404 duluan — sebelum
-      // akhirnya salah satu gagal, handleLogout() jalan, BARU layar Login tampil. Itulah
-      // sumber jeda lama yang dilaporkan user, PERSIS terjadi di layar Login sebelum sempat
-      // login sungguhan.
-      // FIX: validasi token dengan SATU RPC yang sangat murah (validateSession — cuma baca
-      // CacheService, TIDAK PERNAH buka spreadsheet) sebelum memutuskan lanjut bootApp() atau
-      // tidak. Ditandai HI-priority (bukan low-priority) supaya tidak ikut antre di belakang
-      // job background lain — ini satu-satunya yang menahan tampilnya UI, harus secepat
-      // mungkin dapat slot.
-      google.script.run.withSuccessHandler(function(res){
-        if(res && res.valid){
+      // FIX PERFORMA LOGIN ("awal login selalu lama") + FIX PERFORMA BESAR ("PWA di HP
+      // lemot, semua menu loading"): SEBELUMNYA titik ini menembak validateSession() saja
+      // (1 request), baru SETELAH itu selesai, bootApp() -> showPage('dashboard') menembak
+      // getAgentDashboardConfig() lagi (request KEDUA, terpisah, KHUSUS role AGENT — lihat
+      // renderDashboard() yang cabang ke renderAgentDashboard() cuma untuk role itu). Dua
+      // request berurutan itu artinya 2x kena overhead redirect+network GAS yang di sinyal
+      // seluler HP terasa berat (lihat catatan overhead di handleBatchRpc_/Code.gs).
+      // FIX: gabungkan validateSession + getAgentDashboardConfig jadi SATU request lewat
+      // callBackendBatch (lihat api-bridge.js) — TAPI HANYA untuk role AGENT (dibaca dari
+      // userRaw yang sudah tersimpan sejak login sebelumnya), supaya role lain (Admin/
+      // Supervisor/Manager, yang pakai renderDashboard() cabang LAIN, bukan
+      // getAgentDashboardConfig) tidak dibebani 1 panggilan tambahan yang tidak akan
+      // terpakai sama sekali.
+      var savedUser_ = null;
+      try{ savedUser_ = JSON.parse(userRaw); }catch(e){}
+      var isAgentRole_ = !!(savedUser_ && savedUser_.role === 'AGENT');
+      var batchCalls_ = [{ fn: 'validateSession', args: [token] }];
+      if(isAgentRole_) batchCalls_.push({ fn: 'getAgentDashboardConfig', args: [token] });
+
+      window.callBackendBatch(batchCalls_).then(function(results){
+        var sessionRes = results[0];
+        if(sessionRes && sessionRes.ok && sessionRes.result && sessionRes.result.valid){
           STATE.token = token;
-          STATE.user = JSON.parse(userRaw);
+          STATE.user = savedUser_ || JSON.parse(userRaw);
+          // Kalau panggilan kedua ini somehow gagal (mis. requireRole_ menolak), cukup
+          // lewati prefetch-nya secara diam-diam — renderAgentDashboard() akan fallback
+          // fetch sendiri seperti biasa, TIDAK ADA dampak apapun ke UI/flow, cuma
+          // kehilangan keuntungan prefetch-nya saja.
+          if(isAgentRole_){
+            var dashRes = results[1];
+            if(dashRes && dashRes.ok){
+              PREFETCHED_DASHBOARD_CFG_ = dashRes.result;
+            }
+          }
           bootApp();
         } else {
           // Token sudah tidak valid di server — bersihkan sisa sesi lama secara LOKAL saja
@@ -747,12 +763,12 @@
           sessionStorage_remove('ag_token');
           sessionStorage_remove('ag_user');
         }
-      }).withFailureHandler(function(){
+      }).catch(function(){
         // Gagal validasi (mis. network error) — jangan paksa bootApp() dengan token yang
         // belum tentu valid; aman fallback ke layar Login, user tinggal login ulang manual.
         sessionStorage_remove('ag_token');
         sessionStorage_remove('ag_user');
-      }).validateSession(token);
+      });
     }
   }
   if(document.readyState === 'loading'){
@@ -7830,6 +7846,12 @@
   // di sini, jadi Admin bisa ubah tanpa perlu edit kode/deploy ulang.
   // =============================================================
   var AGENT_DASH_CFG_CACHE_ = null; // config terakhir dari getAgentDashboardConfig, dipakai untuk re-render cepat saat qty troli berubah
+  // Diisi oleh _agBootInit_() lewat callBackendBatch (lihat catatan di sana) kalau app boot
+  // dari sesi yang sudah login (bukan login form baru) — begitu dipakai SEKALI oleh
+  // renderAgentDashboard() di bawah, langsung di-null-kan lagi supaya render Dashboard
+  // BERIKUTNYA (klik menu lain lalu balik lagi) tetap fetch fresh seperti biasa, tidak
+  // pernah numpang data prefetch yang sudah basi.
+  var PREFETCHED_DASHBOARD_CFG_ = null;
 
   function renderAgentDashboard(){
     var content = document.getElementById('content');
@@ -7860,6 +7882,19 @@
       positionAgentBannerNow_();
     } else {
       content.innerHTML = '<div class="spinner"></div>';
+    }
+    // FIX PERFORMA BESAR: kalau _agBootInit_() sudah sempat prefetch config Dashboard lewat
+    // callBackendBatch bersamaan dengan validateSession (lihat PREFETCHED_DASHBOARD_CFG_ &
+    // catatan di _agBootInit_), pakai LANGSUNG data itu di sini — tidak perlu tembak
+    // getAgentDashboardConfig() lagi sama sekali. Ini SATU-SATUNYA request yang dihilangkan
+    // (bukan cache basi — data ini baru saja diambil beberapa milidetik lalu dalam request
+    // batch yang sama), dan begitu dipakai langsung di-null-kan supaya render Dashboard
+    // berikutnya (pindah menu lalu balik lagi) tetap fetch fresh seperti biasa.
+    if(PREFETCHED_DASHBOARD_CFG_){
+      var prefetched_ = PREFETCHED_DASHBOARD_CFG_;
+      PREFETCHED_DASHBOARD_CFG_ = null;
+      paintAgentDashboard_(prefetched_);
+      return;
     }
     google.script.run
       .withSuccessHandler(function(cfg){
