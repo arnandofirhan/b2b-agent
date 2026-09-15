@@ -8051,6 +8051,21 @@
     ['pointerdown','touchstart'].forEach(function(evt){
       track.addEventListener(evt, stopAgentBannerAutoplay_, { passive: true });
     });
+    // FIX BUG NYATA ("banner tidak geser otomatis lagi sampai digeser manual 1x, misalnya
+    // setelah tap buka popup produk"): stopAgentBannerAutoplay_ di atas jalan begitu jari
+    // MENYENTUH track (touchstart/pointerdown) supaya autoplay langsung diam saat mau
+    // digeser. Tapi penjadwalan ULANG autoplay (AGENT_BANNER_RESUME_TIMER_) sebelumnya
+    // HANYA ditaruh di dalam onAgentBannerScroll_ — yaitu handler event `scroll`. Kalau
+    // sentuhan itu ternyata cuma TAP (buka popup produk) dan bukan swipe, event `scroll`
+    // tidak pernah terjadi sama sekali, jadi resume timer tidak pernah dijadwalkan dan
+    // autoplay mati total sampai user kebetulan geser manual (baru men-trigger `scroll`).
+    // Fix: pasang fallback di pointerup/touchend/mouseup yang memanggil onAgentBannerScroll_
+    // langsung — fungsi itu aman dipanggil walau posisi scroll tidak berubah sama sekali
+    // (cuma recalc + jadwalkan resume), jadi tap tanpa geser pun tetap bikin autoplay
+    // otomatis nyala lagi ~3.5 detik kemudian.
+    ['pointerup','touchend','mouseleave'].forEach(function(evt){
+      track.addEventListener(evt, function(){ onAgentBannerScroll_(); }, { passive: true });
+    });
   }
   // CATATAN: autoplay sengaja SELALU membaca posisi scroll TERKINI tiap tick (bukan simpan
   // index terpisah), jadi kalau Agent geser manual di antara tick, autoplay otomatis
