@@ -168,6 +168,50 @@
     outline:2px solid var(--ag-green);outline-offset:2px;
   }
 
+  /* ===== FEEDBACK KLIK GLOBAL ("tombol kepencet" harus kelihatan JELAS, bukan cuma transform
+     tipis .96 yang nyaris tidak kelihatan) =====
+     BUG SEBELUMNYA: banyak elemen (X/.modal-close, .icon-btn, item menu sidebar/bottom-nav,
+     kartu produk, kartu KPI, tab notifikasi, dsb) SAMA SEKALI tidak punya state :active, jadi
+     kelihatan "tidak responsif" walau klik-nya sebenarnya jalan — user harus menebak apakah
+     tap-nya kedeteksi atau tidak. Fix: pasang shadow TEGAS ke dalam (inset) + sedikit
+     mengecil begitu jari/kursor MENEKAN (bukan cuma saat hover, yang di HP/touch tidak pernah
+     kepakai), berlaku ke SEMUA elemen klik umum di seluruh menu (tombol, ikon, close (X),
+     item navigasi, kartu, dot, tab), pakai !important supaya konsisten menimpa shadow warna
+     milik varian tombol tertentu (mis. .btn-primary/.btn-danger yang punya box-shadow warna
+     sendiri) — begitu ditekan, shadow gelap tegas ini yang harus terlihat, bukan shadow warna
+     biasa. Nilai alpha dinaikkan di dark mode karena kartu gelap butuh shadow lebih pekat
+     supaya tetap kelihatan bedanya. */
+  a:active, button:active, .btn:active, .icon-btn:active, .modal-close:active, [role="button"]:active,
+  .signature-btn:active, .theme-toggle-btn:active, .notif-bell-btn:active, .action-btn:active,
+  .notif-tab:active, .doc-tile:active, .po-product-tile:active, .kpi-card-clickable:active,
+  .cal-cell-has-items:active, .po-recent-row:active, .agent-banner-dot:active, .btn-pill-outline:active,
+  .table-pager-nav .btn:active{
+    box-shadow: inset 0 2px 7px rgba(0,0,0,.25) !important;
+  }
+  html[data-theme="dark"] a:active, html[data-theme="dark"] button:active, html[data-theme="dark"] .btn:active,
+  html[data-theme="dark"] .icon-btn:active, html[data-theme="dark"] .modal-close:active,
+  html[data-theme="dark"] [role="button"]:active, html[data-theme="dark"] .signature-btn:active,
+  html[data-theme="dark"] .theme-toggle-btn:active, html[data-theme="dark"] .notif-bell-btn:active,
+  html[data-theme="dark"] .action-btn:active, html[data-theme="dark"] .notif-tab:active,
+  html[data-theme="dark"] .doc-tile:active, html[data-theme="dark"] .po-product-tile:active,
+  html[data-theme="dark"] .kpi-card-clickable:active, html[data-theme="dark"] .cal-cell-has-items:active,
+  html[data-theme="dark"] .po-recent-row:active, html[data-theme="dark"] .btn-pill-outline:active{
+    box-shadow: inset 0 2px 8px rgba(0,0,0,.5) !important;
+  }
+  /* Item navigasi (sidebar/bottom-nav) berlatar transparan/gelap — inset shadow gelap tidak
+     kelihatan di situ, jadi dipakai overlay TERANG sebagai gantinya (masih pakai box-shadow,
+     trik inset spread 999px = highlight seluruh area elemen, bukan cuma tepi). */
+  .nav-item:active{box-shadow: inset 0 0 0 999px rgba(255,255,255,.16) !important;}
+  .bottom-nav-item:active{box-shadow: inset 0 0 0 999px rgba(11,61,46,.08) !important; border-radius:12px;}
+  html[data-theme="dark"] .bottom-nav-item:active{box-shadow: inset 0 0 0 999px rgba(255,255,255,.1) !important;}
+  /* Tombol/ikon yang sudah pasti punya scale/rotate sendiri saat hover tetap dipertahankan,
+     cuma ditambah sedikit "mengecil lagi" khusus saat ditekan supaya terasa lebih tegas. */
+  .icon-btn:active{transform:scale(.9);}
+  .modal-close:active{transform:rotate(90deg) scale(.88);}
+  .signature-btn:active, .theme-toggle-btn:active, .notif-bell-btn:active{transform:scale(.9);}
+  .btn-pill-outline:active{transform:scale(.94);}
+  .nav-item:active, .bottom-nav-item:active{transform:scale(.97);}
+
   /* ---------- Slim scrollbars (avoid bulky native scrollbar eating space) ---------- */
   html{scrollbar-width:thin;scrollbar-color:var(--ag-scrollbar-thumb) transparent;}
   *{scrollbar-width:thin;scrollbar-color:var(--ag-scrollbar-thumb) transparent;}
