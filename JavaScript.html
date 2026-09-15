@@ -203,6 +203,7 @@
             if(rememberEl && rememberEl.checked){ localStorage.setItem('ag_remembered_email', email); }
             else { localStorage.removeItem('ag_remembered_email'); }
           }catch(e){}
+          IS_FRESH_LOGIN_ = true; // lihat deklarasi di dekat bootApp()
           bootApp();
         } else {
           errEl.textContent = res.message || 'Login gagal.';
@@ -309,10 +310,21 @@
     if(!oldPw || !newPw || !confirmPw){ showToast('Semua kolom wajib diisi.','error'); return; }
     if(newPw.length < 6){ showToast('Password baru minimal 6 karakter.','error'); return; }
     if(newPw !== confirmPw){ showToast('Konfirmasi password baru tidak cocok.','error'); return; }
+    // FIX BUG NYATA (klik Simpan tidak ada loading apapun, tiba2 langsung notif sukses/gagal):
+    // dikasih splash loading yang sama seperti form Simpan lain, konsisten di semua menu.
+    var cpBtn = document.getElementById('modalSaveBtn');
+    if(cpBtn) cpBtn.disabled = true;
+    setPageLoading_(true, 'Menyimpan password');
     google.script.run.withSuccessHandler(function(res){
+      setPageLoading_(false);
+      if(cpBtn) cpBtn.disabled = false;
       if(res.success){ closeModal(); showToast(res.message||'Password berhasil diubah.','success'); }
       else showToast(res.message||'Gagal mengubah password.','error');
-    }).withFailureHandler(function(e){ handleBackendError(e); }).changePassword(STATE.token, oldPw, newPw);
+    }).withFailureHandler(function(e){
+      setPageLoading_(false);
+      if(cpBtn) cpBtn.disabled = false;
+      handleBackendError(e);
+    }).changePassword(STATE.token, oldPw, newPw);
   }
 
   function confirmLogout(){
@@ -584,7 +596,14 @@
   }
 
   function sendMySignature_(fileObj){
+    // FIX BUG NYATA (klik Simpan tanda tangan tidak ada loading apapun, tiba2 langsung
+    // notif sukses/gagal) — splash konsisten dengan form Simpan lain.
+    var sigBtn = document.getElementById('modalSaveBtn');
+    if(sigBtn) sigBtn.disabled = true;
+    setPageLoading_(true, 'Menyimpan tanda tangan');
     google.script.run.withSuccessHandler(function(res){
+      setPageLoading_(false);
+      if(sigBtn) sigBtn.disabled = false;
       if(res && res.success){
         MY_SIGNATURE_STATUS_CACHE_ = null; // signature berubah — jangan tampilkan status lama lagi
         closeModal();
@@ -592,7 +611,11 @@
       } else {
         showToast((res && res.message) || 'Gagal menyimpan tanda tangan.','error');
       }
-    }).withFailureHandler(function(e){ handleBackendError(e); }).uploadMySignature(STATE.token, fileObj);
+    }).withFailureHandler(function(e){
+      setPageLoading_(false);
+      if(sigBtn) sigBtn.disabled = false;
+      handleBackendError(e);
+    }).uploadMySignature(STATE.token, fileObj);
   }
 
   // Note: GAS webapps in an iframe can restrict localStorage/sessionStorage
@@ -704,6 +727,20 @@
     return HARI_ID_[d.getDay()] + ', ' + d.getDate() + ' ' + BULAN_ID_[d.getMonth()] + ' ' + d.getFullYear();
   }
 
+  // FIX BUG NYATA ("refresh halaman Transaksi tapi yang keliatan malah balik ke Dashboard
+  // + nunggu lama data PO baru muncul"): sebelumnya bootApp() SELALU showPage('dashboard')
+  // dan langsung menembak preloadAllPages_() (fetch SEMUA menu lain di background) setiap
+  // kali app dibuka lagi — termasuk saat itu HANYA reload/refresh browser biasa, bukan login
+  // baru. Akibatnya: (a) menu yang sedang dibuka user (mis. Transaksi) tidak langsung
+  // di-refresh sendiri, malah ke-lempar ke Dashboard dulu; dan (b) request fetch Dashboard +
+  // belasan menu preload lain ikut rebutan bandwidth/slot request dengan fetch Transaksi yang
+  // sebenarnya user tunggu, jadi data PO baru terasa "lama muncul". IS_FRESH_LOGIN_ dipakai
+  // untuk membedakan 2 jalur pemanggilan bootApp(): true kalau baru saja submit form Login
+  // (wajar mulai dari Dashboard + boleh preload semua menu), false kalau ini cuma reload
+  // sesi yang sudah login (harus balik ke menu TERAKHIR yang dibuka & tidak usah preload
+  // menu lain — biar 1 request refresh itu fokus ke 1 menu itu saja).
+  var IS_FRESH_LOGIN_ = false;
+  var LAST_PAGE_STORAGE_KEY_ = 'ag_last_open_page';
   function bootApp(){
     // Pulihkan troli Dashboard milik akun ini (per-akun, lihat agentDashCartKey_) — harus
     // di baris PALING AWAL bootApp(), begitu STATE.user sudah pasti terisi (baik dari login
@@ -714,6 +751,7 @@
     // dipanggil — ini yang membuat reload di desktop terasa instan seperti buka
     // ulang PWA di HP (lihat catatan panjang di deklarasi PAGE_HTML_CACHE di atas).
     restorePageCache_();
+    restoreProductsPromosCache_();
     document.getElementById('loginScreen').style.display = 'none';
     document.getElementById('appShell').style.display = 'flex';
     document.getElementById('userNameLabel').textContent = STATE.user.name;
@@ -743,7 +781,14 @@
     // re-render Dashboard susulan SETELAH slot akhirnya ada (mis. pindah halaman lalu balik
     // lagi ke Dashboard) — makanya terkesan "kadang muncul kadang tidak".
     initLiveChat_();
-    showPage('dashboard');
+    // Login baru -> selalu mulai dari Dashboard. Reload/refresh sesi yang sudah login ->
+    // balik ke menu TERAKHIR yang sedang dibuka user sebelum di-refresh (kalau tidak ada
+    // catatannya, mis. sesi lama sebelum fix ini, aman fallback ke Dashboard).
+    var pageToOpen = 'dashboard';
+    if(!IS_FRESH_LOGIN_){
+      try{ pageToOpen = sessionStorage_get(LAST_PAGE_STORAGE_KEY_) || 'dashboard'; }catch(e){}
+    }
+    showPage(pageToOpen);
     // FIX PERFORMA (laporan nyata: HP dengan sinyal lemah sering kena "TIMEOUT: server
     // tidak merespons dalam 60 detik" tepat di Dashboard, PADAHAL Live Chat sudah dimatikan
     // total — lihat LIVECHAT_FEATURE_ENABLED_/preloadAllPages_, jadi bukan itu biang
@@ -768,7 +813,11 @@
       /^(slow-2g|2g)$/.test(netInfo.effectiveType || '') ||
       (typeof netInfo.downlink === 'number' && netInfo.downlink > 0 && netInfo.downlink < 1)
     ));
-    if(!isSlowConn){
+    // Preload SEMUA menu lain di background HANYA setelah login baru — kalau ini cuma
+    // reload/refresh (IS_FRESH_LOGIN_ === false), jangan ikut menembak menu2 lain sama
+    // sekali, supaya bandwidth/slot request fokus ke 1 menu yang memang sedang dibuka user
+    // (lihat catatan panjang di deklarasi IS_FRESH_LOGIN_).
+    if(!isSlowConn && IS_FRESH_LOGIN_){
       // DITURUNKAN dari 2.5 detik -> 1 detik: sekarang HI dan LO punya jatah slot masing-
       // masing yang lebih dari 1 (lihat MAX_CONCURRENT_HI/LO di api-bridge.js), jadi preload
       // background TIDAK LAGI bisa menyita satu-satunya slot yang dipakai request Dashboard
@@ -777,6 +826,7 @@
       // bukan lagi untuk menghindari rebutan slot tunggal.
       setTimeout(preloadAllPages_, 1000);
     }
+    IS_FRESH_LOGIN_ = false; // reset — reload berikutnya default dianggap bukan login baru
     loadNotifications_();
     if(NOTIF_POLL_INTERVAL_) clearInterval(NOTIF_POLL_INTERVAL_);
     NOTIF_POLL_INTERVAL_ = setInterval(loadNotifications_, 120000); // refresh tiap 2 menit
@@ -1100,21 +1150,42 @@
   var NAV_BADGE_COUNTS_ = {};
 
   /** Menghitung ulang NAV_BADGE_COUNTS_ berdasarkan data notifikasi PO yang sudah dimuat
-      (NOTIF_STATE_.items). Notifikasi bertipe "warning"/"orange" merepresentasikan PO yang
-      butuh tindakan (menunggu review Supervisor / menunggu konfirmasi pembayaran), sedangkan
-      "success"/"info"/"danger" bersifat informasional saja — jadi hanya yang actionable yang
-      dihitung ke badge sidebar. Dipanggil setiap kali notifikasi selesai dimuat/diperbarui. */
+      (NOTIF_STATE_.items). Dipakai baik oleh Sidebar (Admin/Supervisor/Manager) MAUPUN
+      Bottom Nav (Agent) — keduanya baca dari NAV_BADGE_COUNTS_ yang sama.
+      FIX BUG NYATA ("kenapa Transaksi/Order Agent gak ada badge angka kayak sidebar Admin"):
+      sebelumnya di sini cuma menghitung notif dengan type 'warning'/'orange' — dua tipe itu
+      CUMA dipakai backend utk cabang STAFF (lihat getNotifications() di Code.gs), jadi utk
+      Agent (yang notifnya bertipe success/danger/info) hasilnya selalu 0, badge tidak
+      pernah muncul sama sekali. Sekarang backend menandai tiap notif dengan `page`
+      ('transactions'/'orders') dan `actionable` (perlu dilihat/ditindaklanjuti atau cuma
+      info pasif) secara eksplisit per-role.
+      FIX TAMBAHAN (regresi nyata: "badge yang tadinya ada di desktop malah ikut hilang"):
+      kalau JavaScript.html ini sudah versi baru TAPI Code.gs yang ke-deploy masih versi
+      LAMA (belum punya field page/actionable — mis. salah deploy versi/nyangkut cache
+      Apps Script), semua notif jadi `n.page===undefined` & `n.actionable===undefined`,
+      sehingga filter di bawah SELALU 0 untuk SEMUA role, termasuk Staff yang sebelumnya
+      sudah jalan normal. Supaya tidak pernah "total blank" walau ada rawan mismatch versi
+      frontend/backend begini, field baru dipakai KALAU ADA, tapi kalau tidak ada sama
+      sekali di respons (backend lama), otomatis jatuh ke cara hitung LAMA (type-based)
+      sebagai fallback — jadi badge tetap jalan di kedua kondisi sambil menunggu Code.gs
+      versi terbaru benar-benar ter-deploy. */
   function recomputeNavBadgeCounts_(){
-    var poActionable = NOTIF_STATE_.items.filter(function(n){
-      // PO yang menunggu review Supervisor / menunggu konfirmasi pembayaran.
-      return (n.type === 'warning' || n.type === 'orange') && n.poId && !n.orderId;
-    });
-    var orderActionable = NOTIF_STATE_.items.filter(function(n){
-      // Order yang sudah dibuat tapi belum dikirim (menunggu Surat Jalan).
-      return n.type === 'orange' && n.orderId;
-    });
-    NAV_BADGE_COUNTS_.transactions = poActionable.length;
-    NAV_BADGE_COUNTS_.orders = orderActionable.length;
+    var hasNewFields = NOTIF_STATE_.items.some(function(n){ return n.page !== undefined; });
+    if(hasNewFields){
+      var actionable = NOTIF_STATE_.items.filter(function(n){ return n.actionable; });
+      NAV_BADGE_COUNTS_.transactions = actionable.filter(function(n){ return n.page === 'transactions'; }).length;
+      NAV_BADGE_COUNTS_.orders = actionable.filter(function(n){ return n.page === 'orders'; }).length;
+    } else {
+      // Fallback lama — dipakai kalau Code.gs yang lagi jalan belum versi terbaru.
+      var poActionable = NOTIF_STATE_.items.filter(function(n){
+        return (n.type === 'warning' || n.type === 'orange') && n.poId && !n.orderId;
+      });
+      var orderActionable = NOTIF_STATE_.items.filter(function(n){
+        return n.type === 'orange' && n.orderId;
+      });
+      NAV_BADGE_COUNTS_.transactions = poActionable.length;
+      NAV_BADGE_COUNTS_.orders = orderActionable.length;
+    }
   }
 
   function toggleSidebar(){
@@ -1221,6 +1292,9 @@
       pageKey = 'dashboard';
     }
     STATE.currentPage = pageKey;
+    // Ingat menu terakhir yang dibuka supaya kalau user reload/refresh browser, app balik
+    // ke menu INI lagi (bukan selalu ke Dashboard) — lihat bootApp()/IS_FRESH_LOGIN_.
+    try{ sessionStorage_set(LAST_PAGE_STORAGE_KEY_, pageKey); }catch(e){}
     // FIX BUG NYATA ("Troli masih tembus/kelihatan di menu lain"): sebelumnya
     // refreshAgentCartFab_() (yang mensyaratkan STATE.currentPage === 'dashboard' sebelum
     // menampilkan FAB) HANYA dipanggil dari paintPage_() — jalur render yang dipakai kalau
@@ -3231,6 +3305,49 @@
   var CATALOG_PRODUCTS_CACHE_ = null;
   var CATALOG_FILTER_ = { q:'', category:null };
 
+  // =============================================================
+  // FIX ROOT CAUSE ("Troli/nama produk lama banget nunggu loading, dan tidak auto
+  // tampil dari cache walau logout-login/reopen app"): CATALOG_PRODUCTS_CACHE_ dan
+  // NEWPO_PRODUCTS_CACHE_/NEWPO_PROMOS_CACHE_ di bawah SEBELUMNYA cuma variabel JS
+  // biasa (persis PAGE_HTML_CACHE dulu SEBELUM dibikin persist) — otomatis KOSONG
+  // LAGI setiap reload/app ditutup, jadi Troli & modal "Buat PO" SELALU nunggu 1
+  // round-trip penuh ke GAS (listProducts/listPromos) tiap kali dibuka pertama kali
+  // pasca reload, walau datanya sendiri jarang berubah. Ini akar masalah kenapa
+  // Troli/Katalog kelihatan lemot padahal koneksi lancar — bukan soal jaringan,
+  // tapi cache yang tidak pernah disimpan.
+  // FIX: simpan produk & promo ke localStorage (sama seperti PAGE_HTML_CACHE, lewat
+  // sessionStorage_set/get yang sudah berbasis localStorage), dipulihkan SEBELUM
+  // Agent buka Katalog/Troli/Buat PO manapun (lihat restoreProductsPromosCache_() di
+  // bootApp()) — jadi begitu app dibuka (termasuk pasca logout-login/reopen), data
+  // LAMA langsung tampil instan dari cache, sambil listProducts/listPromos tetap
+  // jalan diam-diam di background utk refresh (stale-while-revalidate, sama pola
+  // dgn PAGE_HTML_CACHE) — tidak pernah nunggu network utk first paint lagi.
+  var PRODUCTS_LS_KEY_ = 'ag_products_cache_v1';
+  var PROMOS_LS_KEY_ = 'ag_promos_cache_v1';
+  function persistProductsCache_(rows){
+    try{ sessionStorage_set(PRODUCTS_LS_KEY_, JSON.stringify(rows)); }catch(e){}
+  }
+  function persistPromosCache_(rows){
+    try{ sessionStorage_set(PROMOS_LS_KEY_, JSON.stringify(rows)); }catch(e){}
+  }
+  function restoreProductsPromosCache_(){
+    try{
+      var p = sessionStorage_get(PRODUCTS_LS_KEY_);
+      if(p){
+        var rows = JSON.parse(p);
+        if(rows && rows.length){
+          CATALOG_PRODUCTS_CACHE_ = rows;
+          NEWPO_PRODUCTS_CACHE_ = rows;
+        }
+      }
+      var pr = sessionStorage_get(PROMOS_LS_KEY_);
+      if(pr){
+        var promoRows = JSON.parse(pr);
+        if(promoRows) NEWPO_PROMOS_CACHE_ = promoRows;
+      }
+    }catch(e){ /* cache korup/kosong — biarkan jalan normal tanpa cache */ }
+  }
+
   function renderCatalog(){
     if(CATALOG_PRODUCTS_CACHE_){
       paintPage_('catalog', catalogPageHtml_());
@@ -3239,12 +3356,13 @@
     google.script.run
       .withSuccessHandler(function(rows){
         CATALOG_PRODUCTS_CACHE_ = rows;
+        persistProductsCache_(rows);
         if(!document.getElementById('catalogGrid')){
           paintPage_('catalog', catalogPageHtml_());
         }
         renderCatalogGrid_();
       })
-      .withFailureHandler(function(e){ handleBackendError(e, pageErrorEl_('catalog')); })
+      .withFailureHandler(function(e){ if(!CATALOG_PRODUCTS_CACHE_) handleBackendError(e, pageErrorEl_('catalog')); })
       .listProducts(STATE.token);
   }
 
@@ -3290,7 +3408,16 @@
     var grid = document.getElementById('catalogGrid');
     var tabsEl = document.getElementById('catalogCategoryTabs');
     if(!grid || !CATALOG_PRODUCTS_CACHE_) return;
-    if(tabsEl && !tabsEl.innerHTML) tabsEl.innerHTML = catalogCategoryTabsHtml_(CATALOG_PRODUCTS_CACHE_);
+    // FIX BUG NYATA ("klik tab kategori BKT, produk kefilter benar, tapi notif hijau
+    // aktifnya tetap nyangkut di 'Semua'"): sebelumnya tabsEl.innerHTML cuma diisi SEKALI
+    // (guard `!tabsEl.innerHTML`, dimaksudkan biar tab tidak ikut re-render tiap ngetik di
+    // search box) — tapi guard yang sama itu juga mencegah tab di-render ULANG setelah tab
+    // LAIN diklik, jadi class 'is-active' di markup lama tidak pernah ikut pindah walau
+    // CATALOG_FILTER_.category di variabel JS sudah benar berubah (makanya grid-nya sendiri
+    // sudah kefilter dengan benar, cuma tombolnya yang kelihatan diam). FIX: selalu bangun
+    // ulang tabsHtml_ setiap renderCatalogGrid_ dipanggil — ringan (cuma beberapa tombol
+    // kecil), jadi highlight aktif selalu sinkron dengan CATALOG_FILTER_.category saat ini.
+    if(tabsEl) tabsEl.innerHTML = catalogCategoryTabsHtml_(CATALOG_PRODUCTS_CACHE_);
 
     // Produk INACTIVE tetap disembunyikan dari Katalog Agent — konsisten dengan grid Buat PO,
     // karena produk yang sudah dinonaktifkan Admin memang tidak lagi relevan utk dilihat Agent.
@@ -4438,6 +4565,8 @@
       if(myModalGeneration !== MODAL_GENERATION_) return;
       NEWPO_PRODUCTS_CACHE_ = got.products;
       NEWPO_PROMOS_CACHE_ = got.promos;
+      persistProductsCache_(got.products);
+      persistPromosCache_(got.promos);
       NEWPO_PRODUCTS_ = got.products;
       NEWPO_CART_ = NEWPO_CART_ || {};
       // Only (re)paint from scratch if we hadn't already painted from cache above.
@@ -4805,11 +4934,22 @@
     var ids = sortByCategoryThenName_(Object.keys(NEWPO_CART_), function(pid){ return findNewPOProduct_(pid); });
     if(!ids.length){ showToast('Tambahkan minimal 1 produk ke keranjang.','error'); return; }
 
+    // FIX BUG NYATA ("klik Simpan/Buat PO tidak ada loading apapun, tiba2 langsung notif
+    // sukses/gagal"): submitPO() sebelumnya sama sekali tidak memanggil setPageLoading_()
+    // seperti kebanyakan form Simpan lain (saveProductForm, savePromoForm, dst) — dikasih
+    // di sini juga supaya konsisten & Agent tidak mengira tombolnya tidak merespons sama
+    // sekali selagi request masih di jalan.
+    var poSaveBtn = document.getElementById('modalSaveBtn');
+    if(poSaveBtn) poSaveBtn.disabled = true;
+    setPageLoading_(true, 'Menyimpan PO');
+
     if(NEWPO_EDIT_APPROVED_ID_){
       var editId = NEWPO_EDIT_APPROVED_ID_;
       var items = ids.map(function(pid){ return { productId: pid, qty: NEWPO_CART_[pid] }; });
       var approvedDisc = Number(val_('poDiscount'));
       google.script.run.withSuccessHandler(function(res){
+        setPageLoading_(false);
+        if(poSaveBtn) poSaveBtn.disabled = false;
         if(res.success){
           NEWPO_CART_ = {};
           NEWPO_EDIT_APPROVED_ID_ = null;
@@ -4820,7 +4960,11 @@
         } else {
           showToast(res.message,'error');
         }
-      }).withFailureHandler(function(e){ handleBackendError(e); }).editApprovedPO(STATE.token, editId, approvedDisc, items);
+      }).withFailureHandler(function(e){
+        setPageLoading_(false);
+        if(poSaveBtn) poSaveBtn.disabled = false;
+        handleBackendError(e);
+      }).editApprovedPO(STATE.token, editId, approvedDisc, items);
       return;
     }
 
@@ -4834,6 +4978,8 @@
     };
     var resubmitId = NEWPO_RESUBMIT_ID_;
     var onDone = function(res){
+      setPageLoading_(false);
+      if(poSaveBtn) poSaveBtn.disabled = false;
       if(res.success){
         NEWPO_CART_ = {};
         // PO sudah berhasil terkirim — kosongkan juga troli Dashboard (AGENT_DASH_CART_)
@@ -4845,16 +4991,27 @@
         closeModal();
         if(resubmitId) invalidateDetailModalCache_('po:'+resubmitId);
         invalidateDashboardCache_();
+        // FIX: badge angka Transaksi/Order (lihat recomputeNavBadgeCounts_) sebelumnya cuma
+        // di-refresh oleh polling 2 menit (NOTIF_POLL_INTERVAL_) — jadi begitu status PO
+        // berubah lewat aksi di sini, badge yang relevan TERLIHAT NYANGKUT ke angka lama
+        // sampai polling berikutnya kebetulan lewat. Panggil sekarang juga supaya badge
+        // langsung sinkron di detik yang sama dengan aksinya, bukan nunggu refresh manual.
+        loadNotifications_();
         showToast(resubmitId ? ('PO '+res.poId+' diajukan ulang.') : ('PO '+res.poId+' terkirim.'), 'success');
         renderPO();
       } else {
         showToast(res.message,'error');
       }
     };
+    var onFail = function(e){
+      setPageLoading_(false);
+      if(poSaveBtn) poSaveBtn.disabled = false;
+      handleBackendError(e);
+    };
     if(resubmitId){
-      google.script.run.withSuccessHandler(onDone).withFailureHandler(function(e){ handleBackendError(e); }).resubmitPO(STATE.token, resubmitId, payload);
+      google.script.run.withSuccessHandler(onDone).withFailureHandler(onFail).resubmitPO(STATE.token, resubmitId, payload);
     } else {
-      google.script.run.withSuccessHandler(onDone).withFailureHandler(function(e){ handleBackendError(e); }).createPO(STATE.token, payload);
+      google.script.run.withSuccessHandler(onDone).withFailureHandler(onFail).createPO(STATE.token, payload);
     }
   }
 
@@ -4984,7 +5141,7 @@
     var originalLabel = primaryBtn ? primaryBtn.textContent : '';
     if(decision === 'APPROVED' && primaryBtn){ primaryBtn.innerHTML = '<span class="btn-spinner"></span> Memproses...'; }
     google.script.run.withSuccessHandler(function(res){
-      if(res.success){ closeModal(); invalidateDetailModalCache_('po:'+poId); invalidateDashboardCache_(); showToast('PO diperbarui.','success'); renderPO(); offerWaNotif_(res.waLink); }
+      if(res.success){ closeModal(); invalidateDetailModalCache_('po:'+poId); invalidateDashboardCache_(); loadNotifications_(); showToast('PO diperbarui.','success'); renderPO(); offerWaNotif_(res.waLink); }
       else {
         actionButtons.forEach(function(b){ b.disabled = false; });
         if(primaryBtn) primaryBtn.textContent = originalLabel;
@@ -5478,12 +5635,15 @@
     if(!SJ_FILE_OBJS_.length){ showToast('Pilih minimal 1 file Surat Jalan.','error'); return; }
     var saveBtn = document.getElementById('modalSaveBtn');
     if(saveBtn){ saveBtn.disabled = true; saveBtn.textContent = 'Mengupload...'; }
+    setPageLoading_(true, 'Mengupload Surat Jalan');
     google.script.run.withSuccessHandler(function(res){
+      setPageLoading_(false);
       if(res.success){
         SJ_FILE_OBJS_ = [];
         closeModal();
         invalidateDetailModalCache_('order:'+orderId);
         invalidateOrderDocListCache_(orderId);
+        loadNotifications_(); // badge "Order" (Menunggu Pengiriman) langsung berkurang, tidak nunggu poll 2 menit
         showToast(res.count > 1 ? (res.count+' Surat Jalan berhasil diupload.') : 'Surat Jalan berhasil diupload.','success');
         renderOrders();
       } else {
@@ -5491,6 +5651,7 @@
         if(saveBtn){ saveBtn.disabled = false; saveBtn.textContent = 'Upload'; }
       }
     }).withFailureHandler(function(e){
+      setPageLoading_(false);
       handleBackendError(e);
       if(saveBtn){ saveBtn.disabled = false; saveBtn.textContent = 'Upload'; }
     }).uploadSJ(STATE.token, orderId, SJ_FILE_OBJS_);
@@ -7519,6 +7680,19 @@
       // Panggil sekarang juga supaya tidak ada jeda "Dashboard sudah kelihatan tapi Troli
       // FAB belum nongol" walau isi troli sebenarnya masih ada dari sesi sebelumnya.
       refreshAgentCartFab_();
+      // FIX BUG NYATA ("banner atas blank beberapa detik tiap balik ke Dashboard"): markup
+      // banner yang disimpan di PAGE_HTML_CACHE TIDAK PERNAH punya class 'banner-positioned'
+      // (class itu ditambahkan lewat classList.add() ke DOM live, bukan ikut ke string HTML
+      // yang di-cache) — dan CSS-nya sengaja opacity:0 sampai class itu ada (lihat
+      // .agent-dash-banners di Stylesheet.html), supaya slide klon tidak sempat kelip
+      // kelihatan sebelum posisinya benar. Sebelumnya class ini baru ditambahkan lagi oleh
+      // positionInitialBannerSlot() di dalam paintAgentDashboard_() — yang HANYA terpanggil
+      // setelah fetch getAgentDashboardConfig() ke server selesai. Jadi instant-paint dari
+      // cache di atas selalu menampilkan banner BLANK dulu selama request itu masih jalan
+      // (beberapa detik), padahal markup-nya sendiri sudah lengkap & benar di DOM.
+      // FIX: langsung posisikan ulang + nyalakan autoplay banner dari cache SEKARANG JUGA
+      // (tidak menunggu fetch selesai), pakai helper yang sama dengan paintAgentDashboard_.
+      positionAgentBannerNow_();
     } else {
       content.innerHTML = '<div class="spinner"></div>';
     }
@@ -7717,7 +7891,25 @@
     // saling tumpuk. Dipisah dari innerHTML di atas karena slot-nya berada DI LUAR
     // #content (jadi ikut ke-reset kalau ditulis lewat innerHTML content di sini).
     refreshAgentCartFab_();
-    if(banners.length > 1){
+    positionAgentBannerNow_(banners.length);
+    onAgentCategoryRowScroll_(); // cek sekali di awal — kalau kategori dikit & muat tanpa scroll, fade langsung disembunyikan
+    onAgentTrendRowScroll_(); // sama, untuk row "Sedang Banyak Dipesan"
+  }
+
+  // Diekstrak dari paintAgentDashboard_() supaya bisa dipanggil juga tepat setelah
+  // instant-paint dari PAGE_HTML_CACHE (lihat renderAgentDashboard()) — sebelumnya cuma
+  // dipanggil di sini, jadi banner ikut nyangkut blank (opacity:0) sampai fetch data
+  // terbaru ke server selesai walau markup-nya sendiri sudah lengkap & benar di DOM.
+  // `bannerCount` opsional — kalau tidak dikasih (dipanggil dari jalur cache), dihitung
+  // sendiri dari jumlah dot yang sudah ada di markup cache.
+  function positionAgentBannerNow_(bannerCount){
+    var track = document.getElementById('agentBannerTrack');
+    if(!track) return; // tidak ada banner sama sekali di dashboard ini
+    if(bannerCount == null){
+      var dotsWrap = document.getElementById('agentBannerDots');
+      bannerCount = dotsWrap ? dotsWrap.children.length : 1;
+    }
+    if(bannerCount > 1){
       // Posisikan track PERSIS di slide asli index-0 (bukan klon di paling depan) — instan
       // tanpa animasi.
       //
@@ -7736,22 +7928,29 @@
       // pernah punya ukuran (mis. halaman sudah dipindah sebelum sempat siap) — supaya tidak
       // polling selamanya.
       (function positionInitialBannerSlot(attempt){
-        var track = document.getElementById('agentBannerTrack');
-        if(!track || !document.body.contains(track)) return; // Agent sudah pindah halaman, batalkan diam-diam
-        var firstRealSlide = track.children[1];
-        var ready = track.clientWidth > 0 && firstRealSlide && firstRealSlide.offsetWidth > 0;
+        var t = document.getElementById('agentBannerTrack');
+        if(!t || !document.body.contains(t)) return; // Agent sudah pindah halaman, batalkan diam-diam
+        var firstRealSlide = t.children[1];
+        var ready = t.clientWidth > 0 && firstRealSlide && firstRealSlide.offsetWidth > 0;
         if(ready || attempt >= 90){
-          scrollAgentBannerToSlot_(track, 1, true);
+          scrollAgentBannerToSlot_(t, 1, true);
           onAgentBannerScroll_();
+          // Baru sekarang track dimunculkan (lihat .agent-dash-banners{opacity:0} di
+          // Stylesheet.html) — posisinya sudah pasti benar, jadi banner yang salah/klon
+          // tidak pernah sempat "kelip" kelihatan sama sekali.
+          t.classList.add('banner-positioned');
           return;
         }
         requestAnimationFrame(function(){ positionInitialBannerSlot(attempt + 1); });
       })(0);
-      startAgentBannerAutoplay_(banners.length);
+      startAgentBannerAutoplay_(bannerCount);
       wireAgentBannerTouchPause_();
+    } else {
+      // Cuma 1 banner (atau tidak ada carousel/loop sama sekali) — tidak lewat
+      // positionInitialBannerSlot(), jadi harus dimunculkan langsung di sini supaya
+      // tidak nyangkut tersembunyi (opacity:0) selamanya.
+      track.classList.add('banner-positioned');
     }
-    onAgentCategoryRowScroll_(); // cek sekali di awal — kalau kategori dikit & muat tanpa scroll, fade langsung disembunyikan
-    onAgentTrendRowScroll_(); // sama, untuk row "Sedang Banyak Dipesan"
   }
 
   // Sembunyikan fade "masih bisa digeser" di kanan begitu track sudah discroll mentok ujung
