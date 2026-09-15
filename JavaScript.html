@@ -1175,6 +1175,7 @@
       var actionable = NOTIF_STATE_.items.filter(function(n){ return n.actionable; });
       NAV_BADGE_COUNTS_.transactions = actionable.filter(function(n){ return n.page === 'transactions'; }).length;
       NAV_BADGE_COUNTS_.orders = actionable.filter(function(n){ return n.page === 'orders'; }).length;
+      NAV_BADGE_COUNTS_.commission = actionable.filter(function(n){ return n.page === 'commission'; }).length;
     } else {
       // Fallback lama — dipakai kalau Code.gs yang lagi jalan belum versi terbaru.
       var poActionable = NOTIF_STATE_.items.filter(function(n){
