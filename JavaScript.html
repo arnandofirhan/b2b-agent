@@ -4623,6 +4623,16 @@
   function newPOForm(preserveCart, categoryFilter, presetProductId){
     NEWPO_RESUBMIT_ID_ = null;
     NEWPO_EDIT_APPROVED_ID_ = null;
+    // FIX BUG NYATA ("submit PO ke-double, 2 PO ID identik di sheet"): buat SATU
+    // clientRequestId acak begitu form ini dibuka — dikirim apa adanya ke backend di
+    // setiap percobaan submitPO() SELAMA form/modal ini masih sesi yang sama (dibuat
+    // ulang lagi kalau form dibuka dari awal). createPO() di Code.gs memakainya sebagai
+    // idempotency key: submit kedua dengan id yang SAMA (mis. request pertama sempat
+    // "kelihatan" gagal/timeout di UI lalu Agent klik Simpan lagi, padahal request
+    // pertama sebenarnya sudah sukses tersimpan di server) akan dibalas hasil yang SAMA
+    // tanpa menulis baris PO baru lagi — bukan proteksi client-side (disable tombol)
+    // yang cuma menahan double-KLIK di sesi browser yang sama persis.
+    NEWPO_CLIENT_REQUEST_ID_ = 'cid_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
     // NEWPO_CATEGORY_FILTER_ sekarang selalu berupa ARRAY (atau null) supaya bisa menampung
     // lebih dari 1 kategori sekaligus (klik banner/kategori Dashboard yang link ke beberapa
     // kategori) — tetap terima string tunggal (dipakai switchNewPOCategory_/tab klik biasa)
@@ -4982,6 +4992,7 @@
 
   var NEWPO_RESUBMIT_ID_ = null; // set saat mode "Edit & Ajukan Ulang" (Agent, PO REJECTED); null = mode buat PO baru
   var NEWPO_EDIT_APPROVED_ID_ = null; // set saat mode "Edit PO Approved" (Staff, sebelum pembayaran dikonfirmasi)
+  var NEWPO_CLIENT_REQUEST_ID_ = null; // idempotency key per pembukaan form — lihat catatan di newPOForm()
 
   /** Agent: PO yang REJECTED bisa langsung "diedit & diajukan ulang" tanpa mengetik semua
       item dari nol — membuka form "Buat PO" yang sama, tapi keranjang, deskripsi, diskon,
@@ -4999,6 +5010,10 @@
         google.script.run.withSuccessHandler(function(promos){
           NEWPO_RESUBMIT_ID_ = poId;
           NEWPO_EDIT_APPROVED_ID_ = null;
+          // Sama seperti newPOForm() — form ini juga sebuah "pembukaan form" tersendiri
+          // (jalur resubmit PO REJECTED), jadi butuh clientRequestId baru sendiri, bukan
+          // sisa dari form sebelumnya (lihat catatan idempotency lengkap di newPOForm()).
+          NEWPO_CLIENT_REQUEST_ID_ = 'cid_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
           renderNewPOForm_(products, promos);
           var descEl = document.getElementById('poDescription');
           if(descEl) descEl.value = po.Description || '';
@@ -5066,7 +5081,8 @@
       requestedDiscount: Number(val_('poDiscount')),
       description: val_('poDescription'),
       pickupDate: pickupIso || '',
-      promoId: val_('poPromo') || ''
+      promoId: val_('poPromo') || '',
+      clientRequestId: NEWPO_CLIENT_REQUEST_ID_ // lihat catatan idempotency di newPOForm()/createPO()
     };
     var resubmitId = NEWPO_RESUBMIT_ID_;
     var onDone = function(res){
@@ -5080,6 +5096,7 @@
         AGENT_DASH_CART_ = {};
         persistAgentDashCart_();
         NEWPO_RESUBMIT_ID_ = null;
+        NEWPO_CLIENT_REQUEST_ID_ = null; // submit ini sudah tuntas — cegah ID ini kepakai lagi kalau ada pemanggilan submitPO() susulan
         closeModal();
         if(resubmitId) invalidateDetailModalCache_('po:'+resubmitId);
         invalidateDashboardCache_();
