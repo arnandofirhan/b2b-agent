@@ -721,9 +721,38 @@
     var token = sessionStorage_get('ag_token');
     var userRaw = sessionStorage_get('ag_user');
     if(token && userRaw){
-      STATE.token = token;
-      STATE.user = JSON.parse(userRaw);
-      bootApp();
+      // FIX PERFORMA LOGIN ("awal login selalu lama"): SEBELUMNYA di titik ini app langsung
+      // percaya token dari sessionStorage masih valid dan lanjut bootApp() — yang menembak
+      // beberapa RPC (dashboard, products, cart, notifications) SEKALIGUS. Kalau token itu
+      // sudah expired (sesi 6 jam, wajar terjadi tiap hari), SEMUA RPC itu tetap menembak ke
+      // server dan baru gagal SESSION_EXPIRED masing-masing setelah round-trip penuh —
+      // ditambah retry otomatis di api-bridge.js kalau kebetulan sempat 404 duluan — sebelum
+      // akhirnya salah satu gagal, handleLogout() jalan, BARU layar Login tampil. Itulah
+      // sumber jeda lama yang dilaporkan user, PERSIS terjadi di layar Login sebelum sempat
+      // login sungguhan.
+      // FIX: validasi token dengan SATU RPC yang sangat murah (validateSession — cuma baca
+      // CacheService, TIDAK PERNAH buka spreadsheet) sebelum memutuskan lanjut bootApp() atau
+      // tidak. Ditandai HI-priority (bukan low-priority) supaya tidak ikut antre di belakang
+      // job background lain — ini satu-satunya yang menahan tampilnya UI, harus secepat
+      // mungkin dapat slot.
+      google.script.run.withSuccessHandler(function(res){
+        if(res && res.valid){
+          STATE.token = token;
+          STATE.user = JSON.parse(userRaw);
+          bootApp();
+        } else {
+          // Token sudah tidak valid di server — bersihkan sisa sesi lama secara LOKAL saja
+          // (tidak perlu tembak logout() ke server, sesi itu memang sudah tidak ada di sana)
+          // supaya layar Login langsung tampil bersih tanpa RPC tambahan apapun.
+          sessionStorage_remove('ag_token');
+          sessionStorage_remove('ag_user');
+        }
+      }).withFailureHandler(function(){
+        // Gagal validasi (mis. network error) — jangan paksa bootApp() dengan token yang
+        // belum tentu valid; aman fallback ke layar Login, user tinggal login ulang manual.
+        sessionStorage_remove('ag_token');
+        sessionStorage_remove('ag_user');
+      }).validateSession(token);
     }
   }
   if(document.readyState === 'loading'){
