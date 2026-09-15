@@ -52,21 +52,13 @@
   // sibuk retry. FIX: pisahkan jatah slot hi & lo jadi 2 counter independen supaya job
   // hi-priority PASTI selalu dapat slot sendiri, tidak pernah terblokir oleh proses
   // background yang sedang retry.
-  // NAIK LAGI dari 1 -> 3 (HI) / 1 -> 2 (LO): 1/1 sengaja dicoba dulu untuk menghilangkan
-  // burst 2x-simultan yang sempat bikin login+listPO gagal bareng, TAPI efek sampingnya
-  // ternyata jauh lebih parah — SELURUH aplikasi jadi strictly-sequential satu request
-  // per waktu, jadi 1 request lambat/di-retry menahan SEMUA request lain (termasuk klik
-  // user) walau tidak saling terkait sama sekali. Root cause asli (2 request BERSAMAAN
-  // persis di detik yang sama saat boot pertama) sudah ditangani dengan cara lain yang
-  // lebih presisi: (1) dedup in-flight di callServer() mencegah panggilan identik dobel,
-  // (2) preloadAllPages_() di JavaScript.html sudah di-stagger (tidak lagi menembak semua
-  // sekaligus), (3) delay 2.5 detik sebelum preload mulai supaya tidak tabrakan dengan
-  // request Dashboard sendiri. Dengan 3 mitigasi itu sudah aktif, HI=1/LO=1 tidak lagi
-  // diperlukan dan hanya menambah lambat secara nyata di setiap klik menu — dinaikkan ke
-  // HI=3 (jatah aksi user, cukup untuk beberapa klik cepat berurutan tanpa membanjiri GAS)
-  // dan LO=2 (preload/polling background, tetap dibatasi rendah supaya tidak dominan).
-  var MAX_CONCURRENT_HI = 3; // klik user / submit form — jatah sendiri, tidak pernah nunggu background
-  var MAX_CONCURRENT_LO = 2; // preload/polling background — tetap dibatasi supaya tidak dominan
+  // Diturunkan sementara dari 2 -> 1: Console user menunjukkan login + listPO (2 request
+  // hi-priority) menembak BERSAMAAN persis saat boot pertama dan sama-sama gagal
+  // (404/ERR_CONNECTION_CLOSED) — pola ini cocok dengan kuota eksekusi SIMULTAN Apps
+  // Script yang terlampaui (bukan CORS beneran). Menjadikan hi-priority strictly
+  // sequential menghilangkan burst 2x-simultan itu tanpa mengubah urutan/prioritas logikanya.
+  var MAX_CONCURRENT_HI = 1; // klik user / submit form — jatah sendiri, tidak pernah nunggu background
+  var MAX_CONCURRENT_LO = 1; // preload/polling background — sengaja dibatasi 1 spy beban ke GAS makin halus
   var activeHi_ = 0;
   var activeLo_ = 0;
 
@@ -137,22 +129,6 @@
     }
   }
 
-  // FIX BUG NYATA (laporan: logout lalu login lagi cepat-cepat masih terasa lambat):
-  // queueHi_/queueLo_/inFlight_ di atas SEBELUMNYA tidak pernah dikosongkan saat logout.
-  // Kalau ada request lama (preload/dashboard) yang masih tertunda di antrian atau sedang
-  // menunggu jawaban server saat user klik Logout, entri itu tetap nyangkut: begitu server
-  // akhirnya menjawab, ia tetap ikut menempati slot MAX_CONCURRENT_HI/LO yang seharusnya
-  // sudah bebas untuk sesi BARU, dan callback-nya (yang menunjuk ke fungsi render sesi lama)
-  // masih terpanggil sia-sia. Fungsi ini dipanggil oleh handleLogout() di JavaScript.html
-  // untuk membuang semua job yang belum sempat jalan (job yang SUDAH terkirim ke server
-  // tidak bisa dibatalkan beneran, tapi dibiarkan selesai di background tanpa mengganggu
-  // apa pun karena queueHi_/queueLo_ sudah dikosongkan duluan sebelum job itu genap giliran).
-  function resetQueue_() {
-    queueHi_.length = 0;
-    queueLo_.length = 0;
-    inFlight_ = Object.create(null);
-  }
-
   function runNext_() {
     if (activeHi_ < MAX_CONCURRENT_HI && queueHi_.length) {
       var jobHi = queueHi_.shift();
@@ -206,25 +182,9 @@
     // lewat sini, sekali jadi hasilnya keluar (sukses ATAU gagal) — dan entri dedup langsung
     // dibersihkan supaya panggilan identik BERIKUTNYA (setelah request ini selesai) menembak
     // request baru seperti biasa, bukan ikut numpang ke hasil yang sudah basi.
-    // FIX BUG NYATA (crash nyata dari laporan user: "TypeError: Cannot read properties of
-    // undefined (reading 'forEach') at notifyAll_", muncul di percobaan retry ke-2/ke-3):
-    // notifyAll_ SEBELUMNYA berasumsi ia hanya akan dipanggil TEPAT SEKALI per dedupKey —
-    // begitu dipanggil, ia langsung delete inFlight_[dedupKey]. Asumsi itu TIDAK SELALU benar:
-    // kalau attempt() punya lebih dari satu jalur yang bisa berakhir memanggil notifyAll_
-    // untuk closure yang SAMA (mis. sebuah promise fetch() lama yang telat resolve SETELAH
-    // attempt lain di closure yang sama sudah lebih dulu notifyAll_+jobDone karena
-    // timeout/retry), panggilan KEDUA akan membaca inFlight_[dedupKey] yang sudah dihapus
-    // panggilan pertama -> undefined -> .forEach meledak. FIX: (1) simpan referensi waiters
-    // SEBELUM delete, (2) kalau ternyata sudah kosong/undefined (sudah pernah dinotifikasi
-    // sebelumnya), diam-diam berhenti alih-alih crash — hasil yang "telat" ini memang sudah
-    // tidak relevan lagi buat siapapun, semua pemanggil asli sudah dapat jawaban.
-    var notifyAllDone_ = false;
     function notifyAll_(isSuccess, payload) {
-      if (notifyAllDone_) return; // panggilan kedua utk closure yg sama — sudah pernah selesai, abaikan
-      notifyAllDone_ = true;
       var waiters = dedupKey ? inFlight_[dedupKey] : [{ onSuccess: onSuccess, onFailure: onFailure }];
       if (dedupKey) delete inFlight_[dedupKey];
-      if (!waiters) return; // sudah dibersihkan lebih dulu oleh jalur lain — tidak ada yg perlu dinotifikasi
       waiters.forEach(function (w) {
         if (isSuccess) { if (w.onSuccess) w.onSuccess(payload); }
         else { if (w.onFailure) w.onFailure(payload); else console.error('[api-bridge] ' + fnName + ' gagal:', payload); }
@@ -234,12 +194,7 @@
     // RETRY OTOMATIS hanya untuk error jaringan murni (bukan error
     // deployment/akses — itu tidak akan hilang dengan diulang).
     var MAX_ATTEMPTS = 4; // dinaikkan dari 3 — glitch redirect/echo GAS kadang butuh >2x percobaan utk pulih
-    // DITURUNKAN dari 700ms -> 400ms: dengan MAX_CONCURRENT_HI sekarang > 1, slot yang
-    // dipakai sebuah request yang sedang retry TIDAK LAGI memblokir SEMUA request lain
-    // (ada slot lain yang bebas), jadi delay besar di sini tidak lagi wajib untuk melindungi
-    // klik user lain — tapi tetap diberi jeda kecil (bukan 0) supaya tidak langsung menembak
-    // ulang GAS yang mungkin masih dalam kondisi ter-throttle.
-    var RETRY_DELAY_MS = 400;
+    var RETRY_DELAY_MS = 700;
     // FIX BUG NYATA #2 (ditemukan saat audit): TIMEOUT (AbortError, request tidak dijawab
     // sama sekali dalam REQUEST_TIMEOUT_MS) sebelumnya LANGSUNG dianggap gagal permanen,
     // TIDAK PERNAH masuk jalur retry di atas — padahal timeout di koneksi lambat sering
@@ -375,125 +330,4 @@
     setWidth: function () {},
     origin: (global.location && global.location.origin) || ''
   };
-
-  // ===========================================================================
-  // BATCHING — window.callBackendBatch(calls)
-  // ---------------------------------------------------------------------------
-  // FIX PERFORMA BESAR ("PWA di HP lemot padahal data dikit, GAS langsung cepat"):
-  // setiap google.script.run.xxx(...) = 1 request HTTP terpisah, dan SETIAP request itu
-  // (berapapun kecil datanya) kena overhead TETAP dari redirect internal GAS + dispatch,
-  // yang di sinyal seluler HP terasa jauh lebih berat daripada di wifi/desktop. Kalau 1
-  // halaman butuh beberapa RPC buat tampil penuh (mis. Dashboard: config + products +
-  // cart + notifications), overhead itu KALI jumlah RPC-nya, bukan berbagi 1x overhead.
-  //
-  // callBackendBatch() mengirim BEBERAPA panggilan fungsi dalam SATU request HTTP (lihat
-  // handleBatchRpc_ di Code.gs) — backend menjalankan semuanya lalu membalas semua
-  // hasilnya sekaligus. Hasilnya: cuma 1x kena overhead redirect+network walau yang
-  // diminta 4 fungsi sekaligus.
-  //
-  // INI API TERPISAH dari google.script.run yang sudah ada — TIDAK mengubah/menggantikan
-  // satu pun pemanggilan google.script.run.xxx(...) yang sudah ada di JavaScript.html.
-  // Dipakai HANYA di titik-titik load halaman yang memang butuh beberapa RPC sekaligus
-  // (mis. boot Dashboard), sebagai TAMBAHAN opsional — bukan rombak total jalur RPC yang
-  // sudah ada.
-  //
-  // Pemakaian:
-  //   window.callBackendBatch([
-  //     { fn: 'getAgentDashboardConfig', args: [token] },
-  //     { fn: 'listProducts', args: [token] },
-  //     { fn: 'getCart', args: [token] }
-  //   ]).then(function(results){
-  //     // results[0] = { ok:true, result:... } atau { ok:false, error:'...' }, dst,
-  //     // urutan PERSIS sama dengan urutan calls yang dikirim.
-  //   });
-  //
-  // Request batch SELALU ditandai HI-priority (aksi user langsung menunggu halamannya),
-  // dan TIDAK ikut sistem dedup in-flight (dedup dirancang untuk single-call get*/list*,
-  // bukan untuk kombinasi call yang berubah-ubah per halaman).
-  function callServerBatch_(calls) {
-    return new Promise(function (resolve, reject) {
-      var url = resolveExecUrl();
-      if (!url) {
-        reject(new Error('URL backend (GAS_EXEC_URL) belum diset.'));
-        return;
-      }
-
-      var MAX_ATTEMPTS = 4;
-      var RETRY_DELAY_MS = 400;
-      var MAX_TIMEOUT_RETRIES = 1;
-
-      enqueue_(function (jobDone) {
-        function attempt(attemptNo) {
-          var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-          var timer = controller ? setTimeout(function () { controller.abort(); }, REQUEST_TIMEOUT_MS) : null;
-
-          var fetchOpts = {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-            body: JSON.stringify({ calls: calls }),
-            redirect: 'follow'
-          };
-          if (controller) fetchOpts.signal = controller.signal;
-
-          fetch(url, fetchOpts)
-            .then(function (res) {
-              if (timer) clearTimeout(timer);
-              if (!res.ok) {
-                var httpErr = new Error('HTTP ' + res.status + ' dari server.');
-                httpErr.isTransientHttp = true;
-                throw httpErr;
-              }
-              return res.text();
-            })
-            .then(function (text) {
-              var data;
-              try {
-                data = JSON.parse(text);
-              } catch (parseErr) {
-                throw new Error(
-                  'Respons server bukan JSON (kemungkinan deployment/akses ' +
-                  'Web App GAS belum benar — cek "Who has access: Anyone" & ' +
-                  '"Execute as: Me", lalu deploy versi baru).'
-                );
-              }
-              jobDone();
-              if (data && data.ok && Array.isArray(data.results)) {
-                resolve(data.results);
-              } else {
-                reject(new Error((data && data.error) ? data.error : 'Terjadi kesalahan pada server (batch).'));
-              }
-            })
-            .catch(function (err) {
-              if (timer) clearTimeout(timer);
-              if (err && err.name === 'AbortError') {
-                if (attemptNo <= MAX_TIMEOUT_RETRIES) {
-                  console.warn('[api-bridge] batch percobaan ' + attemptNo + ' TIMEOUT, coba sekali lagi...', err);
-                  attempt(attemptNo + 1);
-                  return;
-                }
-                jobDone();
-                reject(new Error('TIMEOUT: server tidak merespons dalam ' + (REQUEST_TIMEOUT_MS / 1000) + ' detik.'));
-                return;
-              }
-              var isNetworkLikeError = (err instanceof TypeError) || /Failed to fetch|NetworkError|CORS/i.test(err && err.message || '') || (err && err.isTransientHttp);
-              if (isNetworkLikeError && attemptNo < MAX_ATTEMPTS) {
-                console.warn('[api-bridge] batch percobaan ' + attemptNo + ' gagal (network/CORS), mencoba lagi...', err);
-                setTimeout(function () { attempt(attemptNo + 1); }, RETRY_DELAY_MS * attemptNo);
-                return;
-              }
-              jobDone();
-              reject(err);
-            });
-        }
-        attempt(1);
-      }, false); // false = HI-priority, batch selalu untuk halaman yang sedang ditunggu user
-    });
-  }
-
-  global.callBackendBatch = callServerBatch_;
-
-  // Dipanggil dari handleLogout() di JavaScript.html supaya antrian request lama
-  // (preload/dashboard sesi sebelumnya yang belum sempat jalan) tidak nyangkut dan
-  // membebani sesi berikutnya begitu user login lagi.
-  global.__apiBridgeResetQueue__ = resetQueue_;
 })(window);
