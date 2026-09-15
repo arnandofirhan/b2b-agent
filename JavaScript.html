@@ -242,6 +242,10 @@
     MY_SIGNATURE_STATUS_CACHE_ = null;
     NOTIF_STATE_.items = [];
     if(NOTIF_POLL_INTERVAL_){ clearInterval(NOTIF_POLL_INTERVAL_); NOTIF_POLL_INTERVAL_ = null; }
+    if(CART_POLL_INTERVAL_){ clearInterval(CART_POLL_INTERVAL_); CART_POLL_INTERVAL_ = null; }
+    if(CART_SAVE_TIMER_){ clearTimeout(CART_SAVE_TIMER_); CART_SAVE_TIMER_ = null; }
+    CART_LAST_SYNCED_JSON_ = null;
+    CART_LAST_KNOWN_UPDATED_AT_ = '';
     // FIX: FAB Live Chat & Troli (#fabDialWrap, #fabDialScrim, #chatPanelOverlay) ditempel
     // langsung ke document.body OLEH DESAIN (lihat injectChatFab_) supaya bisa mengambang di
     // ATAS #appShell tanpa ikut ke-clip overflow oleh halaman manapun. Konsekuensinya: ketiga
@@ -830,8 +834,41 @@
     loadNotifications_();
     if(NOTIF_POLL_INTERVAL_) clearInterval(NOTIF_POLL_INTERVAL_);
     NOTIF_POLL_INTERVAL_ = setInterval(loadNotifications_, 120000); // refresh tiap 2 menit
+
+    // ===== CART SYNC lintas device (HP <-> Desktop, seperti Shopee) =====
+    // Hanya relevan utk role AGENT (yang punya troli Dashboard). Tarik (pull) isi troli
+    // terbaru dari server sekali sekarang (menangkap perubahan yang mungkin dibuat dari
+    // device lain sebelum sesi ini dibuka), lalu poll ringan tiap 20 detik SELAMA tab/app
+    // ini kelihatan (document.visibilityState==='visible') — di-skip total kalau tab lagi
+    // di-background, jadi tidak nambah beban/kuota data waktu app tidak sedang dilihat.
+    // Push (kirim) perubahan ke server dilakukan terpisah, di-debounce dari sisi mutasi
+    // troli sendiri (lihat scheduleCartPush_/persistAgentDashCart_ dipanggil dari
+    // changeAgentDashCartQty_ dsb) — bukan dari poller ini.
+    if(STATE.user.role === 'AGENT'){
+      pullCartFromServer_();
+      if(CART_POLL_INTERVAL_) clearInterval(CART_POLL_INTERVAL_);
+      CART_POLL_INTERVAL_ = setInterval(function(){
+        if(document.visibilityState === 'visible') pullCartFromServer_();
+      }, 20000);
+      wireCartVisibilitySync_();
+    }
   }
   var NOTIF_POLL_INTERVAL_ = null;
+  var CART_POLL_INTERVAL_ = null;
+
+  // Begitu tab/app dibuka lagi dari background (mis. balik dari switch app di HP, atau
+  // balik ke tab browser desktop yang sempat ditinggal) -> langsung tarik troli terbaru,
+  // supaya tidak perlu nunggu tick poll 20 detik berikutnya utk lihat perubahan dari device
+  // lain. Dipasang SEKALI saja per sesi (dataset flag), bukan tiap bootApp() dipanggil ulang.
+  function wireCartVisibilitySync_(){
+    if(document.__cartVisWired__) return;
+    document.__cartVisWired__ = true;
+    document.addEventListener('visibilitychange', function(){
+      if(document.visibilityState === 'visible' && STATE.token && STATE.user && STATE.user.role === 'AGENT'){
+        pullCartFromServer_();
+      }
+    });
+  }
 
   /** Diam-diam mem-fetch & merender SEMUA halaman menu (sesuai role user) langsung setelah
       login/refresh, lalu menyimpannya ke PAGE_HTML_CACHE lewat paintPage_() — supaya begitu
@@ -8264,6 +8301,75 @@
 
   function persistAgentDashCart_(){
     try{ localStorage.setItem(agentDashCartKey_(), JSON.stringify(AGENT_DASH_CART_)); }catch(e){}
+    scheduleCartPush_();
+  }
+
+  // ===== CART SYNC lintas device — implementasi push/pull =====
+  // CART_LAST_SYNCED_JSON_ menyimpan snapshot isi troli yang TERAKHIR berhasil dikirim/
+  // diterima dari server, dipakai buat skip network call kalau ternyata tidak ada
+  // perubahan apa2 (mis. persistAgentDashCart_ kepanggil tapi isinya sama), dan
+  // CART_LAST_KNOWN_UPDATED_AT_ menyimpan timestamp versi server yang terakhir kita tahu,
+  // dipakai pullCartFromServer_ buat skip re-render kalau ternyata tidak ada versi baru.
+  var CART_LAST_SYNCED_JSON_ = null;
+  var CART_LAST_KNOWN_UPDATED_AT_ = '';
+  var CART_SAVE_TIMER_ = null;
+
+  // Push di-DEBOUNCE 1 detik dari perubahan terakhir (bukan tiap 1 klik "+" langsung
+  // nembak server) — supaya user yang nge-tap "+" berkali-kali cepat cuma memicu SATU
+  // panggilan server di akhir, bukan satu panggilan per tap (hemat kuota & tidak bikin
+  // antrian request menumpuk/rebutan slot dengan request lain yang sedang jalan).
+  function scheduleCartPush_(){
+    if(STATE.user && STATE.user.role !== 'AGENT') return; // troli sync cuma utk Agent
+    if(CART_SAVE_TIMER_) clearTimeout(CART_SAVE_TIMER_);
+    CART_SAVE_TIMER_ = setTimeout(pushCartToServer_, 1000);
+  }
+
+  function pushCartToServer_(){
+    if(!STATE.token) return;
+    var json = JSON.stringify(AGENT_DASH_CART_);
+    if(json === CART_LAST_SYNCED_JSON_) return; // tidak berubah sejak sync terakhir, skip
+    google.script.run
+      .withSuccessHandler(function(res){
+        if(res && res.updatedAt){ CART_LAST_KNOWN_UPDATED_AT_ = res.updatedAt; }
+        CART_LAST_SYNCED_JSON_ = json;
+      })
+      .withFailureHandler(function(){
+        // Diamkan — kalau gagal (mis. jaringan putus sesaat), perubahan tetap aman di
+        // localStorage device ini, dan push berikutnya (dipicu perubahan berikutnya, atau
+        // pull yang mendeteksi versi server masih lama) akan otomatis coba lagi.
+      })
+      .saveCart(STATE.token, json);
+  }
+
+  // Ditarik (pull) saat boot, tiap tick poll (lihat bootApp), dan saat tab kembali visible.
+  // Server-wins: kalau versi server lebih baru dari yang kita tahu terakhir, timpa troli
+  // device ini dengan versi server (skenario umum: item ditambah dari device LAIN).
+  function pullCartFromServer_(){
+    if(!STATE.token || !STATE.user || STATE.user.role !== 'AGENT') return;
+    google.script.run
+      .withSuccessHandler(function(res){
+        if(!res) return;
+        // Belum ada versi baru dari device lain sejak terakhir kita tahu -> tidak perlu
+        // apa2 (hindari re-render Dashboard yang tidak perlu = jaga performa).
+        if(res.updatedAt && res.updatedAt === CART_LAST_KNOWN_UPDATED_AT_) return;
+        CART_LAST_KNOWN_UPDATED_AT_ = res.updatedAt || CART_LAST_KNOWN_UPDATED_AT_;
+        var serverCart = res.cart || {};
+        var serverJson = JSON.stringify(serverCart);
+        if(serverJson === JSON.stringify(AGENT_DASH_CART_)) { CART_LAST_SYNCED_JSON_ = serverJson; return; }
+        AGENT_DASH_CART_ = serverCart;
+        CART_LAST_SYNCED_JSON_ = serverJson;
+        try{ localStorage.setItem(agentDashCartKey_(), serverJson); }catch(e){}
+        // Re-render seperlunya saja: kalau lagi di Dashboard, cat ulang supaya qty/troli
+        // kelihatan update; kalau tidak, cukup update badge FAB troli (murah, tidak perlu
+        // render ulang halaman yang sedang tidak dilihat user).
+        if(STATE.currentPage === 'dashboard' && AGENT_DASH_CFG_CACHE_){
+          paintAgentDashboard_(AGENT_DASH_CFG_CACHE_);
+        } else {
+          refreshAgentCartFab_();
+        }
+      })
+      .withFailureHandler(function(){ /* diamkan, tick poll berikutnya coba lagi */ })
+      .getCart(STATE.token);
   }
 
   // BUG SEBELUMNYA: klik "+"/stepper di card manapun (termasuk di row "Sedang Banyak
