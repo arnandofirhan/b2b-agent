@@ -997,12 +997,18 @@
       return ia - ib;
     });
 
-    // DITURUNKAN dari 1500ms -> 600ms, dan limit halaman dinaikkan 4 -> 6: dengan
-    // MAX_CONCURRENT_LO sekarang 2 (bukan 1) di api-bridge.js, beberapa preload boleh
-    // tumpang-tindih sedikit tanpa membanjiri GAS — sebelumnya 1500ms diperlukan karena
-    // LO cuma py 1 slot, jadi tiap preload HARUS selesai total dulu baru boleh mulai lagi.
-    var STAGGER_MS = 600;
-    var PRELOAD_PAGE_LIMIT_ = 6;
+    // DINAIKKAN LAGI dari 600ms -> 1500ms, dan limit halaman diturunkan 6 -> 3: percobaan
+    // 600ms/6-halaman sebelumnya TERNYATA masih cukup untuk memicu HTTP 404 dari server
+    // (lihat laporan user: echo?user_content_key=... 404 bertubi-tubi beberapa detik
+    // setelah login) — kuota eksekusi paralel GAS Web App ternyata lebih ketat dari
+    // perkiraan awal, apalagi kalau kebetulan ada device/tab lain yang login berdekatan
+    // waktu (lihat catatan kuota SHARED lintas device di atas). FIX: mundurkan lagi ke
+    // staggering yang lebih longgar & jumlah halaman yang di-preload lebih sedikit —
+    // menu yang TIDAK ikut ter-preload tetap bisa dibuka manual, cuma tanpa keuntungan
+    // sudah-di-cache (baru fetch saat diklik), yang jauh lebih baik daripada Dashboard
+    // sendiri ikut kena 404/retry gara-gara preload terlalu agresif di background.
+    var STAGGER_MS = 1500;
+    var PRELOAD_PAGE_LIMIT_ = 3;
     keys = keys.slice(0, PRELOAD_PAGE_LIMIT_);
     keys.forEach(function(key, i){
       setTimeout(function(){
