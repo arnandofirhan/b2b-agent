@@ -376,6 +376,122 @@
     origin: (global.location && global.location.origin) || ''
   };
 
+  // ===========================================================================
+  // BATCHING — window.callBackendBatch(calls)
+  // ---------------------------------------------------------------------------
+  // FIX PERFORMA BESAR ("PWA di HP lemot padahal data dikit, GAS langsung cepat"):
+  // setiap google.script.run.xxx(...) = 1 request HTTP terpisah, dan SETIAP request itu
+  // (berapapun kecil datanya) kena overhead TETAP dari redirect internal GAS + dispatch,
+  // yang di sinyal seluler HP terasa jauh lebih berat daripada di wifi/desktop. Kalau 1
+  // halaman butuh beberapa RPC buat tampil penuh (mis. Dashboard: config + products +
+  // cart + notifications), overhead itu KALI jumlah RPC-nya, bukan berbagi 1x overhead.
+  //
+  // callBackendBatch() mengirim BEBERAPA panggilan fungsi dalam SATU request HTTP (lihat
+  // handleBatchRpc_ di Code.gs) — backend menjalankan semuanya lalu membalas semua
+  // hasilnya sekaligus. Hasilnya: cuma 1x kena overhead redirect+network walau yang
+  // diminta 4 fungsi sekaligus.
+  //
+  // INI API TERPISAH dari google.script.run yang sudah ada — TIDAK mengubah/menggantikan
+  // satu pun pemanggilan google.script.run.xxx(...) yang sudah ada di JavaScript.html.
+  // Dipakai HANYA di titik-titik load halaman yang memang butuh beberapa RPC sekaligus
+  // (mis. boot Dashboard), sebagai TAMBAHAN opsional — bukan rombak total jalur RPC yang
+  // sudah ada.
+  //
+  // Pemakaian:
+  //   window.callBackendBatch([
+  //     { fn: 'getAgentDashboardConfig', args: [token] },
+  //     { fn: 'listProducts', args: [token] },
+  //     { fn: 'getCart', args: [token] }
+  //   ]).then(function(results){
+  //     // results[0] = { ok:true, result:... } atau { ok:false, error:'...' }, dst,
+  //     // urutan PERSIS sama dengan urutan calls yang dikirim.
+  //   });
+  //
+  // Request batch SELALU ditandai HI-priority (aksi user langsung menunggu halamannya),
+  // dan TIDAK ikut sistem dedup in-flight (dedup dirancang untuk single-call get*/list*,
+  // bukan untuk kombinasi call yang berubah-ubah per halaman).
+  function callServerBatch_(calls) {
+    return new Promise(function (resolve, reject) {
+      var url = resolveExecUrl();
+      if (!url) {
+        reject(new Error('URL backend (GAS_EXEC_URL) belum diset.'));
+        return;
+      }
+
+      var MAX_ATTEMPTS = 4;
+      var RETRY_DELAY_MS = 400;
+      var MAX_TIMEOUT_RETRIES = 1;
+
+      enqueue_(function (jobDone) {
+        function attempt(attemptNo) {
+          var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+          var timer = controller ? setTimeout(function () { controller.abort(); }, REQUEST_TIMEOUT_MS) : null;
+
+          var fetchOpts = {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ calls: calls }),
+            redirect: 'follow'
+          };
+          if (controller) fetchOpts.signal = controller.signal;
+
+          fetch(url, fetchOpts)
+            .then(function (res) {
+              if (timer) clearTimeout(timer);
+              if (!res.ok) {
+                var httpErr = new Error('HTTP ' + res.status + ' dari server.');
+                httpErr.isTransientHttp = true;
+                throw httpErr;
+              }
+              return res.text();
+            })
+            .then(function (text) {
+              var data;
+              try {
+                data = JSON.parse(text);
+              } catch (parseErr) {
+                throw new Error(
+                  'Respons server bukan JSON (kemungkinan deployment/akses ' +
+                  'Web App GAS belum benar — cek "Who has access: Anyone" & ' +
+                  '"Execute as: Me", lalu deploy versi baru).'
+                );
+              }
+              jobDone();
+              if (data && data.ok && Array.isArray(data.results)) {
+                resolve(data.results);
+              } else {
+                reject(new Error((data && data.error) ? data.error : 'Terjadi kesalahan pada server (batch).'));
+              }
+            })
+            .catch(function (err) {
+              if (timer) clearTimeout(timer);
+              if (err && err.name === 'AbortError') {
+                if (attemptNo <= MAX_TIMEOUT_RETRIES) {
+                  console.warn('[api-bridge] batch percobaan ' + attemptNo + ' TIMEOUT, coba sekali lagi...', err);
+                  attempt(attemptNo + 1);
+                  return;
+                }
+                jobDone();
+                reject(new Error('TIMEOUT: server tidak merespons dalam ' + (REQUEST_TIMEOUT_MS / 1000) + ' detik.'));
+                return;
+              }
+              var isNetworkLikeError = (err instanceof TypeError) || /Failed to fetch|NetworkError|CORS/i.test(err && err.message || '') || (err && err.isTransientHttp);
+              if (isNetworkLikeError && attemptNo < MAX_ATTEMPTS) {
+                console.warn('[api-bridge] batch percobaan ' + attemptNo + ' gagal (network/CORS), mencoba lagi...', err);
+                setTimeout(function () { attempt(attemptNo + 1); }, RETRY_DELAY_MS * attemptNo);
+                return;
+              }
+              jobDone();
+              reject(err);
+            });
+        }
+        attempt(1);
+      }, false); // false = HI-priority, batch selalu untuk halaman yang sedang ditunggu user
+    });
+  }
+
+  global.callBackendBatch = callServerBatch_;
+
   // Dipanggil dari handleLogout() di JavaScript.html supaya antrian request lama
   // (preload/dashboard sesi sebelumnya yang belum sempat jalan) tidak nyangkut dan
   // membebani sesi berikutnya begitu user login lagi.
