@@ -783,8 +783,21 @@
     if(pageDateEl) pageDateEl.textContent = formatTanggalHariIni_();
     var sigBtn = document.getElementById('mySignatureBtn');
     if(sigBtn) sigBtn.style.display = (['ADMIN','SUPERVISOR','MANAGER'].indexOf(STATE.user.role) !== -1) ? 'block' : 'none';
-    renderSidebar();
-    renderBottomNav();
+    // FIX BUG NYATA (AKAR MASALAH SEBENARNYA dari "sekilas menu lain muncul saat reload"):
+    // renderSidebar()/renderBottomNav() SEBELUMNYA dipanggil DI SINI, sebelum pageToOpen yang
+    // benar diketahui/dipakai. Di titik ini STATE.currentPage MASIH nilai default awal
+    // ('dashboard' — lihat deklarasi STATE di atas) dan SIDEBAR_GROUP_STATE_ juga masih
+    // default AWAL (SEMUA grup: transaksi/master/laporan/sistem = true, alias SEMUA terbuka
+    // sekaligus — lihat deklarasinya). Jadi sidebar sempat ke-paint SATU KALI dengan Dashboard
+    // ter-highlight + SEMUA section grup terbuka bersamaan — itulah yang kelihatan sebagai
+    // "menu lain nongol sekilas" pas reload, SEBELUM showPage(pageToOpen) di bawah memanggil
+    // renderSidebar()/renderBottomNav() lagi dengan STATE.currentPage yang benar (mis.
+    // 'transactions' kalau itu menu terakhir user), yang otomatis meng-collapse grup lain lagi.
+    // Akibatnya ada 2x render sidebar dalam SATU boot, dan yang pertama itu SELALU salah kalau
+    // pageToOpen bukan 'dashboard'. FIX: hapus render pertama yang redundan ini sepenuhnya —
+    // showPage(pageToOpen) di bawah SUDAH memanggil renderSidebar()/renderBottomNav() sendiri
+    // (lihat isinya), jadi cukup SATU render, langsung dengan currentPage & grup yang benar
+    // sejak awal. Tidak ada lagi jendela waktu di mana menu/grup yang salah sempat ter-paint.
     initAppHistory_();
     SKIP_NEXT_HISTORY_PUSH_ = true; // baseline dashboard sudah di-replaceState oleh initAppHistory_, jangan dobel-push
     // FIX TROLI FAB TIDAK MUNCUL: initLiveChat_() HARUS dipanggil SEBELUM showPage('dashboard').
