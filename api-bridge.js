@@ -31,8 +31,8 @@
 (function (global) {
   'use strict';
 
-  var SUPABASE_URL = 'https://YOUR-PROJECT.supabase.co'; // GANTI
-  var SUPABASE_ANON_KEY = 'YOUR-ANON-KEY';                 // GANTI — anon key AMAN ditaruh di frontend (RLS yang melindungi)
+  var SUPABASE_URL = 'https://ozitvsmvofoteupjekad.supabase.co'; // GANTI
+  var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im96aXR2c212b2ZvdGV1cGpla2FkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk0NTQyODQsImV4cCI6MjEwNTAzMDI4NH0.RBk-8KgyjTSBgPUrW2jNKCZ35g-dhF7E-Li9NUHA1Hc';                 // GANTI — anon key AMAN ditaruh di frontend (RLS yang melindungi)
 
   if (!global.supabase) {
     console.error('[api-bridge] Library @supabase/supabase-js belum di-load. Tambahkan <script> CDN-nya SEBELUM api-bridge.js.');
