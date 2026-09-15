@@ -5080,85 +5080,106 @@
 
   /** Modern "Review PO" flow: approve via modal form, reject via a mandatory-note modal.
       Shows full item breakdown (with product photos), description & pickup date, and a
-      full 0-10% Approved Discount dropdown (previously only offered 0/3/5/10%). */
+      full 0-10% Approved Discount dropdown (previously only offered 0/3/5/10%).
+      FIX PERFORMA (laporan nyata: "buka Review PO lama, loading terus"): sebelumnya modal
+      ini SELALU menembak server (getPOReviewData) dan menunggu spinner tiap kali dibuka —
+      walau PO yang sama baru saja dibuka beberapa detik lalu. Sekarang dipakaikan pola
+      cache yang sama dengan Detail PO/Order/Komisi (lihat openCachedDetailModal_): buka
+      lagi PO yang sama -> HTML terakhir langsung tampil INSTAN tanpa spinner sama sekali,
+      sementara data terbaru tetap ditarik diam-diam di background dan otomatis mengganti
+      isi modal kalau ternyata ada yang berubah (mis. Admin mengedit produk/promo terkait).
+      Nilai dropdown Approved Discount yang di-preselect sekarang ditanam LANGSUNG di string
+      HTML (atribut `selected`), bukan diset lewat DOM manipulation setelahnya — supaya ikut
+      ter-cache dengan benar dan tetap muncul instan walau dibaca dari cache. */
+  function reviewPOModalBody_(poId, po, results){
+    var stores = results.stores, items = results.items, products = results.products;
+    var productMap = {};
+    products.forEach(function(p){ productMap[p.ProductID] = p; });
+
+    var storeOptions = stores.map(function(s){ return '<option value="'+s.StoreID+'">'+escapeHtml(s.StoreName)+'</option>'; }).join('');
+    var preselectedDisc = (po && po.RequestedDiscount != null) ? Math.round(Number(po.RequestedDiscount)) : null;
+    var discOptions = '';
+    for(var d=0; d<=10; d++){
+      var selAttr = (preselectedDisc === d) ? ' selected' : '';
+      discOptions += '<option value="'+d+'"'+selAttr+'>'+(d===0?'Full Price (0%)':d+'%')+'</option>';
+    }
+
+    var subtotal = items.reduce(function(sum, it){ return sum + (Number(it.LineTotal)||0); }, 0);
+    // Diurutkan per Category lalu nama produk supaya konsisten dgn tampilan lain.
+    var sortedReviewItems = sortByCategoryThenName_(items, function(it){ return productMap[it.ProductID]; });
+    var itemRows = sortedReviewItems.map(function(it){
+      var p = productMap[it.ProductID] || {};
+      var thumb = p.ImageURL
+        ? '<img src="'+escapeHtml(p.ImageURL)+'" alt="">'
+        : '<div class="po-product-thumb-empty">'+ICONS.products+'</div>';
+      return '<div class="po-cart-row">' +
+        '<div class="po-cart-thumb">'+thumb+'</div>' +
+        '<div style="flex:1;min-width:0;">' +
+          '<div class="po-cart-name">'+escapeHtml(p.ProductName||it.ProductID)+'</div>' +
+          '<div class="po-cart-unitprice">'+formatRupiah(it.UnitPrice)+' / '+escapeHtml(packagingUnitLabel_(p))+' &times; '+it.Qty+'</div>' +
+        '</div>' +
+        '<div class="po-cart-linetotal">'+formatRupiah(it.LineTotal)+'</div>' +
+      '</div>';
+    }).join('') || '<div class="po-cart-empty">Tidak ada item.</div>';
+    var subtotalRow = items.length
+      ? '<div class="po-cart-row" style="border-top:1.5px solid var(--ag-gray-200);margin-top:2px;">' +
+          '<div style="flex:1;min-width:0;font-weight:700;">Subtotal</div>' +
+          '<div class="po-cart-linetotal" style="font-weight:800;">'+formatRupiah(subtotal)+'</div>' +
+        '</div>'
+      : '';
+
+    var descHtml = po && po.Description
+      ? detailRow('Deskripsi', escapeHtml(po.Description)) : '';
+    var pickupHtml = po && po.PickupDate
+      ? detailRow('Rencana Pengambilan', formatDateDMY_(po.PickupDate)) : '';
+    var requestedDiscHtml = (po && po.RequestedDiscount != null)
+      ? detailRow('Diskon Diminta Agent', po.RequestedDiscount+'%') : '';
+
+    var body =
+      '<div class="po-cart-section" style="margin-bottom:16px;">' +
+        '<div class="po-cart-title">Item PO</div>' +
+        itemRows + subtotalRow +
+      '</div>' +
+      (descHtml || pickupHtml || requestedDiscHtml
+        ? '<div class="po-cart-section" style="margin-bottom:16px;">' +
+            '<div class="po-cart-title">Detail Pengajuan</div>' +
+            requestedDiscHtml+descHtml+pickupHtml +
+          '</div>'
+        : '') +
+      '<div class="form-group"><label>Approved Discount</label><select id="apDiscount">'+discOptions+'</select></div>' +
+      '<div class="form-group"><label>Store</label><select id="apStore">'+storeOptions+'</select></div>' +
+      '<div class="po-review-actions">' +
+        '<button class="btn btn-primary btn-block" onclick="approvePOSubmit(\''+poId+'\',\'APPROVED\')">Approve</button>' +
+        '<button class="btn btn-ghost btn-block" onclick="rejectPOPrompt(\''+poId+'\')" style="color:var(--ag-red);border-color:#FDECEC;">Reject</button>' +
+      '</div>';
+    // Header + body dirakit manual (bukan openFormModal) karena modal ini pakai tombol aksi
+    // kontekstual sendiri (Approve/Reject di dalam body), bukan footer Batal/Simpan standar
+    // — jadi tidak ada lagi langkah "sembunyikan footer default" setelah render, sekalian
+    // supaya string HTML-nya bisa di-cache utuh oleh openCachedDetailModal_ tanpa perlu
+    // langkah DOM manipulation susulan.
+    return '<div class="modal-header"><span class="modal-title">Review PO '+escapeHtml(poId)+'</span>' +
+      '<button class="modal-close" onclick="closeModal()">'+CLOSE_ICON+'</button></div>' +
+      '<div class="modal-body">'+body+'</div>';
+  }
+
   function approvePOPrompt(poId){
     var po = findPO_(poId);
-    openModalLoading_('Review PO '+poId, 'modal-lg');
-    google.script.run.withSuccessHandler(function(results){
-      try{
-        var stores = results.stores, items = results.items, products = results.products;
-        var productMap = {};
-        products.forEach(function(p){ productMap[p.ProductID] = p; });
-
-        var storeOptions = stores.map(function(s){ return '<option value="'+s.StoreID+'">'+escapeHtml(s.StoreName)+'</option>'; }).join('');
-        var discOptions = '';
-        for(var d=0; d<=10; d++){ discOptions += '<option value="'+d+'">'+(d===0?'Full Price (0%)':d+'%')+'</option>'; }
-
-        var subtotal = items.reduce(function(sum, it){ return sum + (Number(it.LineTotal)||0); }, 0);
-        // Diurutkan per Category lalu nama produk supaya konsisten dgn tampilan lain.
-        var sortedReviewItems = sortByCategoryThenName_(items, function(it){ return productMap[it.ProductID]; });
-        var itemRows = sortedReviewItems.map(function(it){
-          var p = productMap[it.ProductID] || {};
-          var thumb = p.ImageURL
-            ? '<img src="'+escapeHtml(p.ImageURL)+'" alt="">'
-            : '<div class="po-product-thumb-empty">'+ICONS.products+'</div>';
-          return '<div class="po-cart-row">' +
-            '<div class="po-cart-thumb">'+thumb+'</div>' +
-            '<div style="flex:1;min-width:0;">' +
-              '<div class="po-cart-name">'+escapeHtml(p.ProductName||it.ProductID)+'</div>' +
-              '<div class="po-cart-unitprice">'+formatRupiah(it.UnitPrice)+' / '+escapeHtml(packagingUnitLabel_(p))+' &times; '+it.Qty+'</div>' +
-            '</div>' +
-            '<div class="po-cart-linetotal">'+formatRupiah(it.LineTotal)+'</div>' +
-          '</div>';
-        }).join('') || '<div class="po-cart-empty">Tidak ada item.</div>';
-        var subtotalRow = items.length
-          ? '<div class="po-cart-row" style="border-top:1.5px solid var(--ag-gray-200);margin-top:2px;">' +
-              '<div style="flex:1;min-width:0;font-weight:700;">Subtotal</div>' +
-              '<div class="po-cart-linetotal" style="font-weight:800;">'+formatRupiah(subtotal)+'</div>' +
-            '</div>'
-          : '';
-
-        var descHtml = po && po.Description
-          ? detailRow('Deskripsi', escapeHtml(po.Description)) : '';
-        var pickupHtml = po && po.PickupDate
-          ? detailRow('Rencana Pengambilan', formatDateDMY_(po.PickupDate)) : '';
-        var requestedDiscHtml = (po && po.RequestedDiscount != null)
-          ? detailRow('Diskon Diminta Agent', po.RequestedDiscount+'%') : '';
-
-        var body =
-          '<div class="po-cart-section" style="margin-bottom:16px;">' +
-            '<div class="po-cart-title">Item PO</div>' +
-            itemRows + subtotalRow +
-          '</div>' +
-          (descHtml || pickupHtml || requestedDiscHtml
-            ? '<div class="po-cart-section" style="margin-bottom:16px;">' +
-                '<div class="po-cart-title">Detail Pengajuan</div>' +
-                requestedDiscHtml+descHtml+pickupHtml +
-              '</div>'
-            : '') +
-          '<div class="form-group"><label>Approved Discount</label><select id="apDiscount">'+discOptions+'</select></div>' +
-          '<div class="form-group"><label>Store</label><select id="apStore">'+storeOptions+'</select></div>' +
-          '<div class="po-review-actions">' +
-            '<button class="btn btn-primary btn-block" onclick="approvePOSubmit(\''+poId+'\',\'APPROVED\')">Approve</button>' +
-            '<button class="btn btn-ghost btn-block" onclick="rejectPOPrompt(\''+poId+'\')" style="color:var(--ag-red);border-color:#FDECEC;">Reject</button>' +
-          '</div>';
-        openFormModal('Review PO '+poId, body, function(){ approvePOSubmit(poId,'APPROVED'); }, 'modal-lg');
-        // The custom approve/reject buttons above replace the default single Save button.
-        var footer = document.querySelector('.modal-footer');
-        if(footer) footer.style.display = 'none';
-        // Pre-select the discount closest to what the Agent requested, so the Supervisor
-        // isn't forced to always start from Full Price when reviewing.
-        if(po && po.RequestedDiscount != null){
-          var sel = document.getElementById('apDiscount');
-          if(sel) sel.value = String(Math.round(Number(po.RequestedDiscount)));
+    var cacheKey = 'reviewpo:'+poId;
+    openCachedDetailModal_(cacheKey, 'Review PO '+poId, 'modal-lg', function(done){
+      google.script.run.withSuccessHandler(function(results){
+        try{
+          done(reviewPOModalBody_(poId, po, results));
+        } catch(err){
+          // Safety net: if anything above throws, surface it instead of failing silently
+          // (google.script.run's success handler swallows client-side JS errors otherwise).
+          if(!DETAIL_MODAL_CACHE_[cacheKey]){ closeModal(); }
+          showToast('Gagal menampilkan form review: ' + err.message, 'error');
         }
-      } catch(err){
-        // Safety net: if anything above throws, surface it instead of failing silently
-        // (google.script.run's success handler swallows client-side JS errors otherwise).
-        closeModal();
-        showToast('Gagal menampilkan form review: ' + err.message, 'error');
-      }
-    }).withFailureHandler(function(e){ closeModal(); handleBackendError(e); }).getPOReviewData(STATE.token, poId);
+      }).withFailureHandler(function(e){
+        if(!DETAIL_MODAL_CACHE_[cacheKey]){ closeModal(); }
+        handleBackendError(e);
+      }).getPOReviewData(STATE.token, poId);
+    });
   }
 
   function rejectPOPrompt(poId){
@@ -5180,7 +5201,7 @@
     var originalLabel = primaryBtn ? primaryBtn.textContent : '';
     if(decision === 'APPROVED' && primaryBtn){ primaryBtn.innerHTML = '<span class="btn-spinner"></span> Memproses...'; }
     google.script.run.withSuccessHandler(function(res){
-      if(res.success){ closeModal(); invalidateDetailModalCache_('po:'+poId); invalidateDashboardCache_(); loadNotifications_(); showToast('PO diperbarui.','success'); renderPO(); offerWaNotif_(res.waLink); }
+      if(res.success){ closeModal(); invalidateDetailModalCache_('po:'+poId); invalidateDetailModalCache_('reviewpo:'+poId); invalidateDashboardCache_(); loadNotifications_(); showToast('PO diperbarui.','success'); renderPO(); offerWaNotif_(res.waLink); }
       else {
         actionButtons.forEach(function(b){ b.disabled = false; });
         if(primaryBtn) primaryBtn.textContent = originalLabel;
