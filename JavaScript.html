@@ -278,6 +278,11 @@
     CHAT_STATE_.myRoomId = null; CHAT_STATE_.lastMessageId = null; CHAT_STATE_.panelOpen = false;
     CHAT_STATE_.myLastSeenByStaff = false;
     document.documentElement.classList.remove('ag-has-session'); // sinkron dengan gate flash-login di index.html
+    // Lepas juga gate 'ag-app-ready' (lihat CSS-nya di index.html + baris yang memasangnya di
+    // akhir bootApp()) — supaya kalau akun lain login di tab yang sama, appShell kembali
+    // tersembunyi (visibility:hidden) sampai bootApp() BARU selesai penuh, bukan sempat
+    // kelihatan sekilas dengan sisa konten akun yang baru logout.
+    document.documentElement.classList.remove('ag-app-ready');
     document.getElementById('appShell').style.display = 'none';
     document.getElementById('loginScreen').style.display = 'flex';
   }
@@ -830,6 +835,17 @@
     });
     if(!pageAllowedForRole_) pageToOpen = 'dashboard';
     showPage(pageToOpen);
+    // FIX BUG NYATA (lihat catatan panjang di rule CSS 'ag-app-ready' di index.html): baris
+    // ini adalah SATU-SATUNYA tempat yang melepas gate visibility:hidden dari isi #appShell.
+    // Dipasang di SINI, SETELAH showPage() di atas mulai — supaya begitu konten shell akhirnya
+    // benar-benar terlihat, avatar/nama/role topbar SUDAH benar (diisi lebih awal di bootApp()),
+    // applyAgentTopbarLayout_() SUDAH diterapkan, dan sidebar+bottom-nav SUDAH dirender oleh
+    // showPage() dengan currentPage & grup yang benar — bukan lagi kondisi default/kosong dari
+    // markup statis index.html. Dibungkus rAF supaya browser sempat menuntaskan paint DOM di
+    // atas dulu sebelum class ini dilepas, mencegah kemungkinan flash 1-frame kalaupun ada.
+    requestAnimationFrame(function(){
+      document.documentElement.classList.add('ag-app-ready');
+    });
     // FIX PERFORMA (laporan nyata: HP dengan sinyal lemah sering kena "TIMEOUT: server
     // tidak merespons dalam 60 detik" tepat di Dashboard, PADAHAL Live Chat sudah dimatikan
     // total — lihat LIVECHAT_FEATURE_ENABLED_/preloadAllPages_, jadi bukan itu biang
