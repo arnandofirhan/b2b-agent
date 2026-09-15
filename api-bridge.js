@@ -206,9 +206,25 @@
     // lewat sini, sekali jadi hasilnya keluar (sukses ATAU gagal) — dan entri dedup langsung
     // dibersihkan supaya panggilan identik BERIKUTNYA (setelah request ini selesai) menembak
     // request baru seperti biasa, bukan ikut numpang ke hasil yang sudah basi.
+    // FIX BUG NYATA (crash nyata dari laporan user: "TypeError: Cannot read properties of
+    // undefined (reading 'forEach') at notifyAll_", muncul di percobaan retry ke-2/ke-3):
+    // notifyAll_ SEBELUMNYA berasumsi ia hanya akan dipanggil TEPAT SEKALI per dedupKey —
+    // begitu dipanggil, ia langsung delete inFlight_[dedupKey]. Asumsi itu TIDAK SELALU benar:
+    // kalau attempt() punya lebih dari satu jalur yang bisa berakhir memanggil notifyAll_
+    // untuk closure yang SAMA (mis. sebuah promise fetch() lama yang telat resolve SETELAH
+    // attempt lain di closure yang sama sudah lebih dulu notifyAll_+jobDone karena
+    // timeout/retry), panggilan KEDUA akan membaca inFlight_[dedupKey] yang sudah dihapus
+    // panggilan pertama -> undefined -> .forEach meledak. FIX: (1) simpan referensi waiters
+    // SEBELUM delete, (2) kalau ternyata sudah kosong/undefined (sudah pernah dinotifikasi
+    // sebelumnya), diam-diam berhenti alih-alih crash — hasil yang "telat" ini memang sudah
+    // tidak relevan lagi buat siapapun, semua pemanggil asli sudah dapat jawaban.
+    var notifyAllDone_ = false;
     function notifyAll_(isSuccess, payload) {
+      if (notifyAllDone_) return; // panggilan kedua utk closure yg sama — sudah pernah selesai, abaikan
+      notifyAllDone_ = true;
       var waiters = dedupKey ? inFlight_[dedupKey] : [{ onSuccess: onSuccess, onFailure: onFailure }];
       if (dedupKey) delete inFlight_[dedupKey];
+      if (!waiters) return; // sudah dibersihkan lebih dulu oleh jalur lain — tidak ada yg perlu dinotifikasi
       waiters.forEach(function (w) {
         if (isSuccess) { if (w.onSuccess) w.onSuccess(payload); }
         else { if (w.onFailure) w.onFailure(payload); else console.error('[api-bridge] ' + fnName + ' gagal:', payload); }
