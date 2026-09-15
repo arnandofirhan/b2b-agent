@@ -48,6 +48,125 @@
   // Code.gs lama. Tambahkan baris baru di sini kalau nemu fungsi get/list
   // lain yang belum tercakup — jauh lebih ringan daripada bikin Edge Function.
   // =========================================================================
+  // =========================================================================
+  // FIX UTAMA: mapping snake_case (Postgres) -> PascalCase (dipakai
+  // JavaScript.html, warisan header Google Sheets: POID, AgentID, SJFileID,
+  // MOUStatus, dst). SCHEMA di bawah ini disalin PERSIS dari SCHEMA di
+  // Code.gs (satu-satunya sumber kebenaran nama kolom asli).
+  // Setiap key dipetakan ke versi snake_case-nya secara otomatis (mis.
+  // 'POID' -> 'po_id', 'SJFileURL' -> 'sj_file_url', 'NPWPFileID' ->
+  // 'npwp_file_id'), lalu dipakai untuk translasi 2 arah:
+  //   - hasil dari Postgres/Edge Function (snake_case) -> ke frontend (PascalCase)
+  // =========================================================================
+  var SCHEMA = {
+    USERS: ['UserID', 'Name', 'Email', 'Role', 'AgentID', 'PasswordHash', 'Status', 'CreatedAt', 'UpdatedAt', 'SignatureFileID', 'SignatureFileURL'],
+    AGENTS: [
+      'AgentID', 'FullName', 'Email', 'Phone', 'KTPNumber', 'AddressKTP',
+      'KTPFileID', 'KTPFileURL', 'NPWPFileID', 'NPWPFileURL', 'BankFileID', 'BankFileURL',
+      'RegistrationStatus', 'RejectionNote', 'MOUStatus', 'MOUFileID', 'MOUFileURL', 'MOUDocID',
+      'SignatureFileID', 'SignatureFileURL', 'AgentStatus', 'CreatedAt', 'UpdatedAt'
+    ],
+    PRODUCTS: ['ProductID', 'ProductName', 'Category', 'ImageURL', 'Packaging', 'ShelfLife', 'RegularPrice', 'Status', 'CreatedAt', 'UpdatedAt'],
+    PRODUCT_IMAGES: ['ImageID', 'ProductID', 'FileID', 'FileURL', 'IsPrimary', 'CreatedAt'],
+    PACKAGING: ['PackagingID', 'ProductID', 'PackagingName', 'QtyPerPack', 'CreatedAt'],
+    SHELF_LIFE: ['ShelfLifeID', 'ProductID', 'ShelfLifeDays', 'CreatedAt'],
+    PROMOS: ['PromoID', 'PromoCode', 'PromoName', 'Description', 'StartDate', 'EndDate', 'Status', 'CreatedAt', 'UpdatedAt'],
+    STORES: ['StoreID', 'StoreName', 'Address', 'Phone', 'PIC', 'Status', 'CreatedAt'],
+    PO: [
+      'POID', 'AgentID', 'PromoID', 'RequestedDiscount', 'ApprovedDiscount', 'Status',
+      'RejectionNote', 'StoreID', 'SupervisorID', 'SuratPenawaranFileID', 'SuratPenawaranFileURL',
+      'GrandTotal', 'CreatedAt', 'UpdatedAt', 'Description', 'PickupDate',
+      'SuratPenawaranEmailSentAt', 'PaymentConfirmedAt', 'PaymentConfirmedBy',
+      'PaymentProofFileID', 'PaymentProofFileURL'
+    ],
+    PO_ITEMS: ['POItemID', 'POID', 'ProductID', 'Qty', 'UnitPrice', 'LineTotal', 'CreatedAt'],
+    ORDERS: ['OrderID', 'POID', 'StoreID', 'SJFileID', 'SJFileURL', 'DeliveryStatus', 'CustomerPaymentStatus', 'TransactionStatus', 'CreatedAt', 'UpdatedAt', 'OrderDocFileID', 'OrderDocFileURL'],
+    SUPPORTING_DOCUMENTS: ['DocID', 'OrderID', 'FileID', 'FileURL', 'DocType', 'VerifiedBy', 'VerificationStatus', 'CreatedAt'],
+    COMMISSION_SCHEME: ['SchemeID', 'MinDiscountPct', 'MaxDiscountPct', 'CommissionPct', 'Label', 'Status'],
+    COMMISSIONS: ['CommissionID', 'AgentID', 'OrderID', 'POID', 'ApprovedDiscount', 'CommissionPct', 'NetInvoiceValue', 'CommissionAmount', 'Status', 'VerifiedBy', 'RejectionNote', 'PaidAt', 'PaymentProofFileID', 'PaymentProofFileURL', 'PaymentRefNote', 'CreatedAt', 'UpdatedAt'],
+    SETTINGS: ['Key', 'Value', 'UpdatedAt'],
+    AUDIT_LOG: ['LogID', 'UserID', 'Role', 'Action', 'Entity', 'EntityID', 'Detail', 'Timestamp'],
+    DOCUMENT_SEQUENCE: ['Prefix', 'YearMonth', 'LastNumber'],
+    NOTIF_SEEN: ['UserID', 'NotifID', 'SeenAt'],
+    DASHBOARD_CONFIG: [
+      'ConfigID', 'ItemType', 'Title', 'Subtitle', 'ImageURL', 'ImageFileID',
+      'ProductID', 'LinkAction', 'SortOrder', 'IsActive', 'CreatedAt', 'UpdatedAt'
+    ],
+    CHAT_ROOMS: [
+      'RoomID', 'AgentID', 'AgentName', 'LastMessage', 'LastMessageAt', 'LastSenderRole',
+      'UnreadForStaff', 'UnreadForAgent', 'Status', 'ClosedBy', 'ClosedAt', 'CreatedAt', 'UpdatedAt'
+    ],
+    CHAT_MESSAGES: [
+      'MessageID', 'RoomID', 'SenderUserID', 'SenderName', 'SenderRole',
+      'MessageText', 'MessageType', 'CreatedAt',
+      'AttachmentFileID', 'AttachmentURL', 'AttachmentType', 'AttachmentName'
+    ],
+    CART: ['AgentID', 'CartJSON', 'UpdatedAt']
+  };
+
+  // snake_case -> PascalCase, dibangun otomatis dari SCHEMA di atas supaya
+  // TIDAK PERNAH ketinggalan/typo dibanding Code.gs. Akronim (ID, SJ, MOU,
+  // KTP, NPWP, PIC, dst) otomatis kebaca benar karena kita derive
+  // snake_case-nya DARI PascalCase asli, bukan menebak arah sebaliknya.
+  var SNAKE_TO_PASCAL_ = {};
+  function toSnakeCase_(pascalKey) {
+    var s = pascalKey;
+    // 1) batas antar blok akronim & kata Kapital berikutnya: "POItem" -> "PO_Item", "SJFile" -> "SJ_File"
+    s = s.replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2');
+    // 2) batas antara huruf kecil/angka & huruf besar: "grandTotal","FullName" -> "Full_Name"
+    s = s.replace(/([a-z0-9])([A-Z])/g, '$1_$2');
+    // 3) kasus khusus: akronim murni + ID/URL di ujung string yg TIDAK kena aturan di atas
+    //    krn tidak ada huruf kecil sama sekali, mis. "POID" (bukan "POId") -> "PO_ID"
+    s = s.replace(/^([A-Z]{2,})(ID|URL)$/, '$1_$2');
+    return s.toLowerCase();
+  }
+  Object.keys(SCHEMA).forEach(function (sheetName) {
+    SCHEMA[sheetName].forEach(function (pascalKey) {
+      var snake = toSnakeCase_(pascalKey);
+      SNAKE_TO_PASCAL_[snake] = pascalKey;
+    });
+  });
+  // Beberapa nama umum tambahan yang dipakai payload gabungan (agentId,
+  // agentName di respons custom Edge Function, dsb) — jaga-jaga di luar SCHEMA.
+  var EXTRA_SNAKE_TO_PASCAL_ = {
+    id: 'id', created_at: 'CreatedAt', updated_at: 'UpdatedAt'
+  };
+  Object.keys(EXTRA_SNAKE_TO_PASCAL_).forEach(function (k) {
+    if (!SNAKE_TO_PASCAL_[k]) SNAKE_TO_PASCAL_[k] = EXTRA_SNAKE_TO_PASCAL_[k];
+  });
+
+  // Ubah SATU object flat dari snake_case -> PascalCase. Key yang tidak
+  // dikenal (tidak ada di SCHEMA manapun) dibiarkan apa adanya (fallback
+  // aman) supaya field baru yang belum didaftar tidak hilang diam-diam.
+  function mapRowKeys_(row) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
+    var out = {};
+    Object.keys(row).forEach(function (k) {
+      var mapped = SNAKE_TO_PASCAL_[k] || k;
+      out[mapped] = row[k];
+    });
+    return out;
+  }
+
+  // Terapkan mapRowKeys_ SECARA REKURSIF ke: array of rows, single row, atau
+  // object bersarang seperti { pos: [...], agents: [...] } yang dikembalikan
+  // getPOsPageData/getOrdersPageData/getDashboardData. String/number/boolean/
+  // null dibiarkan lewat apa adanya.
+  function deepMapKeys_(value) {
+    if (Array.isArray(value)) {
+      return value.map(deepMapKeys_);
+    }
+    if (value && typeof value === 'object') {
+      var mapped = mapRowKeys_(value);
+      var out = {};
+      Object.keys(mapped).forEach(function (k) {
+        out[k] = deepMapKeys_(mapped[k]);
+      });
+      return out;
+    }
+    return value;
+  }
+
   var READ_MAP = {
     // fnName lama (GAS)     : { table: 'nama_tabel_postgres', order: 'kolom', ascending: bool }
     listProducts:            { table: 'products', order: 'product_name', ascending: true },
@@ -139,7 +258,7 @@
     if (cfg.order) q = q.order(cfg.order, { ascending: !!cfg.ascending });
     return q.then(function (res) {
       if (res.error) throw new Error(res.error.message);
-      return res.data;
+      return deepMapKeys_(res.data); // snake_case (Postgres) -> PascalCase (frontend)
     });
   }
 
@@ -156,7 +275,16 @@
       if (res.error) throw new Error(res.error.message || 'Edge function error');
       // Edge Function diharapkan mengembalikan { success, message, ...data }
       // supaya kompatibel dgn pola return lama di Code.gs.
-      return res.data;
+      // deepMapKeys_ menerjemahkan SEMUA field bersarang (pos, agents, items,
+      // dst) dari snake_case Postgres ke PascalCase yang dipakai JavaScript.html
+      // — TAPI kita jaga 'success' dan 'message' tetap seperti aslinya karena
+      // itu bukan nama kolom tabel, itu kontrak sukses/pesan generik.
+      var mapped = deepMapKeys_(res.data);
+      if (mapped && typeof mapped === 'object' && !Array.isArray(mapped)) {
+        if ('success' in res.data) mapped.success = res.data.success;
+        if ('message' in res.data) mapped.message = res.data.message;
+      }
+      return mapped;
     });
   }
 
